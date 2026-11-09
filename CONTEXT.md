@@ -14,6 +14,10 @@ _Avoid_: policy, ruleset, NSG configuration
 One ordered entry in the Rule base, with name, source, destination, service, action (allow or deny), enabled flag, comment, ticket reference, owner and optional expiry date. Source, destination and service each hold one or more Objects or Zones and match any of them; there is no negation. Rules are evaluated top-down and the first match wins.
 _Avoid_: NSG rule, security rule, policy
 
+**Rule ID**:
+The identifier a Rule gets when it is created. It never changes when the Rule is renamed, edited or moved, and it is never reused. The name of every NSG rule that the Translation engine generates for the Rule carries it.
+_Avoid_: rule number (the Rule's current position in the Rule base)
+
 **Intra-zone default**:
 The implicit allow for traffic that stays inside one Zone. It sits below every Rule and above the Deny-all rules, so a Rule can override it.
 _Avoid_: intrazone rule
@@ -66,7 +70,7 @@ A security rule inside an Azure NSG. The Translation engine generates NSG rules 
 _Avoid_: Rule (reserved for Rule base entries)
 
 **Augmented rule**:
-An NSG rule with several prefixes, ports or service tags, used to save rule slots.
+An NSG rule that lists several prefixes, port ranges or ASGs in one field, used to save rule slots. Several service tags need several NSG rules.
 
 **Deny-all rules**:
 The explicit deny-all NSG rules, inbound and outbound, at the lowest custom priority of every Managed NSG. Where Azure forbids the outbound one, as in an Application Gateway v2 subnet, the Zone keeps outbound open. They turn Azure's permissive defaults into the implicit deny that firewall administrators expect.
