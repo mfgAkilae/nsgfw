@@ -110,6 +110,10 @@ _Avoid_: required exceptions, infrastructure rules
 **Azure default rules**:
 The fixed rules that Azure adds to every NSG, such as AllowVnetInBound and AllowInternetOutBound. Shown read-only.
 
+**Security layer**:
+A set of rules outside the tool's control that also decides the traffic of a Zone: the Azure Virtual Network Manager security admin rules applied to the Zone's VNet, which Azure evaluates before any NSG, and the NIC-level NSGs of the network interfaces in the Zone, which traffic must pass in addition to the Managed NSG. Shown read-only. A Rule gets a warning where a Security layer blocks traffic that the Rule allows, or lets through traffic that the Rule denies.
+_Avoid_: overlay, other layers
+
 **Translation engine**:
 The part of the tool that converts the Rule base into Managed NSGs, NSG rules, ASGs and subnet associations.
 
@@ -138,6 +142,14 @@ _Avoid_: blast radius, impacted NSGs
 **Preview**:
 The list of NSGs, NSG rules, subnet associations and ASGs that a Change set will create, change or delete.
 _Avoid_: diff, plan
+
+**Policy finding**:
+A result of the policy pre-check for a write that a Change set or a Deployment plans: the Azure Policy assignment, its effect and its reason, and the Rule that caused it where the tool can tell. A deny finding blocks Submit and Commit unless it has a Pre-check waiver. Audit and modify findings are information only.
+_Avoid_: policy hit (hits are flow-log counts), violation
+
+**Pre-check waiver**:
+An admin's decision, with a mandatory reason, that one deny Policy finding on one resource does not block one Change set. The tool then sends the write, and Azure decides.
+_Avoid_: override (confusable with Overwrite), exemption (Azure Policy's own construct)
 
 **Approval**:
 Consent from an approver before a Commit. Each Affected Zone needs the Approval level that its Scope requires: none, approver (an Author may approve) or four-eyes (an approver who is not an Author). One approver's Approval counts for every Affected Zone in which that person holds the approver Role.
