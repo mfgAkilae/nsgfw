@@ -11,7 +11,7 @@ The central, ordered set of Rules together with the Objects and Zones they refer
 _Avoid_: policy, ruleset, NSG configuration
 
 **Rule**:
-One ordered entry in the Rule base, with name, source, destination, service, action (allow or deny), enabled flag, comment, ticket reference, owner and optional expiry date. Source, destination and service each hold one or more Objects or Zones and match any of them; there is no negation. Rules are evaluated top-down and the first match wins.
+One ordered entry in the Rule base, with name, source, destination, service, action (allow or deny), enabled flag, comment, ticket reference, owner (an Entra user or group) and optional expiry date. Source, destination and service each hold one or more Objects or Zones and match any of them; there is no negation. Rules are evaluated top-down and the first match wins.
 _Avoid_: NSG rule, security rule, policy
 
 **Rule ID**:
@@ -108,23 +108,51 @@ The part of the tool that converts the Rule base into Managed NSGs, NSG rules, A
 ### Change workflow
 
 **Change set**:
-Pending edits to the Rule base that are not yet deployed to Azure.
-_Avoid_: draft, candidate configuration, transaction
+A named set of pending edits to the Rule base, based on one Version and isolated from every other Change set until its Commit. An administrator can have several open Change sets.
+_Avoid_: draft, candidate configuration, transaction, session
+
+**Author**:
+Every person who made at least one edit in a Change set, or the tool itself for a Change set it prepared. Under four-eyes, no Author may approve it.
+_Avoid_: Change set owner, creator
+
+**Change set owner**:
+The one person who manages a Change set: adds co-editors, submits it for Approval and discards it. Always written in full, because "owner" alone is the Rule's owner.
+_Avoid_: owner, assignee
+
+**Rebase**:
+Moving an open Change set onto the latest Version after another Commit. It conflicts when both changed the same Rule, Object or Zone, or the neighbours of a Rule it placed.
+_Avoid_: merge, sync, update
+
+**Affected Zones**:
+The Zones a Change set touches for Approval: the Coverage of source and destination of every Rule it changes directly or through a changed Object or Zone, before and after the change, plus the Zones of added or removed ASG members and the Zones it onboards, removes or changes.
+_Avoid_: blast radius, impacted NSGs
 
 **Preview**:
 The list of NSGs, NSG rules, subnet associations and ASGs that a Change set will create, change or delete.
 _Avoid_: diff, plan
 
 **Approval**:
-Consent from an approver before a Commit. The required level is configurable per Scope, from none to four-eyes.
+Consent from an approver before a Commit. Each Affected Zone needs the Approval level that its Scope requires: none, approver (an Author may approve) or four-eyes (an approver who is not an Author). One approver's Approval counts for every Affected Zone in which that person holds the approver Role.
 
 **Commit**:
 Delivering an approved Change set to Azure through the Deployment mode of each affected Environment. Every Commit creates a Version.
 _Avoid_: push, apply, publish
 
+**Emergency Commit**:
+A Commit that an admin makes without the required Approval, with a mandatory reason. It stays open until an approver approves it afterwards.
+_Avoid_: break-glass, bypass
+
 **Version**:
 A stored, committed state of the Rule base that can be rolled back to.
 _Avoid_: revision, snapshot
+
+**Restore**:
+A Change set that returns the Rule base to an earlier Version. It restores Rules, Objects, Zones and ASG members, not the Azure facts adopted since.
+_Avoid_: rollback (the umbrella for Restore and Revert)
+
+**Revert**:
+A Change set that undoes the edits of one earlier Commit on top of the latest Version.
+_Avoid_: rollback, undo
 
 **Deployment mode**:
 How a Commit reaches Azure: directly through the Azure Resource Manager API, or as generated Terraform code in a pull request.

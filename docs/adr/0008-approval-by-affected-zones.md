@@ -1,0 +1,16 @@
+# Approval by Affected Zones
+
+Status: accepted (2026-11-09, [Grilling: Change sets, concurrency and approval](https://github.com/mfgAkilae/nsgfw/issues/15))
+
+The brief makes Approval configurable per Scope, from none to four-eyes. One Rule can span Zones in several Environments with different requirements ([ADR 0001](0001-central-rule-base-across-environments.md)), so the tool needs a precise rule for which Scopes a Change set touches. Deriving them from the Preview is the obvious choice, but it misses effects. When an ASG member is added to an ASG object, the NSG rules inside the ASG's VNet already reference the ASG, so no NSG changes, yet new traffic reaches the Zone on the other side. A rebalance changes priorities in Zones whose traffic does not change.
+
+We decided that Approval follows a Change set's **Affected Zones**. They are the Zones in the Coverage of source and destination of every Rule that the Change set changes directly or through a changed Object or Zone, before and after the change, plus the Zones of added or removed ASG members and the Zones it onboards, removes or changes. Each Affected Zone needs the level its Scope requires: none, approver (an Author may approve) or four-eyes (an approver who is not an Author). The level is set on an Environment and can be overridden on a subscription, VNet or Zone, where the most specific setting wins in both directions. A Change set without Affected Zones uses the instance default, four-eyes. One approver's Approval counts for every Affected Zone in which that person holds the approver Role. Edits without effect on traffic, such as a comment, get no exemption. As a result, a Rule with source any covers every Zone and needs the strictest level of all Environments.
+
+There are two deliberate exceptions. When an allow Rule expires, the tool disables it and commits without Approval, because disabling an allow Rule can never open traffic under first-match evaluation. An expired deny Rule only gets a Change set that the tool prepares for normal Approval. An admin can make an Emergency Commit without the required Approval, with a mandatory reason. It needs Approval afterwards, and a rejection makes the tool prepare a Revert.
+
+## Considered Options
+
+- **Scopes from the Preview diff.** Rejected for the reasons above.
+- **One approver for the whole Change set at the strictest level.** Rejected. A Rule across Environments would need an approver who holds the approver Role everywhere.
+- **Overrides may only tighten the inherited level.** Rejected. A sandbox subscription inside a production management group would then need its own Environment.
+- **Expiry handled only through Change sets with Approval.** Rejected. An expired allow Rule, for example a vendor's temporary access, would stay effective until someone approves.
