@@ -11,22 +11,30 @@ The central, ordered set of Rules together with the Objects and Zones they refer
 _Avoid_: policy, ruleset, NSG configuration
 
 **Rule**:
-One ordered entry in the Rule base, with name, source, destination, service, action (allow or deny), enabled flag, comment, ticket reference, owner and optional expiry date. Rules are evaluated top-down and the first match wins.
+One ordered entry in the Rule base, with name, source, destination, service, action (allow or deny), enabled flag, comment, ticket reference, owner and optional expiry date. Source, destination and service each hold one or more Objects or Zones and match any of them; there is no negation. Rules are evaluated top-down and the first match wins.
 _Avoid_: NSG rule, security rule, policy
+
+**Intra-zone default**:
+The implicit allow for traffic that stays inside one Zone. It sits below every Rule and above the Deny-all rules, so a Rule can override it.
+_Avoid_: intrazone rule
 
 **Zone**:
 A subnet that an administrator has onboarded so that Rules can use it as source or destination. Zones are the primary way to choose where traffic comes from and where it goes. Each Zone has its own name, unique in the Rule base, and exactly one Managed NSG. A subnet that cannot carry a Managed NSG, such as GatewaySubnet, never becomes a Zone.
 _Avoid_: segment, network, NSG
 
+**Coverage**:
+The Zones that a Zone, Address object or Address group stands for. A Zone covers itself, a VNet covers the Zones inside it, a single IP or CIDR range covers every Zone whose prefixes it overlaps, an Address object backed by an ASG covers the Zones that hold its member NICs, and an Address group covers the union of its members. A service tag and a subnet that is not a Zone cover no Zone. The Translation engine places a Rule only on the Managed NSGs in the Coverage of its source and destination, so the NSGs together decide every flow the way one firewall would.
+_Avoid_: scope (reserved for access), footprint
+
 **Address object**:
-A named single IP, CIDR range, Azure service tag, subnet that is not a Zone, VNet, or Address group.
+A named single IP, CIDR range, Azure service tag, subnet that is not a Zone, VNet, or Address group. The built-in Address object any stands for every IPv4 and IPv6 address.
 _Avoid_: host, network object
 
 **Address group**:
-A named group of Address objects.
+A named group of Address objects and Zones.
 
 **Service object**:
-A named protocol plus a port or port range.
+A named protocol plus a port or port range. The built-in Service object any matches every protocol and port.
 _Avoid_: port object, application
 
 **Service group**:
@@ -50,7 +58,7 @@ _Avoid_: tool NSG, owned NSG
 Any NSG that is not a Managed NSG, including every NIC-level NSG. Shown read-only.
 
 **Retired NSG**:
-A Managed NSG whose Zone was removed. It stays associated with its subnet and holds only the Deny-all rules, so the subnet stays protected. If the subnet becomes a Zone again, the Retired NSG becomes its Managed NSG again.
+A Managed NSG whose Zone was removed. It stays associated with its subnet and holds only the Platform exceptions and the Deny-all rules, so the subnet stays protected. If the subnet becomes a Zone again, the Retired NSG becomes its Managed NSG again.
 _Avoid_: orphaned NSG, released NSG
 
 **NSG rule**:
@@ -61,8 +69,12 @@ _Avoid_: Rule (reserved for Rule base entries)
 An NSG rule with several prefixes, ports or service tags, used to save rule slots.
 
 **Deny-all rules**:
-The explicit deny-all NSG rules, inbound and outbound, at the lowest custom priority of every Managed NSG, together with their required exceptions such as AzureLoadBalancer health probes.
+The explicit deny-all NSG rules, inbound and outbound, at the lowest custom priority of every Managed NSG. Where Azure forbids the outbound one, as in an Application Gateway v2 subnet, the Zone keeps outbound open. They turn Azure's permissive defaults into the implicit deny that firewall administrators expect.
 _Avoid_: implicit deny, cleanup rule
+
+**Platform exceptions**:
+The fixed allow NSG rules above every Rule in each Managed NSG that let Azure platform traffic, such as Azure Load Balancer health probes, pass. No Rule can override them.
+_Avoid_: required exceptions, infrastructure rules
 
 **Azure default rules**:
 The fixed rules that Azure adds to every NSG, such as AllowVnetInBound and AllowInternetOutBound. Shown read-only.
