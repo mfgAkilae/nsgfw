@@ -67,7 +67,7 @@ The single Azure identity through which the tool reads and changes Azure in ever
 _Avoid_: service account, app identity
 
 **Managed NSG**:
-An NSG that the tool created, or that an administrator explicitly imported, tagged as managed by the tool. The tool modifies no other NSG.
+An NSG that the tool created, or that an administrator adopted in place, tagged as managed by the tool. The tool modifies no other NSG.
 _Avoid_: tool NSG, owned NSG
 
 **Unmanaged NSG**:
@@ -79,6 +79,10 @@ _Avoid_: tool ASG
 
 **Unmanaged ASG**:
 Any ASG that is not a Managed ASG. The tool never changes it.
+
+**Adopt in place**:
+Making an existing Unmanaged NSG or Unmanaged ASG a Managed one without replacing it. It keeps its name, resource group and references and gets the marker tags.
+_Avoid_: adopt (on its own: resolving Drift), take over
 
 **Retired NSG**:
 A Managed NSG whose Zone was removed. It stays associated with its subnet and holds only the Platform exceptions and the Deny-all rules, so the subnet stays protected. If the subnet becomes a Zone again, the Retired NSG becomes its Managed NSG again.
@@ -94,6 +98,10 @@ An NSG rule that lists several prefixes, port ranges or ASGs in one field, used 
 **Deny-all rules**:
 The explicit deny-all NSG rules, inbound and outbound, at the lowest custom priority of every Managed NSG. Where Azure forbids the outbound one, as in an Application Gateway v2 subnet, the Zone keeps outbound open. They turn Azure's permissive defaults into the implicit deny that firewall administrators expect.
 _Avoid_: implicit deny, cleanup rule
+
+**Inherited defaults**:
+A Zone setting that keeps what the Azure default rules allowed before onboarding: inbound from `VirtualNetwork`, outbound to `VirtualNetwork` and outbound to `Internet`, each on its own. It applies on the Zone's own Managed NSG only, below the Intra-zone default and above the Deny-all rules, and is removed through a Change set.
+_Avoid_: baseline rules, legacy defaults
 
 **Platform exceptions**:
 The fixed allow NSG rules above every Rule in each Managed NSG that let Azure platform traffic, such as Azure Load Balancer health probes, pass. No Rule can override them.
@@ -176,10 +184,22 @@ The data the tool writes into a Terraform repository: one file per Terraform roo
 _Avoid_: template, generated code
 
 **Import**:
-Converting existing NSGs and NSG rules into the Rule base.
+Converting the NSG rules of an existing NSG into Rules when its subnet is onboarded, as edits in the onboarding Change set. Each NSG rule becomes one Rule that records where it came from. By default Import keeps the subnet's current behaviour, with Inherited defaults in place of the Azure default rules it relied on.
+_Avoid_: migration, discovery
+
+**Import note**:
+A flag on an imported Rule where the NSG rule did not map cleanly, naming the source NSG, NSG rule, priority and direction. It is blocking (no submit until resolved), warning (behaviour changes or is approximated) or info (redundant or dropped), and it stays after the Commit until an admin acknowledges it.
 
 **Drift**:
-A difference between Azure and the Deployed state, caused outside the tool, for example in the portal, the CLI or other IaC. A resource that a Deployment has not reached yet is pending, not drifted.
+A difference between Azure and the Deployed state, caused outside the tool, for example in the portal, the CLI or other IaC. A resource that a Deployment has not reached yet is pending, not drifted. Drift is resolved by Adopt or Overwrite.
+
+**Adopt**:
+Resolving Drift, or another change in Azure such as a new subnet prefix, by changing the Rule base to match Azure, through a Change set that the tool prepares.
+_Avoid_: accept, import, adopt in place (taking over a resource)
+
+**Overwrite**:
+Resolving Drift by writing the Deployed state back to Azure. It needs no Approval.
+_Avoid_: revert (a Change set), repair
 
 ### Access
 
