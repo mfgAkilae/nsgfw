@@ -63,7 +63,7 @@ A named part of the Azure estate in the tool's tenant, defined as one management
 _Avoid_: stage, landing zone, tenant
 
 **Tool identity**:
-The single Azure identity through which the tool reads and changes Azure in every Environment: a managed identity when the tool runs in Azure, a service principal with a certificate when it runs on-premises.
+The single Azure identity through which the tool reads and changes Azure in every Environment: a user-assigned managed identity when the tool runs in Azure, the service principal of the tool's app registration, with a certificate, when it runs on-premises. It holds Azure roles only. Sign-in and directory lookups belong to the tool's app registration.
 _Avoid_: service account, app identity
 
 **Managed NSG**:
