@@ -27,12 +27,24 @@ A subnet that an administrator has onboarded so that Rules can use it as source 
 _Avoid_: segment, network, NSG
 
 **Coverage**:
-The Zones that a Zone, Address object or Address group stands for. A Zone covers itself, a VNet covers the Zones inside it, a single IP or CIDR range covers every Zone whose prefixes it overlaps, an Address object backed by an ASG covers the Zones that hold its member NICs, and an Address group covers the union of its members. A service tag and a subnet that is not a Zone cover no Zone. The Translation engine places a Rule only on the Managed NSGs in the Coverage of its source and destination, so the NSGs together decide every flow the way one firewall would.
+The Zones that a Zone, Address object or Address group stands for. A Zone covers itself, a VNet covers the Zones inside it, a single IP or CIDR range covers every Zone whose prefixes it overlaps, an ASG object or External ASG object covers the Zones that hold its ASG members, and an Address group covers the union of its members. A service tag and a subnet that is not a Zone cover no Zone. The Translation engine places a Rule only on the Managed NSGs in the Coverage of its source and destination, so the NSGs together decide every flow the way one firewall would.
 _Avoid_: scope (reserved for access), footprint
 
 **Address object**:
-A named single IP, CIDR range, Azure service tag, subnet that is not a Zone, VNet, or Address group. The built-in Address object any stands for every IPv4 and IPv6 address.
+A named single IP, CIDR range, Azure service tag, subnet that is not a Zone, VNet, ASG object, External ASG object, or Address group. The built-in Address object any stands for every IPv4 and IPv6 address.
 _Avoid_: host, network object
+
+**ASG object**:
+An Address object whose ASG members an administrator selects in the tool. The tool writes them into one Managed ASG per VNet that holds ASG members. Its membership changes only through Change sets.
+_Avoid_: ASG (the Azure resource), application group, dynamic group
+
+**External ASG object**:
+An Address object that stands for exactly one Unmanaged ASG. Others own that ASG and its membership. The tool reads its ASG members but never changes them or the ASG.
+_Avoid_: ASG reference (an NSG rule's reference to an ASG)
+
+**ASG member**:
+A network interface or private endpoint that belongs to an ASG object, or any network interface, including scale-set and AKS node interfaces, that belongs to the Unmanaged ASG of an External ASG object.
+_Avoid_: member (on its own: the entries of an Address group)
 
 **Address group**:
 A named group of Address objects and Zones.
@@ -60,6 +72,13 @@ _Avoid_: tool NSG, owned NSG
 
 **Unmanaged NSG**:
 Any NSG that is not a Managed NSG, including every NIC-level NSG. Shown read-only.
+
+**Managed ASG**:
+An ASG that the tool created for one ASG object in one VNet, or that an administrator adopted into an ASG object, tagged as managed by the tool. Each Managed ASG belongs to exactly one ASG object.
+_Avoid_: tool ASG
+
+**Unmanaged ASG**:
+Any ASG that is not a Managed ASG. The tool never changes it.
 
 **Retired NSG**:
 A Managed NSG whose Zone was removed. It stays associated with its subnet and holds only the Platform exceptions and the Deny-all rules, so the subnet stays protected. If the subnet becomes a Zone again, the Retired NSG becomes its Managed NSG again.
