@@ -1,0 +1,29 @@
+# Deploy in a Tighten phase and a Loosen phase, starting from the Deployed state
+
+Status: accepted (2026-11-09, [Grilling: Deployment execution and failure handling](https://github.com/mfgAkilae/nsgfw/issues/16))
+
+A Commit changes many Azure resources, and no Azure operation spans more than one of them. Writes to different NSGs, network interfaces and subnets land one after another, and Terraform parts land days later. Because a deny Rule lands on one side only ([ADR 0004](0004-place-rules-by-coverage.md)), an in-between state can open traffic that both the old and the new Version deny. Example: "deny Zone A → Zone B tcp/22" lands inbound on B. A Change set adds 203.0.113.5 to the destination, so the deny moves outbound to A. If B is written before A, and "allow Zone A → any" exists, A → B tcp/22 is open until A is written. The brief also requires deployments that are idempotent and resumable, and never silently half-applied.
+
+We decided:
+
+- **A Version records intent and exists from the moment of its Commit.** Each affected Environment gets a Deployment with its own result. For every resource it writes, the tool stores the **Deployed state**, the content it last wrote successfully. Drift is measured against the Deployed state, not against the Version. A Deployment always plans from the Deployed state to the latest Version, so a newer Deployment to the same Environment supersedes an unfinished one and also delivers what that one did not.
+- **Every Deployment runs Prep, Tighten, Loosen and Cleanup.** Prep creates resources that open nothing (new NSGs without a subnet, empty Managed ASGs). The Tighten phase writes only what closes traffic. A Managed NSG whose change both closes and opens traffic gets an interim content: it keeps the old deny NSG rules, adds the new ones, and keeps each changed allow NSG rule only as the intersection of its old and new match, at the later of its two positions. The Loosen phase writes the new content. Cleanup deletes unreferenced Managed ASGs and the NSGs of Zones without a subnet. As a result, Azure never allows traffic that both the old and the new Version deny, and newly allowed traffic opens only after all newly denied traffic is closed.
+- **A failed or pending closing write holds back opening writes on its Affected Zones.** A flow can open by mistake only if it passes the NSG that has not closed yet and an NSG that has already opened, and only if a changed Rule matches the flow. Both NSGs then belong to the Affected Zones of that Commit. So every Loosen write to a Managed NSG of those Zones waits, in later Commits too, until the closing write succeeds or is no longer needed. This also holds for a Terraform part that closes traffic and whose pull request is still open. There is no override: the ways out are Retry, a fixing Change set, or a Revert, which an admin can make as an Emergency Commit.
+
+## Considered Options
+
+- **Version only after a successful Deployment.** Rejected. Serialized Commits would wait for Terraform pull requests, and a partial Deployment would match no Version.
+- **Write the restrictive NSGs first, with no interim content.** Rejected. It needs fewer writes, but an NSG whose change both closes and opens traffic can still open a flow that both Versions deny.
+- **No ordering.** Rejected for the same reason. It is fastest, but it can open traffic while a Deployment runs.
+- **Queue Deployments per Environment.** Rejected. A write that keeps failing, for example because of a Policy deny, would block the fix behind it.
+- **Hold back only inside the Commit that failed.** Rejected. The next unrelated Commit would supersede the held Deployment and carry its opening writes into Azure.
+- **Hold back every opening write in the instance.** Rejected. It gives the same guarantee, but one Policy deny or one open Terraform pull request would stop every opening change, including emergency fixes, in Zones that the failure cannot affect.
+
+## Consequences
+
+- An NSG whose change both closes and opens traffic costs two writes against the 1,000 Microsoft.Network writes per 5 minutes. The Preview shows the number of writes and the estimated duration.
+- The interim content counts against the NSG limits. A breach is a validation error. The fix is to commit the closing edits first, in their own Change set, which needs no interim content.
+- The Translation engine computes interim contents and the held set as pure functions. [Prototype: Translation engine worked examples](https://github.com/mfgAkilae/nsgfw/issues/22) checks the intersection algorithm and the argument for holding back on Affected Zones.
+- Recovery after a crash compares each in-flight write with its target and with the Deployed state, so every write can be repeated safely.
+- The guarantee assumes that one NSG PUT takes effect as a whole. [Task: Empirical checks of undocumented Azure behaviour](https://github.com/mfgAkilae/nsgfw/issues/24) checks this. If it fails, this decision must be revisited.
+- Inside a Terraform Environment, Terraform's apply order decides; [Grilling: Terraform mode workflow](https://github.com/mfgAkilae/nsgfw/issues/17) covers it.

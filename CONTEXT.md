@@ -135,15 +135,29 @@ _Avoid_: diff, plan
 Consent from an approver before a Commit. Each Affected Zone needs the Approval level that its Scope requires: none, approver (an Author may approve) or four-eyes (an approver who is not an Author). One approver's Approval counts for every Affected Zone in which that person holds the approver Role.
 
 **Commit**:
-Delivering an approved Change set to Azure through the Deployment mode of each affected Environment. Every Commit creates a Version.
+Turning an approved Change set into the next Version and starting a Deployment to each affected Environment. The Version exists from the moment of the Commit, whether or not its Deployments succeed. A Commit runs at once or at a time the committer chooses.
 _Avoid_: push, apply, publish
+
+**Deployment**:
+The delivery of one Version to one Environment through that Environment's Deployment mode. A Commit starts one Deployment per affected Environment, and each Deployment has its own result. A Deployment starts from the Deployed state, so a newer Version's Deployment supersedes an unfinished Deployment to the same Environment and also delivers what that one did not.
+_Avoid_: rollout, push
+
+**Tighten phase**:
+The phase of a Deployment that writes only what closes traffic. A Managed NSG whose change both closes and opens traffic gets an interim content in this phase that allows only what both the old and the new content allow.
+
+**Loosen phase**:
+The phase of a Deployment that writes everything that opens traffic. It starts only after the Tighten phase has finished. Together, the two phases make sure that Azure never allows traffic that both the old and the new Version deny, and that newly allowed traffic opens only after all newly denied traffic is closed.
+
+**Deployed state**:
+For each Azure resource the tool writes, the content the tool last wrote to it successfully.
+_Avoid_: actual state, current state
 
 **Emergency Commit**:
 A Commit that an admin makes without the required Approval, with a mandatory reason. It stays open until an approver approves it afterwards.
 _Avoid_: break-glass, bypass
 
 **Version**:
-A stored, committed state of the Rule base that can be rolled back to.
+A stored, committed state of the Rule base that can be rolled back to. It records what was decided; whether Azure matches it is the result of its Deployments.
 _Avoid_: revision, snapshot
 
 **Restore**:
@@ -161,7 +175,7 @@ How a Commit reaches Azure: directly through the Azure Resource Manager API, or 
 Converting existing NSGs and NSG rules into the Rule base.
 
 **Drift**:
-A difference between Azure and the last committed Version, caused outside the tool, for example in the portal, the CLI or other IaC.
+A difference between Azure and the Deployed state, caused outside the tool, for example in the portal, the CLI or other IaC. A resource that a Deployment has not reached yet is pending, not drifted.
 
 ### Access
 
