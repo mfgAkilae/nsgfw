@@ -7,7 +7,7 @@ nsgfw manages Azure Network Security Groups the way a classic firewall console m
 ### Rule base
 
 **Rule base**:
-The central, ordered set of Rules together with the Objects and Zones they reference. It is the only source from which the tool derives Managed NSGs.
+The central, ordered set of Rules together with the Objects and Zones they reference. It is the only source from which the tool derives Managed NSGs. There is exactly one Rule base per tool instance, and it spans all Environments.
 _Avoid_: policy, ruleset, NSG configuration
 
 **Rule**:
@@ -33,6 +33,14 @@ _Avoid_: port object, application
 A named group of Service objects.
 
 ### Azure side
+
+**Environment**:
+A named part of the Azure estate in the tool's tenant, defined as one management group or a list of subscriptions, that the tool manages with its own naming pattern, Deployment mode and Terraform templates. Each subscription belongs to at most one Environment. Environments partition Azure, not the Rule base.
+_Avoid_: stage, landing zone, tenant
+
+**Tool identity**:
+The single Azure identity through which the tool reads and changes Azure in every Environment: a managed identity when the tool runs in Azure, a service principal with a certificate when it runs on-premises.
+_Avoid_: service account, app identity
 
 **Managed NSG**:
 An NSG that the tool created, or that an administrator explicitly imported, tagged as managed by the tool. The tool modifies no other NSG.
@@ -72,7 +80,7 @@ _Avoid_: diff, plan
 Consent from an approver before a Commit. The required level is configurable per Scope, from none to four-eyes.
 
 **Commit**:
-Delivering an approved Change set to Azure through the Deployment mode of its environment. Every Commit creates a Version.
+Delivering an approved Change set to Azure through the Deployment mode of each affected Environment. Every Commit creates a Version.
 _Avoid_: push, apply, publish
 
 **Version**:
@@ -94,4 +102,4 @@ A difference between Azure and the last committed Version, caused outside the to
 Viewer, editor, approver or admin, each limited to a Scope.
 
 **Scope**:
-A subscription, VNet or Zone that limits a Role or an Approval requirement.
+An Environment, subscription, VNet or Zone that limits a Role or an Approval requirement. Environment is the coarsest Scope.
