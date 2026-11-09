@@ -23,16 +23,24 @@ The implicit allow for traffic that stays inside one Zone. It sits below every R
 _Avoid_: intrazone rule
 
 **Zone**:
-A subnet that an administrator has onboarded so that Rules can use it as source or destination. Zones are the primary way to choose where traffic comes from and where it goes. Each Zone has its own name, unique in the Rule base, and exactly one Managed NSG. A subnet that cannot carry a Managed NSG, such as GatewaySubnet, never becomes a Zone.
+A subnet that an administrator has onboarded so that Rules can use it as source or destination. Zones are the primary way to choose where traffic comes from and where it goes. Each Zone has its own name, unique in the Rule base, and exactly one Managed NSG. Its addresses are the subnet's prefixes and its Extra prefixes. A subnet that cannot carry a Managed NSG, such as GatewaySubnet, a subnet that forwards traffic for others, or a subnet whose NSG a service maintains, never becomes a Zone.
 _Avoid_: segment, network, NSG
 
+**Extra prefixes**:
+Prefixes that an administrator adds to a Zone because its Managed NSG sees them although they are not in the subnet, such as the pod range of an AKS cluster. They count as part of the Zone, and several Zones can have the same ones.
+_Avoid_: secondary prefixes, additional ranges
+
 **Coverage**:
-The Zones that a Zone, Address object or Address group stands for. A Zone covers itself, a VNet covers the Zones inside it, a single IP or CIDR range covers every Zone whose prefixes it overlaps, an ASG object or External ASG object covers the Zones that hold its ASG members, and an Address group covers the union of its members. A service tag and a subnet that is not a Zone cover no Zone. The Translation engine places a Rule only on the Managed NSGs in the Coverage of its source and destination, so the NSGs together decide every flow the way one firewall would.
+The Zones that a Zone, Address object or Address group stands for. A Zone covers itself, a VNet covers the Zones inside it, a single IP or CIDR range covers every Zone whose addresses it overlaps, within its VNet binding if it has one, an ASG object or External ASG object covers the Zones that hold its ASG members, and an Address group covers the union of its members. A service tag and a subnet that is not a Zone cover no Zone. The Translation engine places a Rule only on the Managed NSGs in the Coverage of its source and destination, so the NSGs together decide every flow the way one firewall would.
 _Avoid_: scope (reserved for access), footprint
 
 **Address object**:
 A named single IP, CIDR range, Azure service tag, subnet that is not a Zone, VNet, ASG object, External ASG object, or Address group. The built-in Address object any stands for every IPv4 and IPv6 address.
 _Avoid_: host, network object
+
+**VNet binding**:
+An optional limit on a single IP or CIDR range Address object: it then covers only Zones in the named VNets. It keeps an address apart from the same address in an unconnected VNet.
+_Avoid_: VNet scope (Scope is reserved for access), object scope
 
 **ASG object**:
 An Address object whose ASG members an administrator selects in the tool. The tool writes them into one Managed ASG per VNet that holds ASG members. Its membership changes only through Change sets.
@@ -99,6 +107,14 @@ An NSG rule that lists several prefixes, port ranges or ASGs in one field, used 
 The explicit deny-all NSG rules, inbound and outbound, at the lowest custom priority of every Managed NSG. Where Azure forbids the outbound one, as in an Application Gateway v2 subnet, the Zone keeps outbound open. They turn Azure's permissive defaults into the implicit deny that firewall administrators expect.
 _Avoid_: implicit deny, cleanup rule
 
+**Egress posture**:
+A Zone setting that says who decides outbound traffic to the Internal address space. Destination-enforced, the default, lets it out, so the inbound NSG rules of the destination Zone decide. Strict lets out only what a Rule allows, so both Zones decide.
+_Avoid_: outbound mode, egress policy
+
+**Internal address space**:
+The instance-wide list of prefixes that count as internal, by default the private IPv4 ranges. A Zone with the destination-enforced Egress posture lets outbound traffic to it pass.
+_Avoid_: VirtualNetwork (the service tag), private space
+
 **Inherited defaults**:
 A Zone setting that keeps what the Azure default rules allowed before onboarding: inbound from `VirtualNetwork`, outbound to `VirtualNetwork` and outbound to `Internet`, each on its own. It applies on the Zone's own Managed NSG only, below the Intra-zone default and above the Deny-all rules, and is removed through a Change set.
 _Avoid_: baseline rules, legacy defaults
@@ -113,6 +129,14 @@ The fixed rules that Azure adds to every NSG, such as AllowVnetInBound and Allow
 **Security layer**:
 A set of rules outside the tool's control that also decides the traffic of a Zone: the Azure Virtual Network Manager security admin rules applied to the Zone's VNet, which Azure evaluates before any NSG, and the NIC-level NSGs of the network interfaces in the Zone, which traffic must pass in addition to the Managed NSG. Shown read-only. A Rule gets a warning where a Security layer blocks traffic that the Rule allows, or lets through traffic that the Rule denies.
 _Avoid_: overlay, other layers
+
+**Flow view**:
+The list of flows that a Zone's Managed NSG allowed or denied, read from the VNet flow logs that the operator has enabled. Shown read-only.
+_Avoid_: traffic log, flow log (the Azure resource)
+
+**Hits**:
+The number of flows that matched the NSG rules of a Rule, from the same data as the Flow view.
+_Avoid_: hit count, policy hit
 
 **Translation engine**:
 The part of the tool that converts the Rule base into Managed NSGs, NSG rules, ASGs and subnet associations.
@@ -132,11 +156,11 @@ The one person who manages a Change set: adds co-editors, submits it for Approva
 _Avoid_: owner, assignee
 
 **Rebase**:
-Moving an open Change set onto the latest Version after another Commit. It conflicts when both changed the same Rule, Object or Zone, or the neighbours of a Rule it placed.
+Moving an open Change set onto the latest Version after another Commit. It conflicts when both changed the same Rule, Object or Zone, or when the other Commit changed the order between a Rule it placed and an overlapping Rule with the other action.
 _Avoid_: merge, sync, update
 
 **Affected Zones**:
-The Zones a Change set touches for Approval: the Coverage of source and destination of every Rule it changes directly or through a changed Object or Zone, before and after the change, plus the Zones of added or removed ASG members and the Zones it onboards, removes or changes.
+The Zones a Change set touches for Approval. For every Rule it changes directly or through a changed Object or Zone, before and after the change, they are the Coverage of the destination, and from the Coverage of the source the Zones with a strict Egress posture, or all of them when the destination reaches outside Zones. To these come the Zones of added or removed ASG members and the Zones it onboards, removes or changes.
 _Avoid_: blast radius, impacted NSGs
 
 **Preview**:
@@ -206,11 +230,11 @@ A flag on an imported Rule where the NSG rule did not map cleanly, naming the so
 A difference between Azure and the Deployed state, caused outside the tool, for example in the portal, the CLI or other IaC. A resource that a Deployment has not reached yet is pending, not drifted. Drift is resolved by Adopt or Overwrite.
 
 **Adopt**:
-Resolving Drift, or another change in Azure such as a new subnet prefix, by changing the Rule base to match Azure, through a Change set that the tool prepares.
+Resolving Drift, or another change in Azure such as a new subnet prefix, by changing the Rule base to match Azure, through a Change set that the tool prepares. For a changed ASG member, the tool adopts on its own what only closes traffic, and every change of an Object that an admin set to adopt automatically.
 _Avoid_: accept, import, adopt in place (taking over a resource)
 
 **Overwrite**:
-Resolving Drift by writing the Deployed state back to Azure. It needs no Approval.
+Resolving Drift by writing the Deployed state back to Azure. It needs no Approval. An Environment can let the tool do it on its own for a lost subnet association or marker tag.
 _Avoid_: revert (a Change set), repair
 
 ### Access

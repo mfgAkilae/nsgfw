@@ -1,6 +1,9 @@
 # Place Rules by Coverage, and Deny Rules on one side only
 
-Status: accepted (2026-11-09, [Grilling: Rule placement and default posture](https://github.com/mfgAkilae/nsgfw/issues/12))
+Status: accepted (2026-11-09, [Grilling: Rule placement and default posture](https://github.com/mfgAkilae/nsgfw/issues/12)). Amended on 2026-11-09 by two later ADRs:
+
+- [ADR 0016](0016-destination-enforced-egress-and-deny-rules-on-both-sides.md): deny Rules land on both sides like allow Rules, and a Zone's Egress posture decides which outbound NSG rules it gets. The second paragraph below, and the options and consequences about one-sided deny Rules, no longer apply.
+- [ADR 0017](0017-extra-prefixes-and-vnet-bindings.md): Coverage also counts a Zone's Extra prefixes and respects VNet bindings. Overlapping address spaces are no longer accepted as harmless.
 
 The brief turns a Rule "A → B" into an outbound NSG rule on A's NSG and an inbound NSG rule on B's NSG. It does not say what happens when a source or destination is not a Zone. Every Managed NSG ends with Deny-all rules in both directions. So if a Rule "10.1.0.5 → Zone B" landed only on Zone B, and 10.1.0.5 sits inside Zone A, Zone A's outbound Deny-all would drop the traffic and the Rule would never work. We decided that a Rule lands on the Coverage of its source as outbound NSG rules and on the Coverage of its destination as inbound NSG rules. The Coverage of a Zone is the Zone itself. The Coverage of a VNet is the Zones inside it. An IP or CIDR range (including the built-in any) covers every Zone whose prefixes it overlaps, an ASG covers the Zones that hold its member NICs, and an Address group covers the union of its members. Service tags and subnets that are not Zones cover no Zone. Allow Rules land on both sides. The NSGs then reach the same result for every flow as first-match evaluation of the Rule base on a single firewall, which the later packet tracer reuses.
 
