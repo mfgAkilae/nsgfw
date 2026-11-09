@@ -204,7 +204,13 @@ _Avoid_: revert (a Change set), repair
 ### Access
 
 **Role**:
-Viewer, editor, approver or admin, each limited to a Scope.
+Viewer, editor, approver or admin, which an admin assigns in the tool to an Entra user, group, service principal or managed identity in one Scope. Each Role includes the Roles before it, and a Role in a Scope holds in every Scope below it. The Entra app role InstanceAdmin, maintained outside the tool, grants admin in the instance Scope.
+_Avoid_: permission, app role (the Entra construct)
 
 **Scope**:
-An Environment, subscription, VNet or Zone that limits a Role or an Approval requirement. Environment is the coarsest Scope.
+The instance, an Environment, a subscription, a VNet or a Zone, used to limit a Role or an Approval requirement. The instance is the root Scope for Roles; Approval requirements are set from Environment down, below the instance default.
+_Avoid_: Coverage (the Zones a Rule's source or destination stands for)
+
+**Audit log**:
+The append-only, tamper-evident record of who did what in the tool, when and why, and with what result. It is never edited or pruned. Successful writes to Azure are recorded in the Deployment history instead.
+_Avoid_: activity log (Azure's own log), history
