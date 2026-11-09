@@ -1,0 +1,30 @@
+# Terraform mode: the tool owns only a Data contract, and Azure decides success
+
+Status: accepted (2026-11-09, [Grilling: Terraform mode workflow](https://github.com/mfgAkilae/nsgfw/issues/17))
+
+In a Terraform Environment the tool must not write the resources it manages; the repository's pipeline does. Customer repositories differ: their own modules, one root module (own state, own pipeline) per subscription or landing zone, and different CI systems. Rendering HCL from templates would need a template engine, escaping, a sandbox and HCL validation, and the tool would own code that the Terraform team wants to review and lint in Git. A merged pull request or a green pipeline also does not say what reached Azure, so neither can release Loosen writes that [ADR 0009](0009-tighten-then-loosen-deployments.md) holds back.
+
+We decided:
+
+- **The tool writes data, not HCL.** Per root module it writes one deterministic JSON file, the **Data contract**: the target content of every Managed NSG (full rule list, tags, `flushConnection`), the NSG of every Zone's subnet, the Managed ASGs, their memberships, import entries for resources that already exist in Azure, a revision value and the data contract version. A path pattern per subscription places the files. The tool regenerates and overwrites them in every pull request and never touches anything else in the repository.
+- **The repository owns the HCL that reads the Data contract.** The tool ships a default HCL once, in a bootstrap pull request at Environment onboarding: one `azapi_resource` per NSG with the complete rule list and `flushConnection`, `azapi_update_resource` on the subnet for the NSG association, azurerm resources for ASGs and their associations, and `import` blocks with `for_each`. Any replacement must keep two rules: one resource holds the complete rule list of an NSG, and the subnet's NSG is set in one subnet write.
+- **The repository's pipeline runs plan and apply.** The tool never reads state or backend credentials. Approval happens in the tool before the Commit; whether a person also reviews the pull request is the repository's branch protection. The tool requests auto-merge on its pull requests.
+- **Success is observed in Azure.** After the merge, the tool reads every resource of the pull request and compares it with the target. Only a match updates the Deployed state and releases held Loosen writes. If Azure does not match within the apply timeout, the rest is "merged, not applied".
+- **A Deployment that closes and opens traffic arrives as two pull requests.** The tool opens the Loosen pull request only after Azure shows the Tighten target. Cleanup rides in the last pull request.
+
+## Considered Options
+
+- **Rendered HCL through a template engine.** Rejected. The pull request would show literal HCL, but the tool would need escaping, a sandbox and HCL validation, and diffs would be larger.
+- **HCL stored in the tool as an Environment setting.** Rejected. Admins would edit HCL in a web form, and the repository's review and lint tooling would see it only as generated output.
+- **The tool runs plan, or plan and apply.** Rejected. It needs state and backend credentials, a Terraform binary in the image and, for apply, Azure write access in every Terraform Environment.
+- **Merge, or a green pipeline, counts as deployed.** Rejected. A failed or partial apply would go unnoticed, and held Loosen writes would be released too early.
+- **One pull request with a Preview warning, or with `depends_on` edges.** Rejected. One apply cannot write an NSG twice, so interim content is impossible, and the guarantee of ADR 0009 would not hold.
+- **Separate `azurerm_network_security_rule` resources.** Rejected. Priority shifts across them fail with `SecurityRuleConflict`, and the provider cannot order them.
+- **`azurerm_subnet_network_security_group_association`.** Rejected. Replacing it detaches the old NSG before it attaches the new one, and the ALZ policy `Deny-Subnet-Without-Nsg` denies the subnet write in between.
+
+## Consequences
+
+- The tool does not parse the repository's HCL. Azure observation catches wrong content, but not wrong order. A repository HCL that breaks the two rules above can break the guarantee of ADR 0009 without anyone noticing, so the documentation states them.
+- Every apply of a root module reverts Drift on all tool resources in it. The Drift pre-check therefore covers every tool resource in the touched root modules, and overwrite and Retry use pull requests that change only the revision value.
+- Minimum versions: Terraform 1.7 (`import` with `for_each`), azurerm 5.x, azapi 2.x.
+- The Environment setting "Terraform templates" from [Grilling: Environment and tenancy model](https://github.com/mfgAkilae/nsgfw/issues/9) becomes: Git repository and base branch, path pattern, data contract version, auto-merge switch and apply timeout.

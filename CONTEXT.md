@@ -59,7 +59,7 @@ A named group of Service objects.
 ### Azure side
 
 **Environment**:
-A named part of the Azure estate in the tool's tenant, defined as one management group or a list of subscriptions, that the tool manages with its own naming pattern, Deployment mode and Terraform templates. Each subscription belongs to at most one Environment. Environments partition Azure, not the Rule base.
+A named part of the Azure estate in the tool's tenant, defined as one management group or a list of subscriptions, that the tool manages with its own naming pattern, Deployment mode and, in Terraform mode, Terraform repository. Each subscription belongs to at most one Environment. Environments partition Azure, not the Rule base.
 _Avoid_: stage, landing zone, tenant
 
 **Tool identity**:
@@ -139,7 +139,7 @@ Turning an approved Change set into the next Version and starting a Deployment t
 _Avoid_: push, apply, publish
 
 **Deployment**:
-The delivery of one Version to one Environment through that Environment's Deployment mode. A Commit starts one Deployment per affected Environment, and each Deployment has its own result. A Deployment starts from the Deployed state, so a newer Version's Deployment supersedes an unfinished Deployment to the same Environment and also delivers what that one did not.
+The delivery of one Version to one Environment through that Environment's Deployment mode. A Commit starts one Deployment per affected Environment, and each Deployment has its own result. A Deployment starts from the Deployed state, so a newer Version's Deployment supersedes an unfinished Deployment to the same Environment and also delivers what that one did not. In a Terraform Environment a Deployment arrives as one pull request, or as a Tighten pull request followed by a Loosen pull request. It is deployed only when Azure shows its target, not when a pull request merges.
 _Avoid_: rollout, push
 
 **Tighten phase**:
@@ -149,7 +149,7 @@ The phase of a Deployment that writes only what closes traffic. A Managed NSG wh
 The phase of a Deployment that writes everything that opens traffic. It starts only after the Tighten phase has finished. Together, the two phases make sure that Azure never allows traffic that both the old and the new Version deny, and that newly allowed traffic opens only after all newly denied traffic is closed.
 
 **Deployed state**:
-For each Azure resource the tool writes, the content the tool last wrote to it successfully.
+For each Azure resource the tool writes, the content the tool last wrote to it successfully. In a Terraform Environment, it is the content of the tool's merged Data contract that the tool has seen in Azure.
 _Avoid_: actual state, current state
 
 **Emergency Commit**:
@@ -169,7 +169,11 @@ A Change set that undoes the edits of one earlier Commit on top of the latest Ve
 _Avoid_: rollback, undo
 
 **Deployment mode**:
-How a Commit reaches Azure: directly through the Azure Resource Manager API, or as generated Terraform code in a pull request.
+How a Commit reaches Azure: directly through the Azure Resource Manager API, or as a Data contract in a pull request to the Environment's Terraform repository, whose pipeline applies it.
+
+**Data contract**:
+The data the tool writes into a Terraform repository: one file per Terraform root module with the target content of every Managed NSG, subnet association, Managed ASG and ASG membership there. The tool owns these files and nothing else in the repository. The repository's own Terraform code reads them.
+_Avoid_: template, generated code
 
 **Import**:
 Converting existing NSGs and NSG rules into the Rule base.
