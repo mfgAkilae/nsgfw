@@ -15,11 +15,11 @@ One ordered entry in the Rule base, with name, source, destination, service, act
 _Avoid_: NSG rule, security rule, policy
 
 **Zone**:
-A subnet used as the source or destination of Rules. Zones are the primary way to choose where traffic comes from and where it goes. Each Zone has exactly one Managed NSG.
+A subnet that an administrator has onboarded so that Rules can use it as source or destination. Zones are the primary way to choose where traffic comes from and where it goes. Each Zone has its own name, unique in the Rule base, and exactly one Managed NSG. A subnet that cannot carry a Managed NSG, such as GatewaySubnet, never becomes a Zone.
 _Avoid_: segment, network, NSG
 
 **Address object**:
-A named single IP, CIDR range, Azure service tag, subnet, VNet, or Address group.
+A named single IP, CIDR range, Azure service tag, subnet that is not a Zone, VNet, or Address group.
 _Avoid_: host, network object
 
 **Address group**:
@@ -48,6 +48,10 @@ _Avoid_: tool NSG, owned NSG
 
 **Unmanaged NSG**:
 Any NSG that is not a Managed NSG, including every NIC-level NSG. Shown read-only.
+
+**Retired NSG**:
+A Managed NSG whose Zone was removed. It stays associated with its subnet and holds only the Deny-all rules, so the subnet stays protected. If the subnet becomes a Zone again, the Retired NSG becomes its Managed NSG again.
+_Avoid_: orphaned NSG, released NSG
 
 **NSG rule**:
 A security rule inside an Azure NSG. The Translation engine generates NSG rules from Rules.
