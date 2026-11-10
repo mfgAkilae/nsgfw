@@ -30,9 +30,9 @@ What the map owner provided or should provide:
 - [x] A dedicated test subscription with no production workloads and no deny policies on networking. The brief requires one for integration tests.
 - [x] A service principal with Owner on that subscription only: `az ad sp create-for-rbac --name nsgfw-empirical-checks --role Owner --scopes /subscriptions/<test-subscription>`. The agent needs Owner because the prober VM gets a role assignment on its own resource group. The credential stays outside the repo.
 - [ ] Recommended: a cost budget with an alert on the test subscription.
-- [x] The service principal stays for the nightly integration tests (map owner, 2026-11-10). Its credential expires after one year, the `create-for-rbac` default. To retire it: `az ad sp delete --id <appId>`.
+- [x] After the checks the map owner deleted the service principal, its Owner role assignment and its app registration (2026-11-10). The nightly integration tests need a new principal.
 - [x] T6: the app registration `nsgfw-t6-msal-check` and one interactive sign-in, both done with [t6-register.sh](empirical-checks/t6-register.sh) (steps in [T6](#t6-msal-node-with-a-managed-identity-as-federated-credential)).
-- [ ] After T6, delete the app registration: `az ad app delete --id <appId>`.
+- [x] After T6 the map owner deleted the app registration `nsgfw-t6-msal-check` and its service principal.
 
 The test subscription does not accept new resources in West Europe: "The selected region is currently not accepting new customers" (`RequestDisallowedByAzure`). The checks use North Europe, plus Sweden Central for one resource in another region. The subscription has a quota of 0 cores for the Basv2 family and 10 for the BS family per region, so the VMs are `Standard_B1s`.
 
