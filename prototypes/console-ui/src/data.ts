@@ -24,7 +24,12 @@ export interface Rule {
   id: string; name: string; src: string[]; dst: string[]; svc: string[]; action: Action; enabled: boolean;
   comment: string; ticket: string; owner: string; expiry?: string; hits: number | null;
   policy?: string; importNote?: 'blocking' | 'warning' | 'info'; layerWarn?: string;
+  folder?: string;
 }
+// A Folder is a named, contiguous run of Rules. It only organises: the Translation engine never sees it.
+export interface FolderRow { id: string; folderRow: true; name: string }
+export type Entry = Rule | FolderRow;
+export const isFolder = (e: unknown): e is FolderRow => !!(e as FolderRow | undefined)?.folderRow;
 
 export const envs: Env[] = [
   { id: 'prod', name: 'Production', mode: 'ARM', level: 'four-eyes' },
@@ -176,6 +181,23 @@ const top: Partial<Rule>[] = [
 ];
 rules.unshift(...top.map(t => ({ enabled: true, ...t }) as Rule));
 rules.length = 10000;
+
+// The Rule base as it is shown: Folder rows followed by their Rules, and Rules outside every Folder in between.
+export const entries: Entry[] = [];
+{
+  const add = (id: string, name: string, from: number, to: number) => { entries.push({ id, folderRow: true, name }); for (let i = from; i < to; i++) { rules[i].folder = id; entries.push(rules[i]); } };
+  entries.push(rules[0]);
+  add('F01', 'App0042 release', 1, 4); add('F02', 'Platform and admin access', 4, 6);
+  const names = ['Internet edge', 'Shared services', 'Monitoring and backup', 'Identity and directory', 'Partner access', 'Build and deploy', 'Data platform', 'Web applications',
+    'Internal applications', 'Batch and integration', 'Databases', 'Messaging', 'Kubernetes platforms', 'Virtual desktops', 'Sandbox', 'Legacy, to review'];
+  let i = 6, n = 0;
+  while (i < 9800) {
+    const to = Math.min(9800, i + 120 + Math.floor(rnd() * 900));
+    add(`F${pad(n + 3, 2)}`, names[n % names.length] + (n >= names.length ? ` ${Math.floor(n / names.length) + 1}` : ''), i, to); i = to; n++;
+    if (rnd() < 0.3) for (let k = 1 + Math.floor(rnd() * 3); k > 0 && i < 9800; k--) entries.push(rules[i++]);
+  }
+  for (; i < rules.length; i++) entries.push(rules[i]);
+}
 
 export const me = 'you';
 export const versions = { latest: 1288, base: 1287 };

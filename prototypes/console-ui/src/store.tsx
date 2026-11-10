@@ -1,9 +1,9 @@
 // PROTOTYPE, throwaway. In-memory Change set state and a mock Preview. No persistence, no real Translation engine.
 import { createContext, useContext, useMemo, useRef, useState, ReactNode } from 'react';
-import { rules as initialRules, Rule, ref, zoneById, envs, Level, me, versions } from './data';
+import { rules as initialRules, entries as initialEntries, Rule, Entry, FolderRow, isFolder, ref, zoneById, envs, Level, me, versions } from './data';
 
 export type CsState = 'Open' | 'Submitted' | 'Approved' | 'Committed';
-export interface Edit { seq: number; kind: 'add' | 'edit' | 'move' | 'delete' | 'enable' | 'disable'; ruleId: string; field?: string; before?: string; after?: string; by: string }
+export interface Edit { seq: number; kind: 'add' | 'edit' | 'move' | 'delete' | 'enable' | 'disable' | 'folder'; ruleId: string; field?: string; before?: string; after?: string; by: string }
 export interface St { added?: boolean; deleted?: boolean; moved?: boolean; changed?: Set<string> }
 export interface ChangeSet { id: string; name: string; owner: string; state: CsState; base: number; authors: string[]; edits: number; affected: number; rebase?: boolean; emergency?: boolean; scheduled?: string; mine?: boolean }
 export type Scenario = 'auto' | 'crossing' | 'unorderable';
@@ -23,10 +23,13 @@ export const alsoChanged = new Map<string, { set: string; by: string }>([
 
 let nextId = 95000;
 const fmt = (v: unknown) => (Array.isArray(v) ? v.map(x => (String(x).startsWith('svc') ? x : ref(String(x)).name)).join(', ') : String(v ?? ''));
+const blockEnd = (es: Entry[], head: number) => { const fid = es[head].id; let end = head + 1; while (end < es.length && !isFolder(es[end]) && (es[end] as Rule).folder === fid) end++; return end; };
 
 function useStoreValue() {
   const base = useRef(new Map(initialRules.map((r, i) => [r.id, { rule: r, pos: i }]))).current;
-  const [rules, setRules] = useState<Rule[]>(initialRules);
+  const [entries, setEntries] = useState<Entry[]>(initialEntries);
+  const rules = useMemo(() => entries.filter((e): e is Rule => !isFolder(e)), [entries]);
+  const folders = useMemo(() => entries.filter(isFolder), [entries]);
   const [edits, setEdits] = useState<Edit[]>([]);
   const [state, setState] = useState<CsState>('Open');
   const [approvedBy, setApprovedBy] = useState<Record<string, string>>({});
@@ -35,11 +38,13 @@ function useStoreValue() {
   const [emergency, setEmergency] = useState<string | null>(null);
   const seq = useRef(0);
 
-  const log = (e: Omit<Edit, 'seq' | 'by'>[]) => { setEdits(x => [...x, ...e.map(i => ({ ...i, seq: ++seq.current, by: me }))]); if (state !== 'Open') setState('Open'); };
+  const log = (e: Omit<Edit, 'seq' | 'by'>[]) => { if (!e.length) return; setEdits(x => [...x, ...e.map(i => ({ ...i, seq: ++seq.current, by: me }))]); if (state !== 'Open') setState('Open'); };
+  const mapRules = (fn: (r: Rule) => Rule) => setEntries(es => es.map(e => (isFolder(e) ? e : fn(e))));
 
   const status = useMemo(() => {
     const m = new Map<string, St>();
     for (const e of edits) {
+      if (e.kind === 'folder') continue;
       const s = m.get(e.ruleId) ?? {};
       if (e.kind === 'add') s.added = true;
       else if (e.kind === 'delete') s.deleted = true;
@@ -49,55 +54,99 @@ function useStoreValue() {
     }
     return m;
   }, [edits]);
-
   const numbers = useMemo(() => { const m = new Map<string, number>(); let n = 0; for (const r of rules) if (!status.get(r.id)?.deleted) m.set(r.id, ++n); return m; }, [rules, status]);
 
+  // Place entries at a target. A Rule dropped on a Folder row or on one of its Rules joins that Folder. A Folder moves with its Rules and stays at the top level.
+  const place = (es: Entry[], ids: string[], targetId: string | null, where: 'before' | 'after', forceRoot = false) => {
+    const set = new Set(ids);
+    const movingFolder = es.some(e => isFolder(e) && set.has(e.id));
+    if (movingFolder) for (const e of es) if (!isFolder(e) && e.folder && set.has(e.folder)) set.add(e.id);
+    const moving = es.filter(e => set.has(e.id)); const rest = es.filter(e => !set.has(e.id));
+    let at = where === 'before' ? 0 : rest.length; let folder: string | undefined;
+    if (targetId) {
+      const ti = rest.findIndex(e => e.id === targetId); const tg = rest[ti]; if (!tg) return es;
+      const fid = isFolder(tg) ? tg.id : tg.folder;
+      if ((movingFolder || forceRoot) && fid) { const head = rest.findIndex(e => e.id === fid); at = where === 'before' ? head : blockEnd(rest, head); }
+      else if (isFolder(tg)) { at = ti + (where === 'after' ? 1 : 0); folder = where === 'after' ? tg.id : undefined; }
+      else { at = ti + (where === 'after' ? 1 : 0); folder = forceRoot ? undefined : tg.folder; }
+    }
+    const placed = moving.map(e => (isFolder(e) || movingFolder ? e : { ...e, folder }));
+    return [...rest.slice(0, at), ...placed, ...rest.slice(at)];
+  };
+  const logMoves = (before: Entry[], after: Entry[], ids: Set<string>) => {
+    const num = (es: Entry[]) => { const m = new Map<string, number>(); let n = 0; for (const e of es) if (!isFolder(e)) m.set(e.id, ++n); return m; };
+    const a = num(before), b = num(after); const fname = (es: Entry[], f?: string) => (f ? (es.find(e => e.id === f) as FolderRow | undefined)?.name ?? '' : '');
+    const out: Omit<Edit, 'seq' | 'by'>[] = [];
+    for (const e of after) if (!isFolder(e) && ids.has(e.id)) { const old = before.find(x => x.id === e.id) as Rule; const inF = e.folder !== old.folder ? ` (${e.folder ? `into “${fname(after, e.folder)}”` : `out of “${fname(before, old.folder)}”`})` : ''; if (a.get(e.id) !== b.get(e.id) || inF) out.push({ kind: 'move', ruleId: e.id, before: `#${a.get(e.id)}`, after: `#${b.get(e.id)}${inF}` }); }
+    log(out);
+  };
+  const relocate = (ids: string[], targetId: string | null, where: 'before' | 'after', forceRoot = false) => setEntries(es => {
+    const out = place(es, ids, targetId, where, forceRoot); if (out === es) return es;
+    const moved = new Set(ids); for (const e of es) if (!isFolder(e) && e.folder && moved.has(e.folder)) moved.add(e.id);
+    logMoves(es, out, moved);
+    const f = es.find(e => isFolder(e) && moved.has(e.id)) as FolderRow | undefined; if (f) log([{ kind: 'folder', ruleId: f.id, after: `Folder “${f.name}” moved with its Rules` }]);
+    return out;
+  });
+
   const api = {
-    rules, edits, status, numbers, base, state, version, scenario, setScenario, approvedBy, emergency,
+    entries, rules, folders, edits, status, numbers, base, state, version, scenario, setScenario, approvedBy, emergency,
     editField(id: string, field: keyof Rule, value: unknown) {
-      setRules(rs => rs.map(r => {
-        if (r.id !== id) return r;
-        log([{ kind: 'edit', ruleId: id, field, before: fmt(r[field]), after: fmt(value) }]);
-        return { ...r, [field]: value };
-      }));
+      const r = rules.find(x => x.id === id); if (!r || fmt(r[field]) === fmt(value)) return;
+      log([{ kind: 'edit', ruleId: id, field, before: fmt(r[field]), after: fmt(value) }]);
+      mapRules(x => (x.id === id ? { ...x, [field]: value } : x));
     },
     setEnabled(ids: string[], enabled: boolean) {
-      const set = new Set(ids);
-      setRules(rs => rs.map(r => (set.has(r.id) && r.enabled !== enabled ? { ...r, enabled } : r)));
-      log(ids.map(id => ({ kind: enabled ? 'enable' : 'disable', ruleId: id, field: 'enabled', before: String(!enabled), after: String(enabled) })));
+      const set = new Set(ids); const hit = rules.filter(r => set.has(r.id) && r.enabled !== enabled);
+      mapRules(r => (set.has(r.id) && r.enabled !== enabled ? { ...r, enabled } : r));
+      log(hit.map(r => ({ kind: enabled ? 'enable' : 'disable', ruleId: r.id, field: 'enabled', before: String(!enabled), after: String(enabled) })));
     },
-    move(ids: string[], targetId: string | null, where: 'before' | 'after' = 'before') {
-      const set = new Set(ids);
-      setRules(rs => {
-        const moving = rs.filter(r => set.has(r.id));
-        const rest = rs.filter(r => !set.has(r.id));
-        const ti = targetId ? rest.findIndex(r => r.id === targetId) : -1;
-        const at = targetId ? ti + (where === 'after' ? 1 : 0) : where === 'before' ? 0 : rest.length;
-        const out = [...rest.slice(0, at), ...moving, ...rest.slice(at)];
-        log(moving.map(r => ({ kind: 'move', ruleId: r.id, before: `#${rs.indexOf(r) + 1}`, after: `#${out.indexOf(r) + 1}` })));
-        return out;
+    move: relocate,
+    moveToFolder(ids: string[], folderId: string | null) {
+      if (folderId) { const rest = entries.filter(e => !ids.includes(e.id)); const head = rest.findIndex(e => e.id === folderId); if (head >= 0) relocate(ids, rest[blockEnd(rest, head) - 1].id, 'after'); }
+      else { const first = rules.find(r => ids.includes(r.id)); if (first?.folder) relocate(ids, first.folder, 'after', true); }
+    },
+    newFolder(name: string, ids: string[] = []) {
+      const id = `F${++nextId}`;
+      setEntries(es => {
+        const set = new Set(ids); const members = es.filter((e): e is Rule => set.has(e.id) && !isFolder(e)); const rest = es.filter(e => !set.has(e.id));
+        let at = 0;
+        if (members.length) { at = es.slice(0, es.findIndex(e => set.has(e.id))).filter(e => !set.has(e.id)).length; const fid = members[0].folder; const head = fid ? rest.findIndex(e => e.id === fid) : -1; if (head >= 0) at = head; }
+        const out = [...rest.slice(0, at), { id, folderRow: true as const, name }, ...members.map(m => ({ ...m, folder: id })), ...rest.slice(at)];
+        logMoves(es, out, set); return out;
       });
+      log([{ kind: 'folder', ruleId: id, after: `Folder “${name}” created` }]);
+      return id;
+    },
+    renameFolder(id: string, name: string) {
+      const f = folders.find(x => x.id === id); if (!f || !name.trim() || f.name === name) return;
+      setEntries(es => es.map(e => (e.id === id && isFolder(e) ? { ...e, name } : e)));
+      log([{ kind: 'folder', ruleId: id, after: `Folder renamed from “${f.name}” to “${name}”` }]);
+    },
+    deleteFolder(id: string) {
+      const f = folders.find(x => x.id === id); if (!f) return;
+      setEntries(es => es.filter(e => e.id !== id).map(e => (!isFolder(e) && e.folder === id ? { ...e, folder: undefined } : e)));
+      log([{ kind: 'folder', ruleId: id, after: `Folder “${f.name}” removed, its Rules stay in place` }]);
     },
     clone(ids: string[]) {
-      setRules(rs => {
-        const out: Rule[] = []; const added: Omit<Edit, 'seq' | 'by'>[] = [];
-        for (const r of rs) { out.push(r); if (ids.includes(r.id)) { const c = { ...r, id: `R${++nextId}`, name: `${r.name} (copy)`, hits: null }; out.push(c); added.push({ kind: 'add', ruleId: c.id, after: c.name }); } }
-        log(added); return out;
-      });
+      const added: Omit<Edit, 'seq' | 'by'>[] = [];
+      setEntries(es => { const out: Entry[] = []; for (const e of es) { out.push(e); if (!isFolder(e) && ids.includes(e.id)) { const c = { ...e, id: `R${++nextId}`, name: `${e.name} (copy)`, hits: null }; out.push(c); added.push({ kind: 'add', ruleId: c.id, after: c.name }); } } return out; });
+      setTimeout(() => log(added), 0);
     },
-    addRule(afterId?: string) {
+    addRule(afterId?: string, folderId?: string) {
       const r: Rule = { id: `R${++nextId}`, name: 'New Rule', src: ['any'], dst: ['any'], svc: ['svc-any'], action: 'deny', enabled: false, comment: '', ticket: '', owner: me, hits: null };
-      setRules(rs => { const i = afterId ? rs.findIndex(x => x.id === afterId) + 1 : 0; return [...rs.slice(0, i), r, ...rs.slice(i)]; });
+      setEntries(es => {
+        const anchor = folderId ? es.findIndex(e => e.id === folderId) : afterId ? es.findIndex(e => e.id === afterId) : -1; const a = es[anchor];
+        return [...es.slice(0, anchor + 1), { ...r, folder: a ? (isFolder(a) ? a.id : a.folder) : undefined }, ...es.slice(anchor + 1)];
+      });
       log([{ kind: 'add', ruleId: r.id, after: r.name }]);
       return r.id;
     },
     remove(ids: string[]) {
       const addedNow = ids.filter(id => status.get(id)?.added);
-      if (addedNow.length) { setRules(rs => rs.filter(r => !addedNow.includes(r.id))); setEdits(es => es.filter(e => !addedNow.includes(e.ruleId))); }
-      const rest = ids.filter(id => !addedNow.includes(id));
-      if (rest.length) log(rest.map(id => ({ kind: 'delete', ruleId: id })));
+      if (addedNow.length) { setEntries(es => es.filter(e => !addedNow.includes(e.id))); setEdits(es => es.filter(e => !addedNow.includes(e.ruleId))); }
+      log(ids.filter(id => !addedNow.includes(id)).map(id => ({ kind: 'delete' as const, ruleId: id })));
     },
-    discard() { setRules(initialRules); setEdits([]); setState('Open'); setApprovedBy({}); setEmergency(null); },
+    discard() { setEntries(initialEntries); setEdits([]); setState('Open'); setApprovedBy({}); setEmergency(null); },
     submit() { setState('Submitted'); },
     approveAs(who: string, envIds: string[]) { setApprovedBy(a => ({ ...a, ...Object.fromEntries(envIds.map(e => [e, who])) })); },
     commit(reason?: string) { setState('Committed'); setVersion(v => v + 1); if (reason) setEmergency(reason); },

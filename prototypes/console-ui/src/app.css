@@ -138,6 +138,19 @@ h3, h4 { font-size: 12.5px; font-weight: 600; color: var(--ink3); margin: 22px 0
 .rowacts button { width: 26px; height: 26px; border: 0; background: none; color: var(--ink2); border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .rowacts button:hover { background: var(--tok); color: var(--ink); } .rowacts button.danger:hover { color: var(--deny); background: var(--deny-tint); }
 
+/* Folder rows: the outline of the Rule base */
+.fold { display: flex; align-items: center; gap: 8px; height: 100%; padding: 0 10px 0 6px; background: var(--sunken); border-top: 1px solid var(--line); cursor: pointer; font-size: 13px; white-space: nowrap; overflow: hidden; }
+.fold:hover { background: var(--hover); } .fold:hover .rowacts { opacity: 1; }
+.fold-grip { display: flex; color: var(--ink3); cursor: grab; opacity: 0; width: 18px; justify-content: center; } .fold:hover .fold-grip { opacity: 1; }
+.fold-chev { color: var(--ink3); transition: transform .12s; flex-shrink: 0; } .fold.open .fold-chev { transform: rotate(90deg); }
+.fold-ic { color: var(--accent-text); flex-shrink: 0; }
+.fold b { font-weight: 650; font-size: 13.5px; } .fold-in { font: 650 13.5px inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--accent); border-radius: 5px; padding: 2px 6px; width: 260px; outline: 0; }
+.fold-n { color: var(--ink3); font-size: 12.5px; font-variant-numeric: tabular-nums; margin-left: 4px; }
+.fold-mix { display: flex; width: 54px; height: 4px; border-radius: 2px; overflow: hidden; gap: 1px; flex-shrink: 0; } .fold-mix .a { background: var(--allow); } .fold-mix .d { background: var(--deny); }
+.fold-s { color: var(--deny); font-size: 12px; font-weight: 600; }
+.row-infolder .ag-cell[col-id="name"] { padding-left: 30px; }
+.row-infolder .ag-cell[col-id="name"]::before { content: ''; position: absolute; left: 13px; top: 0; bottom: 0; width: 1.5px; background: var(--line); }
+
 /* the action as a row edge */
 .spine-allow::before, .spine-deny::before, .spine-off::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
 .spine-allow::before { background: var(--allow); } .spine-deny::before { background: var(--deny); }
@@ -215,7 +228,7 @@ h3, h4 { font-size: 12.5px; font-weight: 600; color: var(--ink3); margin: 22px 0
 .pal-l { max-height: 46vh; overflow: auto; padding: 6px; }
 .pal-g { font-size: 12px; font-weight: 600; color: var(--ink3); padding: 10px 12px 4px; }
 .pal-i { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; }
-.pal-i b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .pal-i span { color: var(--ink3); font-size: 12.5px; margin-left: auto; white-space: nowrap; } .pal-i .glyph { color: var(--accent-text); }
+.pal-i b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .pal-i span { color: var(--ink3); font-size: 12.5px; margin-left: auto; white-space: nowrap; } .pal-i .glyph, .pal-i > svg { color: var(--accent-text); flex-shrink: 0; }
 .pal-i.on { background: var(--accent-tint); }
 .pal-e { padding: 22px 14px; color: var(--ink2); font-size: 13.5px; }
 .pal-f { display: flex; align-items: center; gap: 6px; padding: 10px 16px; border-top: 1px solid var(--line); color: var(--ink3); font-size: 12px; } .pal-f kbd { margin-left: 8px; } .pal-f kbd:first-child { margin-left: 0; }

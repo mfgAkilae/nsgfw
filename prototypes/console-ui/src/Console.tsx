@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Switch, Tooltip } from '@fluentui/react-components';
 import { Add16Regular, Search16Regular, Dismiss16Regular, PanelRight20Regular, TextBulletListSquare20Regular, Grid20Regular, Box20Regular, BranchFork20Regular,
   WeatherMoon20Regular, WeatherSunny20Regular, Copy16Regular, Delete16Regular, Eye16Regular, EyeOff16Regular, ArrowSort16Regular, Send16Regular, ArrowRight12Filled,
-  Checkmark12Filled, Dismiss12Filled, Flash16Regular, ChevronDown12Regular, TextLineSpacing20Regular, LockClosed16Regular, Warning16Filled, ShieldError16Filled, PeopleSwap16Regular, LayerDiagonal16Regular } from '@fluentui/react-icons';
+  Checkmark12Filled, Dismiss12Filled, Flash16Regular, ChevronDown12Regular, TextLineSpacing20Regular, Folder16Regular, FolderAdd16Regular, FolderArrowRight16Regular, ArrowMaximizeVertical20Regular, ArrowMinimizeVertical20Regular, LockClosed16Regular, Warning16Filled, ShieldError16Filled, PeopleSwap16Regular, LayerDiagonal16Regular } from '@fluentui/react-icons';
 import { RuleGrid, RuleGridHandle, FilterKey, countFilters, systemTop, systemBottom, SysRow, compact } from './RuleGrid';
 import { ZoneGrid, Bar, LIMITS, EgressBadge, Flags } from './ZoneGrid';
 import { Glyph } from './Glyph';
@@ -30,6 +30,12 @@ export default function Console() {
   const [sel, setSel] = useState<string[]>([]); const [focused, setFocused] = useState<string | null>(null);
   const [dock, setDock] = useState<{ open: boolean; tab: 'rule' | 'cs'; cs: CsTab; auto: boolean }>({ open: false, tab: 'rule', cs: 'preview', auto: true });
   const [palette, setPalette] = useState<false | 'all' | 'zone'>(false); const [moveIds, setMoveIds] = useState<string[] | null>(null);
+  // Collapsing is a view setting of the person, not an edit to the Rule base.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(s.folders.slice(2).map(f => f.id)));
+  const [folderFor, setFolderFor] = useState<string[] | null>(null);
+  const toggleFolder = (id: string) => setCollapsed(c => { const n = new Set(c); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const allCollapsed = s.folders.length > 0 && s.folders.every(f => collapsed.has(f.id));
+  const unfold = (ruleId: string) => { const f = s.rules.find(r => r.id === ruleId)?.folder; if (f) setCollapsed(c => { if (!c.has(f)) return c; const n = new Set(c); n.delete(f); return n; }); };
   const grid = useRef<RuleGridHandle>(null); const search = useRef<HTMLInputElement>(null);
 
   const z = lens ? zoneById.get(lens.zid)! : null;
@@ -54,7 +60,7 @@ export default function Console() {
   const openDock = (tab: 'rule' | 'cs', cs?: CsTab) => setDock(d => ({ ...d, open: true, tab, cs: cs ?? d.cs }));
   const focusRule = (id: string) => { setFocused(id); setDock(d => (d.open && d.tab !== 'rule' ? d : d)); };
   const openRule = (id: string) => { setFocused(id); openDock('rule'); };
-  const jumpToRule = (id: string) => { setPage('rules'); setLens(null); setFilter('all'); setQ(''); setTimeout(() => { grid.current?.reveal(id); openRule(id); }, 80); };
+  const jumpToRule = (id: string) => { unfold(id); setPage('rules'); setLens(null); setFilter('all'); setQ(''); setTimeout(() => { grid.current?.reveal(id); openRule(id); }, 80); };
   const openZone = (zid: string) => { setPage('rules'); setLens({ zid, dir: 'in' }); setFilter('all'); setQ(''); };
   const newRule = () => { setPage('rules'); const id = s.addRule(focused ?? undefined); setTimeout(() => { grid.current?.reveal(id); setFocused(id); }, 80); };
 
@@ -98,9 +104,11 @@ export default function Console() {
                 <span className="sp" />
                 <Input ref={search} className="search" contentBefore={<Search16Regular />} contentAfter={<kbd>/</kbd>} placeholder={t('Filter Rules by name, object, ID or ticket')} value={q} onChange={(_, d) => setQ(d.value)} />
                 <button className="jump" onClick={() => setPalette('all')}>{t('Jump to')}<kbd>Ctrl K</kbd></button>
+                <Tooltip content={t(allCollapsed ? 'Open all Folders' : 'Close all Folders')} relationship="label"><button className="ib opt" onClick={() => setCollapsed(allCollapsed ? new Set() : new Set(s.folders.map(f => f.id)))}>{allCollapsed ? <ArrowMaximizeVertical20Regular /> : <ArrowMinimizeVertical20Regular />}</button></Tooltip>
                 <Tooltip content={t(dense ? 'Comfortable rows' : 'Compact rows')} relationship="label"><button className={`ib opt ${dense ? 'on' : ''}`} onClick={() => setDense(!dense)}><TextLineSpacing20Regular /></button></Tooltip>
                 <Tooltip content={t('Show what sits above and below the Rules')} relationship="label"><button className={`ib opt ${bands ? 'on' : ''}`} onClick={() => setBands(!bands)}><LockClosed16Regular /></button></Tooltip>
                 <Tooltip content={t('Side panel')} relationship="label"><button className={`ib ${dock.open ? 'on' : ''}`} onClick={() => setDock(d => ({ ...d, open: !d.open, auto: false }))}><PanelRight20Regular /></button></Tooltip>
+                <Button icon={<FolderAdd16Regular />} onClick={() => setFolderFor(sel)}>{t('Folder')}</Button>
                 <Button appearance="primary" icon={<Add16Regular />} onClick={newRule}>{t('New Rule')}</Button>
               </header>
 
@@ -122,6 +130,7 @@ export default function Console() {
                   <b>{sel.length} {t('selected')}</b>
                   <button onClick={() => s.setEnabled(sel, true)}><Eye16Regular />{t('Enable')}</button><button onClick={() => s.setEnabled(sel, false)}><EyeOff16Regular />{t('Disable')}</button>
                   <button onClick={() => s.clone(sel)}><Copy16Regular />{t('Clone')}</button><button onClick={() => setMoveIds(sel)}><ArrowSort16Regular />{t('Move to…')}</button>
+                  <button onClick={() => setFolderFor(sel)}><FolderArrowRight16Regular />{t('Move to Folder…')}</button>
                   <button className="danger" onClick={() => { s.remove(sel); grid.current?.clearSelection(); }}><Delete16Regular />{t('Delete')}</button>
                   <span className="sp" /><button onClick={() => grid.current?.clearSelection()}><Dismiss16Regular />{t('Clear selection')}</button>
                 </div>
@@ -133,7 +142,7 @@ export default function Console() {
                 </div>
               )}
 
-              <div className="sheet"><RuleGrid key={lens ? `${lens.zid}-${lens.dir}` : 'all'} ref={grid} rows={rows} quick={dq} filter={filter} bands={bandRows} dense={dense} focusedId={focused}
+              <div className="sheet"><RuleGrid key={lens ? `${lens.zid}-${lens.dir}` : 'all'} ref={grid} rows={rows} scoped={!!lens} collapsed={collapsed} onToggle={toggleFolder} onMoveToFolder={setFolderFor} quick={dq} filter={filter} bands={bandRows} dense={dense} focusedId={focused}
                 onFocus={focusRule} onOpen={openRule} onQuick={setQ} onSelection={setSel} onMoveTo={setMoveIds} onReady={reportReady(lens ? `Zone lens, ${rows.length} Rules` : 'Rule base, 10,000 Rules')} /></div>
             </>}
 
@@ -164,6 +173,7 @@ export default function Console() {
 
       {palette && <Palette mode={palette} onClose={() => setPalette(false)} run={{ all: () => { setPage('rules'); setLens(null); }, rule: jumpToRule, zone: openZone, page: setPage, newRule, review: () => openDock('cs', 'preview'), theme: toggle, lang: () => setLang(lang === 'en' ? 'de' : 'en') }} />}
       <MoveDialog ids={moveIds} onClose={() => setMoveIds(null)} />
+      {folderFor && <FolderPicker ids={folderFor} onClose={() => setFolderFor(null)} onDone={fid => { setCollapsed(c => { const n = new Set(c); n.delete(fid); return n; }); grid.current?.clearSelection(); }} />}
     </div>
   );
 }
@@ -245,6 +255,28 @@ function Inspector({ id, onMoveTo, onZone }: { id: string | null; onMoveTo: (ids
         <dt>{t('Hits')}</dt><dd>{r.hits == null ? t('No flow data for this Rule') : `${compact(r.hits)}, ${t('data about 70 minutes old')}`}</dd><dt>{t('Comment')}</dt><dd>{r.comment || '—'}</dd><dt>Rule ID</dt><dd className="mono">{r.id}</dd></dl>
 
       <div className="insp-a"><Button size="small" icon={<Copy16Regular />} onClick={() => s.clone([r.id])}>{t('Clone')}</Button><Button size="small" icon={<ArrowSort16Regular />} onClick={() => onMoveTo([r.id])}>{t('Move to…')}</Button><Button size="small" icon={<Delete16Regular />} onClick={() => s.remove([r.id])}>{t('Delete')}</Button></div>
+    </div>
+  );
+}
+
+// ---------- Folder picker: put Rules into a Folder, or make a new one, from one field.
+function FolderPicker({ ids, onClose, onDone }: { ids: string[]; onClose: () => void; onDone: (folderId: string) => void }) {
+  const s = useStore(); const { t } = useT(); const [q, setQ] = useState(''); const [i, setI] = useState(0);
+  const ql = q.trim().toLowerCase(); const list = s.folders.filter(f => !ql || f.name.toLowerCase().includes(ql)).slice(0, 9);
+  const canNew = !!q.trim() && !s.folders.some(f => f.name.toLowerCase() === ql); const n = list.length + (canNew ? 1 : 0);
+  const pick = (k: number) => { if (k < list.length) { if (ids.length) s.moveToFolder(ids, list[k].id); onDone(list[k].id); } else if (canNew) onDone(s.newFolder(q.trim(), ids)); onClose(); };
+  return (
+    <div className="pal-bg" onMouseDown={onClose}>
+      <div className="pal" role="dialog" aria-label={t('Folder')} onMouseDown={e => e.stopPropagation()}>
+        <input autoFocus value={q} placeholder={t(ids.length ? 'Move to a Folder, or type a new name' : 'Name of the new Folder')} onChange={e => { setQ(e.target.value); setI(0); }}
+          onKeyDown={e => { if (e.key === 'ArrowDown') { e.preventDefault(); setI(Math.min(n - 1, i + 1)); } if (e.key === 'ArrowUp') { e.preventDefault(); setI(Math.max(0, i - 1)); } if (e.key === 'Enter' && n) pick(ids.length ? i : list.length); if (e.key === 'Escape') onClose(); }} />
+        <div className="pal-l">
+          {ids.length > 0 && list.map((f, k) => <div key={f.id} className={`pal-i ${k === i ? 'on' : ''}`} onMouseEnter={() => setI(k)} onClick={() => pick(k)}><Folder16Regular /><b>{f.name}</b><span>{s.rules.filter(r => r.folder === f.id).length} {t('Rules')}</span></div>)}
+          {canNew && <div className={`pal-i ${!ids.length || i === list.length ? 'on' : ''}`} onMouseEnter={() => setI(list.length)} onClick={() => pick(list.length)}><FolderAdd16Regular /><b>{t('New Folder')} “{q.trim()}”</b><span>{ids.length ? `${ids.length} ${t('Rules')}` : t('empty, at the top')}</span></div>}
+          {!canNew && !ids.length && <div className="pal-e">{t('Type a name and press Enter. Tick Rules first to put them into the new Folder.')}</div>}
+        </div>
+        <div className="pal-f"><kbd>↑</kbd><kbd>↓</kbd> {t('choose')} <kbd>Enter</kbd> {t('open')} <kbd>Esc</kbd> {t('close')}</div>
+      </div>
     </div>
   );
 }

@@ -24,8 +24,10 @@ export function ChangesList({ onFocus }: { onFocus?: (id: string) => void }) {
   if (!groups.length) return <p className="muted">{t('No edits yet. Edit a cell, drag a Rule or use the toolbar.')}</p>;
   return (
     <div className="list">
-      {groups.map(([id, es]) => {
+      {groups.length > 60 && <p className="muted" style={{ marginTop: 0 }}>{groups.length} {t('Rules')}. {t('Showing the first 60.')}</p>}
+      {groups.slice(0, 60).map(([id, es]) => {
         const r = s.rules.find(x => x.id === id) ?? baseRules.find(x => x.id === id); const also = alsoChanged.get(id);
+        if (es[0].kind === 'folder') return <div key={id} className="li">{es.map(e => <div key={e.seq} className="edit" style={{ marginTop: 0 }}><span className="ek move">{t('Folder')}</span><span>{e.after}</span></div>)}</div>;
         return (
           <div key={id} className="li clickable" onClick={() => onFocus?.(id)}>
             <div className="li-h"><span className="muted">{s.numbers.get(id) ?? '—'}</span><b>{r?.name}</b><span className="mono">{id}</span></div>

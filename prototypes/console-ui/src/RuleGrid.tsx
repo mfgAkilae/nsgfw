@@ -1,12 +1,13 @@
 // PROTOTYPE, throwaway. The Rule base table on AG Grid Community. This is also the AG Grid check of issue 25.
 // A row reads as a flow: source, arrow, destination, service, action.
-import { useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react';
+import { useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle, createContext, useContext } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeQuartz, ColDef, GridApi, RowClassRules, ICellRendererParams } from 'ag-grid-community';
 import { Tooltip } from '@fluentui/react-components';
 import { ShieldError16Filled, Warning16Filled, Info16Regular, Clock16Regular, PeopleSwap16Regular, LayerDiagonal16Regular, ErrorCircle16Filled, LockClosed12Regular,
+  Folder16Regular, FolderOpen16Regular, ChevronRight16Regular, Edit16Regular, ReOrderDotsVertical16Regular, FolderArrowRight16Regular, FolderAdd16Regular,
   Copy16Regular, Delete16Regular, Eye16Regular, EyeOff16Regular, ArrowRight12Filled, PanelRight16Regular, Filter16Regular, ArrowUp16Regular, ArrowDown16Regular, ArrowSort16Regular, Add16Regular, Checkmark12Filled, Dismiss12Filled } from '@fluentui/react-icons';
-import { Rule, svcName, ref } from './data';
+import { Rule, FolderRow, isFolder, svcName, ref } from './data';
 import { useStore, alsoChanged, St } from './store';
 import { useT } from './i18n';
 import { useMode } from './theme';
@@ -56,8 +57,40 @@ export function countFilters(rules: Rule[], status: Map<string, St>) {
   return c;
 }
 
+// The text a Rule is searched by, built once per Rule object.
+const hay = new WeakMap<Rule, string>();
+const text = (r: Rule) => { let h = hay.get(r); if (!h) { h = `${r.name} ${r.id} ${r.ticket} ${r.owner} ${r.comment} ${[...r.src, ...r.dst].map(id => ref(id).name).join(' ')} ${r.svc.map(svcName).join(' ')}`.toLowerCase(); hay.set(r, h); } return h; };
+type FolderView = FolderRow & { total: number; shown: number; allow: number; deny: number; changed: number; flagged: number; open: boolean };
+const GridCtx = createContext<{ toggle: (id: string) => void; open: (id: string) => void }>({ toggle: () => {}, open: () => {} });
+
+// A Folder row: collapse, rename in place, drag by the grip (its Rules come along), and what is inside at a glance.
+function FolderHead({ f, reg }: { f: FolderView; reg?: (el: HTMLElement, startPixels?: number) => void }) {
+  const s = useStore(); const { t } = useT(); const ctx = useContext(GridCtx); const [editing, setEditing] = useState(false); const grip = useRef<HTMLSpanElement>(null);
+  useEffect(() => { if (grip.current && reg) reg(grip.current, 4); }, []);
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  return (
+    <div className={`fold ${f.open ? 'open' : ''}`} onClick={() => ctx.toggle(f.id)}>
+      <span className="fold-grip" ref={grip} onClick={stop} title={t('Drag to move the Folder with its Rules')}><ReOrderDotsVertical16Regular /></span>
+      <ChevronRight16Regular className="fold-chev" />{f.open ? <FolderOpen16Regular className="fold-ic" /> : <Folder16Regular className="fold-ic" />}
+      {editing ? <input className="fold-in" autoFocus defaultValue={f.name} onClick={stop} onBlur={e => { s.renameFolder(f.id, e.target.value); setEditing(false); }} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditing(false); }} />
+        : <b onDoubleClick={e => { stop(e); setEditing(true); }}>{f.name}</b>}
+      <span className="fold-n">{f.shown !== f.total ? `${f.shown} ${t('of')} ${f.total}` : f.total} {t(f.total === 1 ? 'Rule' : 'Rules')}</span>
+      {f.shown > 0 && <span className="fold-mix" title={`${f.allow} allow, ${f.deny} deny`}><i className="a" style={{ flex: f.allow }} /><i className="d" style={{ flex: f.deny }} /></span>}
+      {f.deny > 0 && <span className="fold-s">{f.deny} {t('deny')}</span>}
+      {f.changed > 0 && <em className="mk chg">{f.changed} {t('changed')}</em>}{f.flagged > 0 && <em className="mk del">{f.flagged} {t('with findings')}</em>}
+      <span className="sp" />
+      <span className="rowacts" onClick={stop}>
+        <button title={t('New Rule in this Folder')} onClick={() => { const id = s.addRule(undefined, f.id); if (!f.open) ctx.toggle(f.id); ctx.open(id); }}><Add16Regular /></button>
+        <button title={t('Rename')} onClick={() => setEditing(true)}><Edit16Regular /></button>
+        <button title={t('Remove the Folder, keep its Rules')} className="danger" onClick={() => s.deleteFolder(f.id)}><Delete16Regular /></button>
+      </span>
+    </div>
+  );
+}
+
 export interface RuleGridHandle { selected(): string[]; api(): GridApi | undefined; reveal(id: string): void; clearSelection(): void }
 interface Props { rows: Rule[]; quick?: string; filter?: FilterKey; bands?: { top: SysRow[]; bottom: SysRow[] } | null; dense?: boolean; focusedId?: string | null;
+  scoped?: boolean; collapsed: Set<string>; onToggle: (folderId: string) => void; onMoveToFolder?: (ids: string[]) => void;
   onFocus?: (id: string) => void; onOpen?: (id: string) => void; onQuick?: (text: string) => void; onSelection?: (ids: string[]) => void; onMoveTo?: (ids: string[]) => void; onReady?: (ms: number) => void }
 
 export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, refH) {
@@ -67,7 +100,7 @@ export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, r
   const pRef = useRef(p); pRef.current = p;
   const tRef = useRef(t); tRef.current = t;
   const grid = useRef<AgGridReact>(null);
-  const [sorted, setSorted] = useState(false);
+  const [sorted, setSorted] = useState(false); const sortedRef = useRef(sorted); sortedRef.current = sorted;
   const t0 = useRef(performance.now());
   useImperativeHandle(refH, () => ({
     selected: () => grid.current?.api?.getSelectedRows().map((r: Rule) => r.id) ?? [], api: () => grid.current?.api,
@@ -79,7 +112,6 @@ export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, r
   useEffect(() => { grid.current?.api?.redrawRows(); }, [s.status, s.numbers]);
 
   useEffect(() => { grid.current?.api?.refreshHeader(); grid.current?.api?.redrawRows(); }, [lang]);
-  useEffect(() => { grid.current?.api?.onFilterChanged(); }, [p.filter]);
   useEffect(() => { grid.current?.api?.resetRowHeights(); grid.current?.api?.setColumnsVisible(['flags'], !!p.dense); }, [p.dense]);
   const ruler = useRef<{ rebuild(): void; view(): void }>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; r: Rule; objs: string[] } | null>(null);
@@ -89,6 +121,25 @@ export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, r
   const editable = (x: any) => !isSys(x?.data) && !st(x?.data?.id)?.deleted;
   const changedCls = (field: string) => ({ 'cell-changed': (x: any) => !!st(x.data?.id)?.changed?.has(field) });
   const mark = (id: string) => { const m = st(id); return m?.deleted ? ['del', 'deleted'] : m?.added ? ['add', 'new'] : m?.moved ? ['mov', 'moved'] : m?.changed ? ['chg', 'edited'] : null; };
+
+  // What the table shows: Folder rows with their Rules, Rules outside Folders in between. A filter shows the matching Rules under their Folders,
+  // all open; a sorted table has no Folders.
+  const filtering = !!p.quick?.trim() || (p.filter ?? 'all') !== 'all' || !!p.scoped;
+  const display = useMemo(() => {
+    const ql = (p.quick ?? '').trim().toLowerCase(); const f = passes[p.filter ?? 'all']; const scope = p.scoped ? new Set(p.rows.map(r => r.id)) : null;
+    const ok = (r: Rule) => (!scope || scope.has(r.id)) && f(r, s.status.get(r.id)) && (!ql || text(r).includes(ql));
+    if (sorted) return s.rules.filter(ok);
+    const out: (Rule | FolderView)[] = []; let cur: FolderView | null = null;
+    for (const e of s.entries) {
+      if (isFolder(e)) { cur = { ...e, total: 0, shown: 0, allow: 0, deny: 0, changed: 0, flagged: 0, open: filtering || !p.collapsed.has(e.id) }; out.push(cur); continue; }
+      if (!e.folder) cur = null;
+      const hit = ok(e);
+      if (cur) { cur.total++; if (hit) { cur.shown++; if (e.action === 'allow') cur.allow++; else cur.deny++; if (s.status.has(e.id)) cur.changed++; if (e.policy || e.importNote || e.layerWarn) cur.flagged++; } }
+      if (hit && (!cur || cur.open)) out.push(e);
+    }
+    return filtering ? out.filter(e => !isFolder(e) || (e as FolderView).shown > 0) : out;
+  }, [s.entries, s.rules, s.status, p.rows, p.scoped, p.quick, p.filter, p.collapsed, sorted, filtering]);
+  const gridCtx = useMemo(() => ({ toggle: (id: string) => pRef.current.onToggle(id), open: (id: string) => pRef.current.onFocus?.(id) }), []);
 
   const cols = useMemo<ColDef[]>(() => [
     { colId: 'no', headerName: t('No.'), width: 80, pinned: 'left', rowDrag: true, cellClass: 'c-no', resizable: false, comparator: (_a, _b, na, nb) => (sRef.current.numbers.get(na.data.id) ?? 0) - (sRef.current.numbers.get(nb.data.id) ?? 0),
@@ -121,6 +172,7 @@ export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, r
 
   const spine = useMemo(() => ({ 'spine-allow': (x: any) => x.data?.action === 'allow' && x.data.enabled, 'spine-deny': (x: any) => x.data?.action === 'deny' && x.data.enabled, 'spine-off': (x: any) => x.data && !isSys(x.data) && !x.data.enabled }), []);
   const rowClassRules = useMemo<RowClassRules>(() => ({
+    'row-infolder': x => !!x.data?.folder && !sortedRef.current,
     'row-added': x => !!st(x.data?.id)?.added, 'row-deleted': x => !!st(x.data?.id)?.deleted, 'row-disabled': x => x.data && !isSys(x.data) && !x.data.enabled,
   }), []);
 
@@ -128,26 +180,25 @@ export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, r
   // and a rebuild between two clicks swallows the double click that starts editing.
   const opts = useMemo(() => ({
     defaultColDef: { sortable: true, resizable: true, suppressHeaderMenuButton: true } as ColDef,
-    rowSelection: { mode: 'multiRow', checkboxes: true, headerCheckbox: true, enableClickSelection: false, selectAll: 'filtered' } as const,
+    rowSelection: { mode: 'multiRow', checkboxes: true, headerCheckbox: true, enableClickSelection: false, selectAll: 'filtered', isRowSelectable: (n: any) => !isFolder(n.data) } as const,
     selectionColumnDef: { pinned: 'left', width: 42, resizable: false, cellClassRules: spine } as ColDef,
     getRowId: (x: any) => x.data.id,
-    getRowHeight: (x: any) => (x.node.rowPinned ? 36 : pRef.current.dense ? 34 : 48),
-    isFullWidthRow: (x: any) => isSys(x.rowNode.data),
-    fullWidthCellRenderer: (x: ICellRendererParams) => <div className={`band b-${x.data.system}`}><LockClosed12Regular /><b>{tRef.current(x.data.name)}</b><span>{tRef.current(x.data.text)}</span></div>,
-    isExternalFilterPresent: () => (pRef.current.filter ?? 'all') !== 'all',
-    doesExternalFilterPass: (n: any) => passes[pRef.current.filter ?? 'all'](n.data, st(n.data.id)),
+    getRowHeight: (x: any) => (x.node.rowPinned ? 36 : isFolder(x.data) ? 40 : pRef.current.dense ? 34 : 48),
+    isFullWidthRow: (x: any) => isSys(x.rowNode.data) || isFolder(x.rowNode.data),
+    fullWidthCellRenderer: (x: ICellRendererParams) => isFolder(x.data) ? <FolderHead f={x.data as FolderView} reg={x.registerRowDragger} /> : <div className={`band b-${x.data.system}`}><LockClosed12Regular /><b>{tRef.current(x.data.name)}</b><span>{tRef.current(x.data.text)}</span></div>,
     onCellEditRequest: (e: any) => sRef.current.editField(e.data.id, e.colDef.field as keyof Rule, e.newValue),
     onSortChanged: (e: any) => setSorted(e.api.getColumnState().some((c: any) => c.sort && c.colId !== 'no')),
     onRowDragEnd: (e: any) => {
-      const target = e.overNode?.data as Rule | undefined;
-      if (!target || isSys(target)) return;
-      const moving = (e.nodes?.length ? e.nodes : [e.node]).map((n: any) => (n.data as Rule).id).filter((id: string) => id !== target.id);
+      const target = e.overNode?.data as Rule | FolderRow | undefined; const dragged = e.node.data as Rule | FolderRow;
+      if (!target || isSys(target) || target.id === dragged.id) return;
+      const moving = isFolder(dragged) ? [dragged.id] : (e.nodes?.length ? e.nodes : [e.node]).map((n: any) => n.data.id as string).filter((id: string) => id !== target.id);
       if (!moving.length) return;
-      const all = sRef.current.rules; const from = all.findIndex(r => r.id === moving[0]); const to = all.findIndex(r => r.id === target.id);
-      sRef.current.move(moving, target.id, from < to ? 'after' : 'before');
+      const all = sRef.current.entries; const from = all.findIndex(x => x.id === moving[0]); const to = all.findIndex(x => x.id === target.id);
+      // A Rule dropped on a Folder row goes into that Folder, as its first Rule.
+      sRef.current.move(moving, target.id, isFolder(target) && !isFolder(dragged) ? 'after' : from < to ? 'after' : 'before');
     },
-    onRowClicked: (e: any) => { const el = e.event?.target as HTMLElement | null; if (!e.data || isSys(e.data) || el?.closest('.rowacts, .ag-selection-checkbox, .ag-drag-handle, .ag-cell-inline-editing')) return; if (e.data.id !== pRef.current.focusedId) pRef.current.onFocus?.(e.data.id); },
-    onSelectionChanged: (e: any) => pRef.current.onSelection?.(e.api.getSelectedRows().map((r: Rule) => r.id)),
+    onRowClicked: (e: any) => { const el = e.event?.target as HTMLElement | null; if (!e.data || isSys(e.data) || isFolder(e.data) || el?.closest('.rowacts, .ag-selection-checkbox, .ag-drag-handle, .ag-cell-inline-editing')) return; if (e.data.id !== pRef.current.focusedId) pRef.current.onFocus?.(e.data.id); },
+    onSelectionChanged: (e: any) => pRef.current.onSelection?.(e.api.getSelectedRows().filter((r: Rule) => !isFolder(r)).map((r: Rule) => r.id)),
     onGridSizeChanged: (e: any) => { e.api.setColumnsVisible(['comment'], e.clientWidth >= 1330); setTimeout(() => e.api.refreshCells({ columns: ['src', 'dst', 'svc'], force: true }), 0); },
     onColumnResized: (e: any) => { if (e.finished) e.api.refreshCells({ columns: ['src', 'dst', 'svc'], force: true }); },
     onFirstDataRendered: () => pRef.current.onReady?.(Math.round(performance.now() - t0.current)),
@@ -166,13 +217,13 @@ export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, r
       {/* The focused Rule is marked by a style rule, not a redraw, for the same reason. */}
       {p.focusedId && <style>{`.gridbox .ag-row[row-id="${p.focusedId}"]{background:var(--sel)!important}.gridbox .ag-row[row-id="${p.focusedId}"] .rowacts{opacity:1}`}</style>}
       {sorted && <div className="grid-hint">{t('Drag is off while sorted: use Move to…')}</div>}
-      <AgGridReact ref={grid} theme={gridTheme} containerStyle={{ flex: 1, minWidth: 0, height: '100%' }} rowData={p.rows} columnDefs={cols} {...opts}
-        pinnedTopRowData={p.bands?.top} pinnedBottomRowData={p.bands?.bottom} quickFilterText={p.quick} rowClassRules={rowClassRules}
-        readOnlyEdit rowDragMultiRow suppressRowDrag={sorted} animateRows={false} tooltipShowDelay={300} />
+      <GridCtx.Provider value={gridCtx}><AgGridReact ref={grid} theme={gridTheme} containerStyle={{ flex: 1, minWidth: 0, height: '100%' }} rowData={display} columnDefs={cols} {...opts}
+        pinnedTopRowData={p.bands?.top} pinnedBottomRowData={p.bands?.bottom} rowClassRules={rowClassRules}
+        readOnlyEdit rowDragMultiRow suppressRowDrag={sorted} animateRows={false} tooltipShowDelay={300} /></GridCtx.Provider>
       <Ruler ref={ruler} api={() => grid.current?.api} focusedId={p.focusedId} />
       {menu && live && (
         <div className="ctx-bg" onMouseDown={() => setMenu(null)} onContextMenu={e => { e.preventDefault(); setMenu(null); }}>
-          <div className="ctx" role="menu" style={{ left: Math.min(menu.x, window.innerWidth - 270), top: Math.min(menu.y, window.innerHeight - 380) }} onMouseDown={e => e.stopPropagation()}>
+          <div className="ctx" role="menu" style={{ left: Math.min(menu.x, window.innerWidth - 270), top: Math.min(menu.y, window.innerHeight - 470) }} onMouseDown={e => e.stopPropagation()}>
             <div className="ctx-h">{s.numbers.get(live.id) ?? ''} {live.name}</div>
             <button onClick={act(() => p.onOpen?.(live.id))}><PanelRight16Regular />{t('Open details')}</button>
             <button onClick={act(() => s.setEnabled([live.id], !live.enabled))}>{live.enabled ? <EyeOff16Regular /> : <Eye16Regular />}{t(live.enabled ? 'Disable' : 'Enable')}</button>
@@ -182,6 +233,9 @@ export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, r
             <button onClick={act(() => s.move([live.id], null, 'before'))}><ArrowUp16Regular />{t('Move to the top')}</button>
             <button onClick={act(() => s.move([live.id], null, 'after'))}><ArrowDown16Regular />{t('Move to the bottom')}</button>
             <button onClick={act(() => p.onMoveTo?.([live.id]))}><ArrowSort16Regular />{t('Move to…')}</button>
+            <hr />
+            <button onClick={act(() => p.onMoveToFolder?.([live.id]))}><FolderArrowRight16Regular />{t('Move to Folder…')}</button>
+            {live.folder ? <button onClick={act(() => s.moveToFolder([live.id], null))}><Folder16Regular />{t('Take out of the Folder')}</button> : <button onClick={act(() => s.newFolder(`${t('Folder')} ${live.name.slice(0, 24)}`, [live.id]))}><FolderAdd16Regular />{t('New Folder from this Rule')}</button>}
             {menu.objs.length > 0 && <><hr />{menu.objs.slice(0, 3).map(id => <button key={id} onClick={act(() => p.onQuick?.(oname(id)))}><Filter16Regular /><span>{t('Rules with')} <b>{oname(id)}</b></span></button>)}</>}
             <hr />
             <button className="danger" onClick={act(() => s.remove([live.id]))}><Delete16Regular />{t('Delete')}</button>
@@ -212,7 +266,7 @@ const Ruler = forwardRef<{ rebuild(): void; view(): void }, { api: () => GridApi
   };
   const rebuild = () => {
     const api = pRef.current.api(); if (!api) return; const m = { n: 0, chg: [] as number[], warn: [] as number[], focus: -1 };
-    api.forEachNodeAfterFilterAndSort(node => { const d = node.data as Rule | undefined; if (!d) return; const i = m.n++;
+    api.forEachNodeAfterFilterAndSort(node => { const d = node.data as Rule | undefined; if (!d || isFolder(d)) return; const i = m.n++;
       if (sRef.current.status.has(d.id)) m.chg.push(i); if (d.policy || d.importNote === 'blocking' || d.layerWarn) m.warn.push(i); if (d.id === pRef.current.focusedId) m.focus = i; });
     marks.current = m; draw();
   };
