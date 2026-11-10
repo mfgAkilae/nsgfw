@@ -434,7 +434,7 @@ Minimum versions: Terraform 1.7, for `import` with `for_each`. azapi 2.x. azurer
 
 ### Handing over resources from other IaC
 
-Both modes collect evidence before an NSG or ASG is adopted in place or a subnet's NSG is swapped: writers in `resourcechanges`, the Activity Log caller, tags such as `managed-by`, and in Terraform mode a search of the Environment's repository. With evidence, the Commit asks the admin to confirm the handover with a checklist ([Grilling: Terraform mode workflow][t17], point 25). Checklist items:
+Both modes collect evidence before an NSG or ASG is adopted in place or a subnet's NSG is swapped: writers in `resourcechanges`, the Activity Log caller, tags such as `managed-by`, and in Terraform mode a search of the Environment's repository. With evidence, the Author of the onboarding Change set confirms the handover with a checklist in the Review before Submit. The approver sees the confirmation, and the Commit dialog shows it without asking again ([Grilling: Access, roles and audit][t19], point 14, decided over the wording "the Commit asks the admin" of [Grilling: Terraform mode workflow][t17], point 25, in [Prototype: Deployment, Drift and Import views](https://github.com/mfgAkilae/nsgfw/issues/37)). Checklist items:
 
 - Terraform that manages the NSG or ASG: a `removed` block with `destroy = false` in the other repository.
 - Terraform that manages the subnet as `azurerm_subnet` or as an inline subnet of `azurerm_virtual_network`: the subnet must not set or reset its NSG.

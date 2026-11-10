@@ -194,6 +194,10 @@ _Avoid_: push, apply, publish
 The delivery of one Version to one Environment through that Environment's Deployment mode. A Commit starts one Deployment per affected Environment, and each Deployment has its own result. A Deployment starts from the Deployed state, so a newer Version's Deployment supersedes an unfinished Deployment to the same Environment and also delivers what that one did not. Its writes follow their dependencies and its Crossing flows, in any order otherwise. In a Terraform Environment a Deployment arrives as one pull request, or as one pull request per step of its write order. It is deployed only when Azure shows its target, not when a pull request merges.
 _Avoid_: rollout, push
 
+**Deployment history**:
+The record of every Deployment per Environment, also an Overwrite or a catch-up that has no new Version, with each of its writes: resource, step, hash before and after, attempts, times, Azure correlation ID, error and policy, and what superseded it. It holds what the audit log leaves out, such as each successful write.
+_Avoid_: deployment log, job history
+
 **Crossing flow**:
 A flow between two Zones that a Deployment closes on one of the two Managed NSGs and opens on the other. The NSG that closes it is written first, and the other one a Settle time later; without Crossing flows the order of writes does not matter.
 _Avoid_: Dominance gap (the first, coarser rule), Tighten phase, Loosen phase (the superseded phases of ADR 0009)
@@ -234,8 +238,12 @@ The data the tool writes into a Terraform repository: one file per Terraform roo
 _Avoid_: template, generated code
 
 **Import**:
-Converting the NSG rules of an existing NSG into Rules when its subnet is onboarded, as edits in the onboarding Change set. Each NSG rule becomes one Rule that records where it came from. By default Import keeps the subnet's current behaviour, with Inherited defaults in place of the Azure default rules it relied on.
+Converting the NSG rules of an existing NSG into Rules when its subnet is onboarded, as edits in the onboarding Change set. Each NSG rule becomes one Rule that records where it came from. By default Import keeps the subnet's current behaviour, with Inherited defaults in place of the Azure default rules it relied on. A Zone that switches this off gets no Inherited defaults.
 _Avoid_: migration, discovery
+
+**Import snapshot**:
+The NSG rules of an existing NSG as Import read them into an onboarding Change set. If the NSG changes in Azure before the Commit and nobody edited the Rules imported from it, the tool imports again and resets the Approvals. Otherwise the Commit waits until an Author chooses Re-import, which discards those edits, or Keep snapshot, whose Commit overwrites the change in Azure.
+_Avoid_: legacy copy
 
 **Import note**:
 A flag on an imported Rule where the NSG rule did not map cleanly, naming the source NSG, NSG rule, priority and direction. It is blocking (no submit until resolved), warning (behaviour changes or is approximated) or info (redundant or dropped), and it stays after the Commit until an admin acknowledges it.
@@ -272,7 +280,7 @@ One installation of nsgfw with its own database, one Rule base and one Tool iden
 _Avoid_: tenant, deployment (a Deployment delivers a Version)
 
 **Handover**:
-An admin's confirmation, with a checklist, that the tool takes over an NSG, an ASG or a subnet's NSG association that other IaC or another Instance has managed, when the subnet is onboarded. The other side must stop writing; if it does not, its writes show up as Drift.
+The confirmation, with a checklist, that the tool takes over an NSG, an ASG or a subnet's NSG association that other IaC or another Instance has managed, when the subnet is onboarded. The Author of the onboarding Change set gives it in the Review before Submit, and the approver sees it. The other side must stop writing; if it does not, its writes show up as Drift.
 _Avoid_: takeover, release
 
 **Recovery mode**:
