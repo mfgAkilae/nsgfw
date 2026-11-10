@@ -187,7 +187,7 @@ _Avoid_: override (confusable with Overwrite), exemption (Azure Policy's own con
 Consent from an approver before a Commit. Each Affected Zone needs the Approval level that its Scope requires: none, approver (an Author may approve) or four-eyes (an approver who is not an Author). One approver's Approval counts for every Affected Zone in which that person holds the approver Role.
 
 **Commit**:
-Turning an approved Change set into the next Version and starting a Deployment to each affected Environment. The Version exists from the moment of the Commit, whether or not its Deployments succeed. A Commit runs at once or at a time the committer chooses.
+Turning an approved Change set into the next Version and starting a Deployment to each affected Environment. The Version exists from the moment of the Commit, whether or not its Deployments succeed. A Commit runs at once, at a time the committer chooses, or right after an open Re-translation in the Environments it changes.
 _Avoid_: push, apply, publish
 
 **Deployment**:
@@ -223,7 +223,7 @@ A Change set that undoes the edits of one earlier Commit on top of the latest Ve
 _Avoid_: rollback, undo
 
 **Re-translation**:
-A Change set that the tool prepares when a new engine version translates the unchanged Rule base into different NSG rules. It holds no edits, only the new output, and its Affected Zones are the Zones whose resources it changes. While it is open, other Commits wait in the Environments where it changes something. An Emergency Commit, a disabled expired Rule and an automatic Adopt take it along, and its Affected Zones there need Approval afterwards.
+A Change set that the tool prepares when a new engine version translates the unchanged Rule base into different NSG rules. It holds no edits, only the new output, and its Affected Zones are the Zones whose resources it changes. While it is open, other Commits wait in the Environments where it changes something. An approver cannot reject it. An Emergency Commit, a disabled expired Rule and an automatic Adopt take it along, and its Affected Zones there need Approval afterwards.
 _Avoid_: migration, redeploy
 
 **Deployment mode**:

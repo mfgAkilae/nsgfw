@@ -483,9 +483,11 @@ Microsoft documents probes on more than one port in one container (the example u
 
 Every Version stores its engine version, and one image holds one engine version. When an upgrade changes the engine's output for an unchanged Rule base, the tool prepares a Re-translation: a Change set without edits, whose Affected Zones are the Zones whose resources it changes. Admins and the approvers of those Zones get an alert. While it is open ([Grilling: Operations: restore, exit, upgrades and exposure][t29]):
 
-- Other Change sets can be edited, submitted and approved. Their Commit waits until the Re-translation commits, but only when they change something in an Environment where the Re-translation changes something.
+- Other Change sets can be edited, submitted and approved. Their Commit waits until the Re-translation commits, but only when they change something in an Environment where the Re-translation changes something. The committer can still commit: the Commit waits in line and runs right after the Re-translation commits, with a Rebase, validation and the pre-checks like a scheduled Commit, and if one of them fails, the Change set stays Approved ([Prototype: Change set review, conflicts and Version history][t36]).
 - Their Preview compares with the base Version as the new engine translates it, so it shows only their own changes and stays the same at the Rebase after the Re-translation commits.
 - An Emergency Commit, the tool's own Commit that disables an expired allow Rule, and an automatic Adopt (a deleted ASG member, a changed member IP) do not wait. They take the Re-translation along in the Environments they touch, and its Affected Zones there need Approval afterwards, as for an Emergency Commit.
+
+An approver cannot reject a Re-translation: rejecting it would hold back the Commits in its Environments for good, because the tool prepares the same Re-translation again. An approver who disagrees asks the operator to go back to the previous image ([Prototype: Change set review, conflicts and Version history][t36]).
 
 Rejected: the next Commit carrying the Re-translation with its Approvals, because an unrelated change would suddenly need many approvers; committing a Re-translation that keeps every decision without Approval, because it needs an equivalence check over all flows; and blocking every Commit of the Instance, Emergency Commits included.
 
@@ -556,3 +558,4 @@ Questions this draft found. Two were settled in [Prototype: Architecture proposa
 [t29]: https://github.com/mfgAkilae/nsgfw/issues/29
 [t30]: https://github.com/mfgAkilae/nsgfw/issues/30
 [t33]: https://github.com/mfgAkilae/nsgfw/issues/33
+[t36]: https://github.com/mfgAkilae/nsgfw/issues/36
