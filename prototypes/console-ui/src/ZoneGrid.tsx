@@ -12,7 +12,7 @@ import { useT } from './i18n';
 export const LIMITS = { rules: 2000, addr: 6000, asgs: 100, nsgPerSubRegion: 5000, asgPerSubRegion: 3000 };
 export function Bar({ v, max }: { v: number; max: number }) {
   const pct = Math.min(100, (v / max) * 100);
-  return <span className="bar" title={`${v.toLocaleString()} / ${max.toLocaleString()}`}><span className={pct > 95 ? 'r' : pct > 80 ? 'a' : 'g'} style={{ width: `${pct}%` }} /><em>{v.toLocaleString()}</em></span>;
+  return <span className={`bar ${pct > 95 ? 'r' : pct > 80 ? 'a' : ''}`} title={`${v.toLocaleString()} of ${max.toLocaleString()}`}><em>{v.toLocaleString()}</em><span><i style={{ width: `${Math.max(pct, 1.5)}%` }} /></span></span>;
 }
 const flagText: Record<Flag, [string, 'danger' | 'warning' | 'informative']> = {
   drift: ['Drift', 'danger'], policy: ['Policy', 'danger'], limit: ['near limit', 'warning'], perm: ['missing permission', 'danger'],
@@ -33,10 +33,10 @@ export function ZoneGrid({ onOpen, height }: { onOpen?: (z: Zone) => void; heigh
     { field: 'vnet', headerName: t('VNet'), width: 170 },
     { field: 'prefix', headerName: t('Prefixes'), width: 190, valueGetter: x => [x.data!.prefix, ...(x.data!.extra ?? []).map(e => `+${e}`)].join(' ') },
     { field: 'egress', headerName: t('Egress posture'), width: 140, cellRenderer: (x: ICellRendererParams<Zone>) => <EgressBadge e={x.value} /> },
-    { field: 'rules', headerName: `${t('NSG rules')} (${LIMITS.rules.toLocaleString()})`, width: 150, cellRenderer: (x: ICellRendererParams<Zone>) => <Bar v={x.value} max={LIMITS.rules} /> },
-    { field: 'addrSrc', headerName: `${t('Source addresses')} (${LIMITS.addr.toLocaleString()})`, width: 170, cellRenderer: (x: ICellRendererParams<Zone>) => <Bar v={x.value} max={LIMITS.addr} /> },
-    { field: 'addrDst', headerName: `${t('Destination addresses')} (${LIMITS.addr.toLocaleString()})`, width: 170, cellRenderer: (x: ICellRendererParams<Zone>) => <Bar v={x.value} max={LIMITS.addr} /> },
-    { field: 'asgs', headerName: `${t('ASGs')} (${LIMITS.asgs})`, width: 110, cellRenderer: (x: ICellRendererParams<Zone>) => <Bar v={x.value} max={LIMITS.asgs} /> },
+    { field: 'rules', headerName: `${t('NSG rules')} / ${LIMITS.rules.toLocaleString()}`, width: 150, cellRenderer: (x: ICellRendererParams<Zone>) => <Bar v={x.value} max={LIMITS.rules} /> },
+    { field: 'addrSrc', headerName: `${t('Source addresses')} / ${LIMITS.addr.toLocaleString()}`, width: 170, cellRenderer: (x: ICellRendererParams<Zone>) => <Bar v={x.value} max={LIMITS.addr} /> },
+    { field: 'addrDst', headerName: `${t('Destination addresses')} / ${LIMITS.addr.toLocaleString()}`, width: 170, cellRenderer: (x: ICellRendererParams<Zone>) => <Bar v={x.value} max={LIMITS.addr} /> },
+    { field: 'asgs', headerName: `${t('ASGs')} / ${LIMITS.asgs}`, width: 110, cellRenderer: (x: ICellRendererParams<Zone>) => <Bar v={x.value} max={LIMITS.asgs} /> },
     { field: 'nsg', headerName: t('Managed NSG'), width: 200, cellClass: 'mono' },
     { colId: 'flags', headerName: t('Flags'), flex: 1, minWidth: 200, valueGetter: x => x.data!.flags.join(' '), cellRenderer: (x: ICellRendererParams<Zone>) => <Flags z={x.data!} /> },
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -45,7 +45,7 @@ export function ZoneGrid({ onOpen, height }: { onOpen?: (z: Zone) => void; heigh
     { field: 'subnet', headerName: 'Subnet', width: 180 }, { field: 'vnet', headerName: t('VNet'), width: 180 }, { field: 'prefix', headerName: t('Prefixes'), width: 150 },
     { field: 'env', headerName: t('Environment'), width: 130, valueFormatter: x => envs.find(e => e.id === x.value)?.name ?? '' },
     { field: 'nsg', headerName: t('Existing NSG'), width: 200, valueFormatter: x => x.value ? `${x.value}${x.data.shared ? ' (shared: swap)' : ' (adopt in place)'}` : '—' },
-    { colId: 'state', headerName: '', flex: 1, cellRenderer: (x: ICellRendererParams) => x.data.reason ? <Tooltip relationship="description" content={reasons[x.data.reason]}><Badge appearance="outline" color="danger">{t('Not onboardable')}: {reasons[x.data.reason]}</Badge></Tooltip> : <a className="link">{t('Onboard')} →</a> },
+    { colId: 'state', headerName: '', flex: 1, cellRenderer: (x: ICellRendererParams) => x.data.reason ? <Tooltip relationship="description" content={reasons[x.data.reason]}><Badge appearance="outline" color="danger">{t('Not onboardable')}: {reasons[x.data.reason]}</Badge></Tooltip> : <a className="link">{t('Onboard')}</a> },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [lang]);
   return (
@@ -55,9 +55,9 @@ export function ZoneGrid({ onOpen, height }: { onOpen?: (z: Zone) => void; heigh
           <Tab value="zones">{t('Zones')} ({zones.length.toLocaleString()})</Tab><Tab value="cand">{t('Candidates')} ({candidates.length})</Tab><Tab value="flag">{t('Flagged')} ({flagged.length})</Tab>
         </TabList>
         <Input size="small" contentBefore={<Search16Regular />} placeholder={t('Search Zones…')} value={q} onChange={(_, d) => setQ(d.value)} />
-        <span className="muted">{t('Highest use per subscription and region')}: NSGs <Bar v={subUse[1]} max={LIMITS.nsgPerSubRegion} /> ({subUse[0]}) · ASGs <Bar v={212} max={LIMITS.asgPerSubRegion} /></span>
+        <span className="muted" style={{ marginLeft: 'auto' }}>{t('Highest use per subscription and region')}: NSGs <Bar v={subUse[1]} max={LIMITS.nsgPerSubRegion} /> in {subUse[0].replace(' · ', ', ')}, ASGs <Bar v={212} max={LIMITS.asgPerSubRegion} /></span>
       </div>
-      <div style={{ flex: 1, minHeight: 0 }}>
+      <div className="gridwrap" style={{ flex: 1, minHeight: 0, height: 'auto' }}>
         {tab === 'cand'
           ? <AgGridReact theme={gridTheme} rowData={candidates} columnDefs={ccols} quickFilterText={q} />
           : <AgGridReact<Zone> theme={gridTheme} rowData={tab === 'flag' ? flagged : zones} columnDefs={zcols} quickFilterText={q} getRowId={x => x.data.id} />}

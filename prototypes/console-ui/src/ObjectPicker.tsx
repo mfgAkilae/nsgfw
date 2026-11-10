@@ -5,8 +5,9 @@ import { Dismiss12Regular, Search16Regular } from '@fluentui/react-icons';
 import { objects, zones, services, ref, svcById, ObjKind } from './data';
 import { useT } from './i18n';
 import type { CustomCellEditorProps } from 'ag-grid-react';
+import { Glyph } from './Glyph';
 
-export const kindLabel: Record<ObjKind | 'svc', string> = { any: 'any', zone: 'Zone', ip: 'IP', cidr: 'CIDR', tag: 'tag', subnet: 'subnet', vnet: 'VNet', asg: 'ASG', extasg: 'ext. ASG', group: 'group', svc: 'svc' };
+export const kindLabel: Record<ObjKind | 'svc', string> = { any: 'Any', zone: 'Zone', ip: 'Host', cidr: 'Network', tag: 'Service tag', subnet: 'Subnet', vnet: 'VNet', asg: 'ASG object', extasg: 'External ASG', group: 'Group', svc: 'Service' };
 
 type Item = { id: string; name: string; kind: ObjKind | 'svc'; value: string; cov: number };
 const addrItems: Item[] = [
@@ -20,9 +21,9 @@ export function Chip({ id, onRemove }: { id: string; onRemove?: () => void }) {
   const isSvc = id.startsWith('svc');
   const r = isSvc ? { name: svcById.get(id)?.name ?? id, kind: 'svc' as const, value: svcById.get(id)?.value ?? '' } : ref(id);
   return (
-    <span className={`chip k-${r.kind}`} title={`${kindLabel[r.kind]}: ${r.value}`}>
-      {r.name}
-      {onRemove && <button className="chip-x" onClick={onRemove} aria-label="remove"><Dismiss12Regular /></button>}
+    <span className={`tok t-${r.kind}`} title={`${kindLabel[r.kind]}: ${r.value}`}>
+      <Glyph kind={r.kind} />{r.name}
+      {onRemove && <button className="tok-x" onClick={onRemove} aria-label={`remove ${r.name}`}><Dismiss12Regular /></button>}
     </span>
   );
 }
@@ -52,13 +53,13 @@ export function ObjectPicker({ value, onChange, mode, autoFocus }: { value: stri
       <div className="picker-list">
         {hits.map(it => (
           <div key={it.id} className={`picker-row ${value.includes(it.id) ? 'on' : ''}`} onMouseDown={e => { e.preventDefault(); toggle(it.id); }}>
-            <span className={`kind k-${it.kind}`}>{kindLabel[it.kind]}</span>
+            <span className={`pk-kind t-${it.kind}`}><Glyph kind={it.kind} />{kindLabel[it.kind]}</span>
             <b>{it.name}</b>
-            <span className="muted">{it.value}</span>
-            <span className="cov">{mode === 'svc' ? '' : it.kind === 'tag' || it.kind === 'any' || (it.kind === 'cidr' && !it.cov) || it.kind === 'subnet' ? <i>{t('covers no Zone')}</i> : `${t('covers')} ${it.cov} ${it.cov === 1 ? t('Zone') : t('Zones')}`}</span>
+            <span className="addr">{it.value}</span>
+            <span className="cov">{mode === 'svc' ? '' : it.kind === 'tag' || it.kind === 'any' || (it.kind === 'cidr' && !it.cov) || it.kind === 'subnet' ? <span className="cov-none">{t('covers no Zone')}</span> : `${t('covers')} ${it.cov} ${it.cov === 1 ? t('Zone') : t('Zones')}`}</span>
           </div>
         ))}
-        {hits.length >= 120 && <div className="muted" style={{ padding: 6 }}>… type to narrow down ({items.length.toLocaleString()} objects)</div>}
+        {hits.length >= 120 && <div className="muted" style={{ padding: 6 }}>Showing the first 120 of {items.length.toLocaleString()}. Type to narrow down.</div>}
       </div>
     </div>
   );

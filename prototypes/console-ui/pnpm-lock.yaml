@@ -14,6 +14,9 @@ importers:
       '@fluentui/react-icons':
         specifier: 2.0.344
         version: 2.0.344(react@18.3.1)
+      '@fontsource-variable/recursive':
+        specifier: 5.3.0
+        version: 5.3.0
       ag-grid-community:
         specifier: 33.3.2
         version: 33.3.2
@@ -876,6 +879,9 @@ packages:
 
   '@fluentui/tokens@1.0.0-alpha.24':
     resolution: {integrity: sha512-YrjGQfnxBR+9o8wXyTflON3Ohsv7OrZWYLVRU+7RaiFO1gcu36iDm3WjudlVmYuWRLDO0Gmxotm6RQNhbZuEQQ==}
+
+  '@fontsource-variable/recursive@5.3.0':
+    resolution: {integrity: sha512-4B4/lWCVeZgdbpJdIIU1sOVO/ECjjM673ohuxvyQ6uCK41TPlGzKRNokKY84noUgGYnpwc//MW4k2KrOMY19jQ==}
 
   '@griffel/core@1.21.4':
     resolution: {integrity: sha512-Pt6tjaBCOYYC76L7U5yl3r+UqOGXEbeskvYuqUsUzaVQR2ueoMErA2+bRjvVPFr8NvvhPVU+QNBqd9Deg5st2A==}
@@ -2601,6 +2607,8 @@ snapshots:
   '@fluentui/tokens@1.0.0-alpha.24':
     dependencies:
       '@swc/helpers': 0.5.24
+
+  '@fontsource-variable/recursive@5.3.0': {}
 
   '@griffel/core@1.21.4':
     dependencies:

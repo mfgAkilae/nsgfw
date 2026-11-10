@@ -1,7 +1,8 @@
 // PROTOTYPE, throwaway. Three console variants of issue 25, switchable via ?variant=A|B|C (and ?lang=de).
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { FluentProvider, webLightTheme } from '@fluentui/react-components';
+import { FluentProvider } from '@fluentui/react-components';
+import { theme } from './theme';
 import { LangProvider } from './i18n';
 import { StoreProvider, useStore, Scenario } from './store';
 import { perfBus } from './bits';
@@ -29,7 +30,7 @@ function PrototypeSwitcher({ current, set }: { current: Key; set: (k: Key) => vo
   return (
     <div className="proto-bar">
       <button onClick={() => step(-1)} aria-label="previous variant">←</button>
-      <span><b>{current}</b> ({variants[current][1]})</span>
+      <span><b>{current}</b> {variants[current][1]}</span>
       <button onClick={() => step(1)} aria-label="next variant">→</button>
       <span className="sep" />
       <label>scenario <select value={s.scenario} onChange={e => s.setScenario(e.target.value as Scenario)}>
@@ -48,5 +49,5 @@ function App() {
 }
 
 createRoot(document.getElementById('root')!).render(
-  <FluentProvider theme={webLightTheme} style={{ height: '100%' }}><LangProvider><StoreProvider><App /></StoreProvider></LangProvider></FluentProvider>,
+  <FluentProvider theme={theme} style={{ height: '100%' }}><LangProvider><StoreProvider><App /></StoreProvider></LangProvider></FluentProvider>,
 );

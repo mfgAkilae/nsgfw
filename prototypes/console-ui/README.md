@@ -30,6 +30,16 @@ Out (follow-up prototype tickets): Zone detail and Security layers, Flow view, A
 
 The bar's "scenario" switch forces Crossing flows or a Change set that cannot be ordered, so you can see those states without constructing them.
 
+## Visual design (second pass)
+
+The first pass used Fluent defaults and looked generic. The second pass gives the console its own visual identity, the "rule ledger":
+
+- Colour carries meaning only. A coloured edge on every row shows its action (green allow, red deny, hatched when disabled). Change states (new, edited, moved, deleted) show as small markers next to the number, and edited cells get an amber tint. Cobalt is reserved for interaction.
+- Objects are quiet tokens with a glyph for their kind (Zone, VNet, host, network, service tag, ASG object, group). The red token for "any" is the only loud one, because it is the risky one.
+- Platform exceptions, Intra-zone default, Inherited defaults, Deny-all rules and Azure default rules are locked boundary bands above and below the Rules, not greyed-out rows.
+- One type family, Recursive (OFL): its sans style for the interface, its mono style for addresses, Rule IDs and NSG names.
+- One dark surface (the header), hairline lists instead of boxed cards, and the write order drawn as a numbered sequence because it is one.
+
 ## What to judge
 
 1. Which shell, or which mix (for example A's navigation with C's effective rule set as the Zone detail and B's "only changed" filter)?
