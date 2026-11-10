@@ -31,7 +31,7 @@ A subnet that an administrator has onboarded so that Rules can use it as source 
 _Avoid_: segment, network, NSG
 
 **Extra prefixes**:
-Prefixes that an administrator adds to a Zone because its Managed NSG sees them although they are not in the subnet, such as the pod range of an AKS cluster. They count as part of the Zone, and several Zones can have the same ones.
+Prefixes that an administrator adds to a Zone because its Managed NSG sees them although they are not in the subnet, such as the pod range of an AKS cluster. They count as part of the Zone, and several Zones can have the same ones. One may overlap the subnet of another Zone, such as a load balancer frontend there; the console warns, because Address objects that overlap it then cover both Zones.
 _Avoid_: secondary prefixes, additional ranges
 
 **Coverage**:
@@ -135,7 +135,7 @@ A set of rules outside the tool's control that also decides the traffic of a Zon
 _Avoid_: overlay, other layers
 
 **Flow view**:
-The list of flows that a Zone's Managed NSG allowed or denied, read from the VNet flow logs that the operator has enabled. Shown read-only.
+The list of flows that a Zone's Managed NSG or one of its Security layers allowed or denied, each with the Rule, default or layer rule that decided it, read from the VNet flow logs that the operator has enabled. Shown read-only.
 _Avoid_: traffic log, flow log (the Azure resource)
 
 **Hits**:
