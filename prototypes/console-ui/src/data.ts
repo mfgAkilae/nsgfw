@@ -201,4 +201,4 @@ export const entries: Entry[] = [];
 }
 
 export const me = 'you';
-export const versions = { latest: 1288, base: 1287 };
+export const versions = { latest: 1290, base: 1289 };   // issue 37: 1289 and 1290 added in front of issue 36's history

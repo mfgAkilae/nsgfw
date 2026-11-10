@@ -28,11 +28,11 @@ function specFor(id: string, f: Flow, t: (k: string) => string): Spec {
   let nid = '';
   const shape = (fields: Partial<Rule>): Step => s => Object.entries(fields).forEach(([k, v]) => s.editField(nid, k as keyof Rule, v));
   const exp8 = baseRules.filter(r => r.expiry && r.action === 'allow').slice(0, 8).map(r => r.id);
-  if (id === 'cs-2') return { id, name: 'Q4 cleanup of expired Rules', owner: 'kim', authors: ['kim'], kind: 'approval', decide: true, base: 1288,
+  if (id === 'cs-2') return { id, name: 'Q4 cleanup of expired Rules', owner: 'kim', authors: ['kim'], kind: 'approval', decide: true, base: 1290,
     steps: [s => s.setEnabled([...exp8.slice(0, 5), 'R90003'], false), s => s.remove(baseRules.filter(r => r.hits === 0).slice(0, 2).map(r => r.id)),
       s => { nid = s.addRule('R90001', 'F01'); }, shape({ name: 'Block RDP to jump hosts', src: ['any'], dst: ['zone:z0001-jump'], svc: ['svc-rdp'], action: 'deny', enabled: true, ticket: 'CHG-5233', comment: 'Only the admin network may reach the jump hosts' }),
       s => s.renameFolder('F01', 'App0042 go-live'), s => s.move(['F01'], 'F02', 'after'), s => s.deleteFolder('F02'), s => s.submit(), s => s.approveAs('jo', ['nonprod'])] };
-  if (id === 'cs-3') return { id, name: 'Partner VPN access', owner: 'sam', authors: ['sam', 'jo'], kind: 'view', decide: false, base: 1288,
+  if (id === 'cs-3') return { id, name: 'Partner VPN access', owner: 'sam', authors: ['sam', 'jo'], kind: 'view', decide: false, base: 1290,
     steps: [s => { nid = s.addRule('R90006'); }, shape({ name: 'Partner VPN to the API', src: ['n9'], dst: ['zone:z0042-api'], svc: ['svc-https'], action: 'allow', enabled: true, ticket: 'CHG-5240' }), s => s.submit(), s => s.approveAs('kim', ['prod', 'nonprod'])],
     banner: <div className="bn ok"><CheckmarkCircle16Filled /> {t('Approved. sam scheduled the Commit for today 22:00 in the instance time zone. An Author or an admin can move or cancel it.')}</div> };
   if (id === 'cs-4') return { id, name: 'Onboard vnet-app0107', owner: 'alex', authors: ['alex'], kind: 'view', decide: false, base: 1286,
@@ -41,7 +41,7 @@ function specFor(id: string, f: Flow, t: (k: string) => string): Spec {
   if (id === 'cs-5') return { id, name: 'Hotfix: block ext-partner-0339', owner: 'sam', authors: ['sam'], kind: 'emergency', decide: true, base: 1286,
     steps: [s => s.editField('R90001', 'src', ['n3', 'n339']), s => s.commit('Active scan from a partner network against the web tier, INC-2211')],
     banner: <div className="bn red"><Flash16Regular /> {t('Emergency Commit by sam, yesterday 09:41, Version 1287: “Active scan from a partner network against the web tier, INC-2211”. It is in Azure and needs an Approval afterwards. If you reject it, the tool prepares a Revert of Version 1287 for normal Approval; it never reverts on its own.')}</div> };
-  if (id === 'cs-6') return { id, name: 'Open RDP for vendor', owner: 'you', authors: ['you'], kind: 'rejected', decide: false, base: 1288,
+  if (id === 'cs-6') return { id, name: 'Open RDP for vendor', owner: 'you', authors: ['you'], kind: 'rejected', decide: false, base: 1290,
     steps: [s => { nid = s.addRule(); }, shape({ name: 'Open RDP for vendor', src: ['tag:Internet'], dst: ['zone:z0001-jump'], svc: ['svc-rdp'], action: 'allow', enabled: true, ticket: 'CHG-5301', comment: 'Vendor maintenance' })],
     banner: <div className="bn red"><PersonLock16Regular /> {t('jo rejected this on 2026-11-09 16:02: “Use the jump hosts, not RDP from the Internet.” It is Open again and keeps no Approvals.')}</div> };
   if (id === 'rt-1') return { id, name: 'Re-translation for engine 1.6.0', owner: 'nsgfw', authors: ['nsgfw'], kind: 'retranslation', decide: true, base: f.latest, steps: [s => s.submit()] };
@@ -65,7 +65,7 @@ function RevertChoice({ step }: { step: Step }) {
   </div>);
 }
 
-// What jo saw: the Preview stored with jo's Approval, against the fresh one after the clean Rebase onto Version 1288.
+// What jo saw: the Preview stored with jo's Approval, against the fresh one after the clean Rebase onto Version 1290.
 function ChangedSince({ pv }: { pv: Preview }) {
   const { t } = useT(); const [open, setOpen] = useState(false); const s = useCsStore();
   const by = s.approvedBy.nonprod; const n = pv.nsgs.find(x => x.env === 'nonprod');
@@ -73,7 +73,7 @@ function ChangedSince({ pv }: { pv: Preview }) {
   const ops = n.ops.slice(0, 3);
   const nr = ops.length === 1 ? 'NSG rule' : 'NSG rules';
   return (
-    <div className="bn amber"><Clock16Regular /><span>{by} {t('approved Non-production at Version 1287. Since then the Change set rebased cleanly onto 1288, and the Preview changed in')} {ops.length} {t(nr)}. {t('The Approval stays.')} <a className="link" onClick={() => setOpen(!open)}>{t(open ? 'Hide' : 'Show what changed')}</a>
+    <div className="bn amber"><Clock16Regular /><span>{by} {t('approved Non-production at Version 1289. Since then the Change set rebased cleanly onto 1290, and the Preview changed in')} {ops.length} {t(nr)}. {t('The Approval stays.')} <a className="link" onClick={() => setOpen(!open)}>{t(open ? 'Hide' : 'Show what changed')}</a>
       {open && <table className="mini"><thead><tr><th>{t('Managed NSG')}</th><th>{t('NSG rule')}</th><th>{by} {t('saw')}</th><th>{t('Now')}</th></tr></thead>
         <tbody>{ops.map((o, i) => <tr key={i}><td className="mono">{n.nsg}</td><td className="mono">{o.name}</td><td>{t('priority')} {o.priority - 10}</td><td><b>{t('priority')} {o.priority}</b></td></tr>)}</tbody></table>}</span></div>
   );

@@ -8,6 +8,10 @@ import { zones, candidates, envs, Zone, Flag, type Candidate } from './data';
 import { avnmCount, nicNsgCount, onboarded } from './zonedata';
 import { gridTheme } from './RuleGrid';
 import { useT } from './i18n';
+import { useRef } from 'react';                           // issue 37
+import { Dismiss16Regular } from '@fluentui/react-icons';  // issue 37
+import { go37 } from './ops37';                            // issue 37
+import { onboardable, subOf } from './importdata';         // issue 37
 
 // Limits checked 2026-11-09 (research: NSG and ASG rule semantics and limits).
 export const LIMITS = { rules: 2000, addr: 6000, asgs: 100, nsgPerSubRegion: 5000, asgPerSubRegion: 3000 };
@@ -50,13 +54,26 @@ export function ZoneGrid({ onOpen, onCandidate, only }: { onOpen?: (z: Zone) => 
     { colId: 'flags', headerName: t('Flags'), flex: 1, minWidth: 200, valueGetter: x => x.data!.flags.join(' '), cellRenderer: (x: ICellRendererParams<Zone>) => <Flags z={x.data!} /> },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [lang]);
+  // issue 37: a candidate with an existing NSG opens the wide onboarding screen; one without keeps the side sheet of issue 35.
+  const pick = (c: Candidate) => (onboardable(c) && c.nsg ? go37({ to: 'onboard', candidates: [c.id] }) : onCandidate?.(c));
   const ccols = useMemo<ColDef[]>(() => [
-    { field: 'subnet', headerName: 'Subnet', width: 180 }, { field: 'vnet', headerName: t('VNet'), width: 180 }, { field: 'prefix', headerName: t('Prefixes'), width: 150 },
+    { field: 'subnet', headerName: 'Subnet', width: 180 }, { field: 'vnet', headerName: t('VNet'), width: 180 }, { colId: 'sub', headerName: t('Subscription'), width: 150, valueGetter: x => subOf(x.data.vnet) }, { field: 'prefix', headerName: t('Prefixes'), width: 150 },
     { field: 'env', headerName: t('Environment'), width: 130, valueFormatter: x => envs.find(e => e.id === x.value)?.name ?? '' },
-    { field: 'nsg', headerName: t('Existing NSG'), width: 200, valueFormatter: x => x.value ? `${x.value}${x.data.shared ? ' (shared: swap)' : ' (adopt in place)'}` : '—' },
-    { colId: 'state', headerName: '', flex: 1, cellRenderer: (x: ICellRendererParams) => x.data.reason ? <a className="zflag clickable" onClick={() => onCandidate?.(x.data)}>{t('Not onboardable')}: {t(reasons[x.data.reason])}</a> : <a className="link" onClick={() => onCandidate?.(x.data)}>{onboarded.has(x.data.id) ? t('In your Change set') : t('Onboard')}</a> },
+    { field: 'nsg', headerName: t('Existing NSG'), width: 290, valueFormatter: x => x.value ? `${x.value}${x.data.shared ? ' (shared: swap)' : ' (adopt in place)'}` : '—' },
+    { colId: 'state', headerName: '', flex: 1, cellRenderer: (x: ICellRendererParams) => x.data.reason ? <a className="zflag clickable" onClick={() => pick(x.data)}>{t('Not onboardable')}: {t(reasons[x.data.reason])}</a> : <a className="link" onClick={() => pick(x.data)}>{onboarded.has(x.data.id) ? t('In your Change set') : t('Onboard')}</a> },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [lang]);
+  // issue 37: tick candidates to onboard several at once; a ticked one offers its whole VNet or subscription.
+  const cgrid = useRef<AgGridReact>(null); const [csel, setCsel] = useState<Candidate[]>([]);
+  const copts = useMemo(() => ({
+    rowSelection: { mode: 'multiRow', checkboxes: true, headerCheckbox: false, enableClickSelection: false, hideDisabledCheckboxes: true, isRowSelectable: (n: any) => !!n.data && onboardable(n.data) } as const,
+    selectionColumnDef: { pinned: 'left', width: 42, resizable: false } as ColDef,
+    getRowId: (x: any) => x.data.id as string,
+    onSelectionChanged: (e: any) => setCsel(e.api.getSelectedRows()),
+  }), []);
+  const anchor = csel[csel.length - 1]; const asub = anchor ? subOf(anchor.vnet) : '';
+  const selectWhere = (fn: (c: Candidate) => boolean) => { const api = cgrid.current?.api; if (!api) return; const nodes: any[] = []; api.forEachNode(n => { if (n.data && onboardable(n.data) && fn(n.data)) nodes.push(n); }); api.setNodesSelected({ nodes, newValue: true }); };
+  const inVnet = anchor ? candidates.filter(c => onboardable(c) && c.vnet === anchor.vnet).length : 0; const inSub = anchor ? candidates.filter(c => onboardable(c) && subOf(c.vnet) === asub).length : 0;
   return (
     <>
       <div className="zbar">
@@ -68,10 +85,17 @@ export function ZoneGrid({ onOpen, onCandidate, only }: { onOpen?: (z: Zone) => 
         <span className="sp" />
         <span className="muted">{t('Highest use per subscription and region')}: NSGs <Bar v={subUse[1]} max={LIMITS.nsgPerSubRegion} /> ASGs <Bar v={212} max={LIMITS.asgPerSubRegion} /></span>
       </div>
+      {tab === 'cand' && (anchor ? <div className="chipbar selbar">{/* issue 37 */}
+        <b>{csel.length} {t('selected')}</b>
+        <button onClick={() => selectWhere(c => c.vnet === anchor.vnet)}>{t('All in this VNet')} <span className="mono">{anchor.vnet}</span><i>{inVnet}</i></button>
+        <button onClick={() => selectWhere(c => subOf(c.vnet) === asub)}>{t('All in this subscription')} <span className="mono">{asub}</span><i>{inSub}</i></button>
+        <span className="sp" /><button onClick={() => cgrid.current?.api.deselectAll()}><Dismiss16Regular />{t('Clear selection')}</button>
+        <button className="zgo" onClick={() => go37({ to: 'onboard', candidates: csel.map(c => c.id) })}>{t('Onboard')} {csel.length} {t(csel.length === 1 ? 'subnet' : 'subnets')}</button>
+      </div> : <div className="chipbar"><span className="hint">{t('Tick subnets to onboard several at once. A ticked subnet offers its whole VNet or subscription.')}</span></div>)}
       {tab === 'zones' && <div className="chipbar">{zfilters.map(f => <button key={f.k} className={`chip ${f.cls} ${zf === f.k ? 'on' : ''}`} aria-pressed={zf === f.k} onClick={() => setZf(f.k)}>{t(f.label)}<i>{f.n.toLocaleString()}</i></button>)}</div>}
       <div className="sheet"><div className="gridbox">
         {tab === 'cand'
-          ? <AgGridReact theme={gridTheme} containerStyle={{ flex: 1, minWidth: 0, height: '100%' }} rowData={candidates} columnDefs={ccols} quickFilterText={q} rowHeight={42} />
+          ? <AgGridReact ref={cgrid} theme={gridTheme} containerStyle={{ flex: 1, minWidth: 0, height: '100%' }} rowData={candidates} columnDefs={ccols} quickFilterText={q} rowHeight={42} {...copts} />
           : <AgGridReact<Zone> theme={gridTheme} containerStyle={{ flex: 1, minWidth: 0, height: '100%' }} rowData={shown} columnDefs={zcols} quickFilterText={q} getRowId={x => x.data.id} rowHeight={42} />}
       </div></div>
     </>

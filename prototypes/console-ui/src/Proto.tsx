@@ -7,6 +7,7 @@ import { useSession } from './session';
 import { personas } from './access';
 import { useFlow } from './flow';
 import { perfBus } from './bits';
+import { useOps, setOps, type Ops37 } from './ops37';   // issue 37
 
 export function ProtoButton() {
   const s = useStore(); const se = useSession(); const f = useFlow(); const [perf, setPerf] = useState('');
@@ -51,8 +52,22 @@ export function ProtoButton() {
           <button disabled={!!f.pending || f.small} onClick={() => f.startRebase('folder', s)}>with a conflict on a Folder only (submit and approve first: the Approvals stay)</button>
           <p className="muted">Both first add the edits the conflicts need to your Change set.</p>
         </div>
+        <Proto37 />
         {perf && <p className="muted" style={{ margin: '10px 0 0' }}>{perf}</p>}
       </PopoverSurface>
     </Popover>
   );
+}
+
+// Issue 37: Deployment, Drift and Import scenarios.
+const ops37: [keyof Ops37, string][] = [
+  ['liveRun', 'The running Deployment of Version 1290 advances live'], ['policyOnWrite', 'Production: Azure Policy changes a field on write'],
+  ['tfApplyPolicy', 'Non-production: apply failed: policy'], ['tfNotApplied', 'Non-production: merged, not applied within the apply timeout'],
+  ['tfOpenEmergency', 'Non-production: the pull request of Emergency Commit 1287 stays open'], ['handEdit', 'A Data contract file was edited by hand'],
+  ['portalDrift', 'Someone adds an NSG rule in the Azure portal (high Drift)'], ['autoOverwriteLoop', 'Sandbox: automatic Overwrite stops, the same writer keeps removing an association'],
+  ['snapshotChanged', 'A legacy NSG changes in Azure after its Import snapshot (onboard first)']];
+function Proto37() {
+  const o = useOps();
+  return <div className="proto-36"><b>Issue 37</b>{ops37.map(([k, label]) => <label key={k}><input type="checkbox" checked={o[k]} onChange={e => setOps({ [k]: e.target.checked })} /> {label}</label>)}
+    <p className="muted">Deep links: #deployments, #drift, #deployment-running, #deployment-failed, #deployment-terraform, #onboard-import, #onboard-many, #environment-terraform.</p></div>;
 }

@@ -1,0 +1,85 @@
+/* PROTOTYPE, throwaway. Issue 37: the wide onboarding screen, Import notes, the Handover and the candidates selection. Same tokens as app.css,
+   so light and dark both hold. app.css loads after this file: rules that override one of its rules double a class. */
+
+/* ---- left: the subnets of this onboarding */
+.ob-sub { display: flex; gap: 10px; align-items: flex-start; width: calc(100% + 16px); margin: 0 -8px 2px; padding: 9px 8px; border: 0; background: none; border-radius: 8px; text-align: left; cursor: pointer; color: var(--ink); font: inherit; font-size: 13px; }
+.ob-sub:hover { background: var(--hover); } .ob-sub.on { background: var(--sel); }
+.ob-sub > svg { flex-shrink: 0; margin-top: 2px; color: var(--ink3); }
+.ob-sub.s-ok > svg { color: var(--allow); } .ob-sub.s-red > svg { color: var(--deny); } .ob-sub.s-amber > svg { color: var(--amber); }
+.ob-sub > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ob-sub b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ob-sub .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ob-st { font-size: 12px; font-weight: 600; } .ob-st.ok { color: var(--allow); } .ob-st.red { color: var(--deny); } .ob-st.amber { color: var(--amber); } .ob-st.muted { font-weight: 500; }
+.ob-lead { margin: -2px 0 12px; line-height: 1.45; }
+.ob-def { display: flex; flex-direction: column; gap: 14px; }
+.ob-def > div { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; } .ob-def > div > span { font-size: 12.5px; color: var(--ink2); }
+.ob-def .fui-Switch { margin-left: -8px; }
+.ob-foot { margin: 20px 0 0; padding-top: 12px; border-top: 1px solid var(--line2); line-height: 1.5; }
+
+/* ---- middle: one subnet */
+.ob-m > p { margin: 6px 0; font-size: 13px; line-height: 1.5; } .ob-m > p.muted { font-size: 12.5px; }
+.ob-m .rv-rule .glyph { color: var(--ink3); width: 14px; height: 14px; } .ob-m .rv-rule .mono { font-size: 12.5px; }
+.ob-h { display: flex; align-items: center; gap: 8px; }
+.ob-own { font-size: 12px; font-weight: 500; color: var(--accent-text); } .ob-own.muted { color: var(--ink3); }
+.ob-name { display: flex; align-items: center; gap: 14px; } .ob-name .fui-Input { width: min(420px, 100%); }
+.ob-box { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.5; } .ob-box p { margin: 6px 0 0; }
+.ob-box-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; } .ob-box-h b { font-weight: 650; }
+.ob-leg { margin-top: 6px; } .ob-leg > summary { cursor: pointer; color: var(--accent-text); font-size: 12.5px; padding: 4px 0; width: max-content; }
+.ob-leg table.mini { margin: 6px 0 2px; } .ob-leg td .muted { font-size: 11.5px; }
+.ob-nsgin { display: flex; margin-top: 6px; width: min(420px, 100%); }
+.ob-m .owarn .cd-l { margin: 4px 0 8px; font-size: 12.5px; }
+.ob-asg { padding: 8px 0 10px; border-bottom: 1px solid var(--line2); } .ob-asg:last-of-type { border-bottom: 0; }
+.ob-asg-h { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; } .ob-asg-h .glyph { color: var(--orange); } .ob-asg-h b { font-weight: 600; }
+.ob-asg > p.muted { margin: 6px 0 0; line-height: 1.45; } .ob-asg .owarn { margin: 0; }
+.ob .seg2 button:disabled { opacity: .45; cursor: default; } .ob .seg2 button:disabled:hover { color: var(--ink2); }
+.ob .inh-h b { font-weight: 600; font-size: 13px; }
+.ob-inh { margin: 2px 0 0; }
+.ob-flag { font-size: 11.5px; font-weight: 650; padding: 0 7px; border-radius: 5px; line-height: 17px; color: var(--ink3); border: 1px dashed var(--line); white-space: nowrap; }
+.ob-flag.on { color: var(--ink2); background: var(--tok); border-color: transparent; }
+.ob-why { font-size: 12.5px; max-width: 360px; text-align: right; line-height: 1.35; }
+.ob .rv-h .fui-Button { white-space: nowrap; flex-shrink: 0; }
+
+/* ---- right: the result */
+.ob .counts { gap: 6px; } .ob .counts span { padding: 8px 10px; }
+.counts .c-blocking b { color: var(--deny); } .counts .c-warning b { color: var(--amber); }
+.ob-scope button { font-size: 12px; padding: 3px 9px; }
+.ob-r { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line2); font-size: 13px; }
+.ob-r b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ob-r > .muted { grid-column: 2; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ob-more { display: inline-block; margin-top: 8px; font-size: 12.5px; }
+.ob-merge { display: flex; gap: 10px; align-items: center; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; font-size: 12.5px; line-height: 1.45; }
+.ob-merge > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; } .ob-merge b { font-weight: 600; }
+.ob-merge .ok svg { vertical-align: -1px; }
+.ob .rv-r .cd-l { font-size: 12.5px; } .ob .rv-r .cd-l .mono { overflow-wrap: anywhere; }
+.ob .rv-r .warnline { font-size: 12.5px; }
+.ob .rv-r table.mini td { vertical-align: middle; } .ob .rv-r table.mini td:nth-child(2) { white-space: nowrap; } .ob .rv-r table.mini td:last-child { text-align: right; }
+
+/* ---- Import notes: the level is a word; the left edge carries its colour */
+.inote { display: grid; grid-template-columns: minmax(62px, max-content) minmax(0, 1fr); gap: 8px; padding: 8px 10px; margin-bottom: 6px; border: 1px solid var(--line2); border-left: 3px solid var(--line); border-radius: 8px; background: var(--surface); font-size: 12.5px; line-height: 1.45; }
+.inote.blocking { border-left-color: var(--deny); background: color-mix(in srgb, var(--deny-tint) 45%, var(--surface)); } .inote.warning { border-left-color: var(--amber); }
+.inote p { margin: 0; } .inote p + p, .inote p + div { margin-top: 5px; } .inote .mono { overflow-wrap: anywhere; }
+.inote-w { font-size: 12px; color: var(--ink3); margin-bottom: 2px; } .inote-w .mono { color: var(--ink2); font-weight: 600; }
+.inote .ok svg { vertical-align: -1px; }
+.lv { justify-self: start; align-self: start; font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: 4px; line-height: 17px; white-space: nowrap; }
+.lv.blocking { color: var(--deny); background: var(--deny-tint); } .lv.warning { color: var(--amber); background: var(--amber-tint); } .lv.info { color: var(--ink2); background: var(--tok); }
+.inote-a { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.inote.done.done { background: var(--surface); border-left-color: var(--allow); } .inote.done .lv { opacity: .7; }
+
+/* ---- Rule editor: where an imported Rule came from */
+.imp { background: var(--sunken); border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; }
+.imp .imp-f + .imp-f { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line2); }
+.imp > p.muted { margin: 8px 0 0; line-height: 1.45; }
+.imp-pl { margin: 4px 0 0; line-height: 1.45; }
+
+/* ---- Review: the Handover from foreign IaC */
+.ho { border: 1px solid var(--line); border-left: 3px solid var(--amber); border-radius: 10px; padding: 8px 12px 10px; font-size: 12.5px; line-height: 1.45; }
+.ho.done { border-left-color: var(--allow); }
+.ho p { margin: 4px 0; } .ho .cd-l { font-size: 12.5px; margin: 2px 0 6px; } .ho .mono, .ob .owarn .mono { overflow-wrap: anywhere; }
+.ho-i + .ho-i { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line2); }
+.ho .fui-Checkbox { margin: 2px 0 0 -8px; } .ho .ok svg { vertical-align: -1px; }
+.ho-w { font-size: 12.5px; }
+
+/* ---- Zones page, candidates: the selection bar */
+.selbar .zgo.zgo { background: var(--accent); color: var(--accent-ink); font-weight: 600; padding: 0 14px; margin-left: 4px; }
+.selbar .zgo.zgo:hover { background: var(--accent-text); color: var(--accent-ink); }
+.selbar button i { font-style: normal; color: var(--ink3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.selbar button .mono { color: var(--ink2); }

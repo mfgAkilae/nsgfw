@@ -90,7 +90,7 @@ export function RebaseScreen({ onClose, onRule }: { onClose: () => void; onRule:
           {sel === 'rule' && full && <>
             <h3>{t('The same Rule changed on both sides')}</h3>
             <p className="cd-p">{t('A conflict counts per Rule, not per field: merging single fields would make a Rule nobody reviewed. One side wins as a whole, or you redo your change on top of theirs.')}</p>
-            <table className="mini cmp"><thead><tr><th />{col('Base', 'Version 1288')}{col('Theirs', `Version ${p.version}, ${p.by}`)}{col('Yours', 'CHG-5120')}{res.rule && col('Result', '', 'res')}</tr></thead>
+            <table className="mini cmp"><thead><tr><th />{col('Base', 'Version 1290')}{col('Theirs', `Version ${p.version}, ${p.by}`)}{col('Yours', 'CHG-5120')}{res.rule && col('Result', '', 'res')}</tr></thead>
               <tbody>{ruleRows.map(([k, g]) => <tr key={k}><td>{t(k)}</td><td>{g(base)}</td><td className={g(THEIRS.rule) !== g(base) ? 'chg' : ''}>{g(THEIRS.rule)}</td><td className={g(mine) !== g(base) ? 'chg' : ''}>{g(mine)}</td>{res.rule && <td className="res">{g(result)}</td>}</tr>)}</tbody></table>
             <RadioGroup value={res.rule ?? ''} onChange={(_, d) => setRes({ ...res, rule: d.value as Res['rule'] })}>
               <Radio value="theirs" label={<span><b>{t('Take theirs')}</b> <span className="muted">{t('Drops your service change. The Rule stays off.')}</span></span>} />

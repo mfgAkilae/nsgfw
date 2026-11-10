@@ -18,10 +18,10 @@ export interface Created { id: string; kind: 'revert' | 'restore'; of: number; a
 export interface Decision { kind: 'approved' | 'rejected'; comment?: string; at: string; envs?: string[] }
 export interface SessionVersion { n: number; name: string; by: string; at: string; kind: 'normal' | 'emergency' | 'scheduled' | 'folders' | 'retranslation' | 'revert' | 'restore'; nsgs: number; edits: number }
 
-// The Rule that kim's Commit (Version 1289) inserts above "Admins to jump hosts": it overlaps that allow Rule with the other action.
+// The Rule that kim's Commit (Version 1291) inserts above "Admins to jump hosts": it overlaps that allow Rule with the other action.
 export const KIM_DENY = { id: 'R95901', name: 'Block RDP to jump hosts', src: ['any'], dst: ['zone:z0001-jump'], svc: ['svc-rdp'], action: 'deny' as const, enabled: true,
   comment: 'Only the admin network may reach the jump hosts', ticket: 'CHG-5233', owner: 'grp-netsec', hits: null };
-// What kim's Version 1289 did to the Rules and Folders this Change set also touched.
+// What kim's Version 1291 did to the Rules and Folders this Change set also touched.
 export const THEIRS = {
   rule: { ...baseRules.find(r => r.id === 'R90003')!, enabled: false, expiry: '2026-10-31', comment: 'Expired, turned off in the Q4 cleanup' },
   folderName: 'App0042 go-live', removedFolder: 'F02', removedFolderName: 'Platform and admin access',
@@ -44,7 +44,7 @@ function useFlowValue() {
   const [schedule, setScheduleMap] = useState<Record<string, string | undefined>>({});
   const [pending, setPending] = useState<Pending | null>(null);
   const [done, setDone] = useState<Done | null>(null);
-  const [latest, setLatest] = useState(1288);
+  const [latest, setLatest] = useState(1290);
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
   const [created, setCreated] = useState<Created[]>([]);
   const [csState, setCsState] = useState<Record<string, 'Open' | 'Submitted' | 'Approved' | 'Committed'>>({});

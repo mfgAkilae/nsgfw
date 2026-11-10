@@ -29,6 +29,7 @@ pnpm dev          # http://localhost:5199/  (?theme=dark|light, ?lang=de)
 
 9. Zone detail, Flow view and object editors ([Prototype: Zone detail, Flow view and object editors](https://github.com/mfgAkilae/nsgfw/issues/35)), see below. Code in `ZoneDetail.tsx`, `ObjectEditor.tsx`, `Onboard.tsx`, `zonedata.ts`, `zone.css`, `i18n-zone.ts`.
 10. After the author: [Prototype: Change set review, conflicts and Version history](https://github.com/mfgAkilae/nsgfw/issues/36). The approver decides on the Review screen, a Rebase with conflicts has a screen of its own, Policy findings come in full with the Pre-check waiver, Commit always opens a short dialog, the Versions page starts Restore and Revert, and the bell leads to the inbox in full. See [Change set review, conflicts and Version history](#change-set-review-conflicts-and-version-history-issue-36).
+11. After the Commit: [Prototype: Deployment, Drift and Import views](https://github.com/mfgAkilae/nsgfw/issues/37). A Deployments entry in the rail with a status strip per Environment, the Deployment history and a Drift tab; a wide Deployment view per Commit; a wide onboarding screen with the Import choices; Import notes on Rules; the Import snapshot and the foreign-IaC Handover. See [Deployments, Drift and Import](#deployments-drift-and-import-issue-37).
 
 The map owner called the third pass clearly better and asked for two more, then for Folders and two further passes. The brief for the third pass: much better design, dark and light mode, clear and very pleasant to look at, functional, and as few clicks as possible to the main functions.
 
@@ -85,6 +86,54 @@ Prototype controls (flask button) switch the persona (instance admin, Environmen
 
 Simplifications: the Change set's Approval still uses one level per Environment, so a level set on a VNet or Zone shows in Access but not yet in the commit bar. The persona switch keeps the Change set, so every persona is its Author. The Objects and Change sets pages are not filtered by Coverage yet.
 
+## Deployments, Drift and Import (issue 37)
+
+Decided with the map owner on 2026-11-10 before building:
+
+- **One rail entry, Deployments**, after Versions. A status strip with one card per Environment (failed, running or waiting, in sync, and its Drift), then two tabs: Deployments (the history: every Deployment, also those without a new Version, such as an Overwrite or a catch-up) and Drift. Drift sits here because it is measured against the Deployed state. Settings stay in Admin > Environments; each card links there.
+- **The Deployment view** is a wide screen like Review, one per Commit with a tab per Environment: what ran before the first write, the write order as steps with the Settle time between them, every write with its state, and one write in full (what it changes, what it holds back, why it failed, the ways out, Retry). In a Terraform Environment the steps are pull requests.
+- **Onboarding with Import** opens a wide screen when a candidate has an existing NSG or several candidates are ticked: the subnets on the left, the choices of one subnet in the middle, the result on the right. A candidate without an NSG keeps the side sheet of issue 35.
+- **Handover**: with foreign-IaC evidence, the Author confirms the checklist in the Review before Submit; the approver sees it, and the Commit dialog shows the confirmation without asking again.
+- **Crossing flows between Environments** go to a new grilling ticket. The Deployment view does not show writes that wait across Environments.
+
+Built on top, for review:
+
+- The Rule base shows a permanent banner while a Deployment failed or the pull request of an Emergency Commit stays open, and a chip "Import notes". The Rule editor lists the Managed NSGs where its NSG rules are not deployed yet, and an Import section (provenance, the note, Acknowledge for Zone admins).
+- The Zone overview's "Drift" flag now follows the open Drift items instead of random flags.
+- The commit bar names a Handover the Author has not confirmed and an Import snapshot that is out of date; Submit and Commit wait for them.
+- Admin > Environments > a Terraform Environment lists its Data contract files and flags a hand edit.
+- To give the Deployment views a failed and a running Deployment, Versions 1289 (failed in Production, changed by Azure Policy on write) and 1290 (running) were added in front of issue 36's history. Issue 36's numbers moved up by two: kim's conflicting Commit is now 1291.
+
+Prototype assumption: "Preserve behaviour" off means that no Inherited defaults are set, so traffic that only the Azure default rules allowed stops at onboarding; the imported Rules are still placed by the constraint merge.
+
+How to try it (the dashed flask holds the switches under "Issue 37"):
+
+| What | How |
+| --- | --- |
+| Where every Environment stands | Deployments in the rail (`#deployments`). Click a card to filter. |
+| A Deployment running live, with a Settle time between two steps | `#deployment-running`, or the first row. "Replay (prototype)" restarts it. |
+| A write changed by Azure Policy on write, a write that waits for it, Retry | `#deployment-failed`, or the red banner above the Rule base. |
+| Terraform: a pull request per step, apply failed: policy, merged but not applied | `#deployment-terraform`; the flask switches the states. |
+| Your own Commit supersedes the running Deployment | Commit CHG-5120 (it becomes Version 1291), then open Deployments. |
+| Drift: Overwrite, Adopt, not adoptable automatically, resolved by the tool | `#drift`. The flask adds a portal change (high) and a recurring automatic Overwrite. |
+| Onboard with Import | Zones > Candidates: tick several (or "All in this VNet"), "Onboard n subnets"; or `#onboard-many`. |
+| Import notes, Acknowledge, a blocking note resolved | After "Add to Change set": the chip "Import notes", then a Rule's editor. |
+| Handover from foreign IaC | Onboard the Non-production snet-new-orders, then Review: confirm before Submit. |
+| Import snapshot out of date | Onboard first, then flask: "A legacy NSG changes in Azure…"; the red flag in the commit bar opens Re-import or Keep snapshot. |
+| A hand-edited Data contract file | Admin > Environments > Non-production (`#environment-terraform` opens Environments), and the Commit dialog. |
+
+What to judge:
+
+1. The status strip and the history: enough to see at a glance whether Azure matches what was decided?
+2. The Deployment view: plan on the left, writes in the middle, one write on the right. Are the Settle time between steps and "Holds back" clear?
+3. Changed by Azure Policy on write: the field diff and the three ways out.
+4. Terraform: the pull request cards per step and their states.
+5. Drift: one list with severity, actor and state; Overwrite and Adopt per item; the Terraform Overwrite that lists every Drift in the root module.
+6. Onboarding: three columns, "Same for all", the result with notes and merge proposals. Too much on one screen?
+7. German term proposals: Übernehmen (Adopt), Überschreiben (Overwrite), Import-Hinweis, Schritt, ersetzt (superseded), Deployter Stand, Datenvertrag (Data contract), Übergabe (Handover), nicht automatisch übernehmbar, Import-Snapshot, Neu importieren, Snapshot behalten, leer beginnen, Verhalten erhalten. Deployment, Drift, Pull Request and Apply stay English.
+
+Code: `Deployments.tsx`, `DeployView.tsx`, `deploydata.ts` (Deployments); `Drift.tsx`, `driftdata.ts` (Drift); `Onboarding.tsx`, `ImportNote.tsx`, `importdata.ts` (onboarding and Import); `ops37.ts` (flask switches, navigation); `deploy.css`, `drift.css`, `import.css`; `i18n-deploy.ts`, `i18n-drift.ts`, `i18n-import.ts`. The shared files (`Console.tsx`, `Commit.tsx`, `Review.tsx`, `Editor.tsx`, `Inbox.tsx`, `RuleGrid.tsx`, `ZoneGrid.tsx` candidates tab, `SettingsPages.tsx`, `Proto.tsx`) carry small changes marked "issue 37".
+
 ## Change set review, conflicts and Version history (issue 36)
 
 Decided with the map owner on 2026-11-10 before building: the approver decides on the Review screen; conflicts after a Rebase get a wide screen of their own; the Version history is a page in the rail; the bell leads to the inbox on the Change sets page; Commit always opens a short dialog; in the Emergency Commit dialog each blocking deny finding is ticked for a waiver with the reason prefilled from the Emergency reason; a prototype switch shows the small profile without Folders.
@@ -96,7 +145,7 @@ How to try it (the dashed flask in the rail holds the switches):
 | Approve as an approver, with the Preview an earlier approver saw | Bell, then "Review" on kim's request. "Show what changed" in the amber banner. Approve asks for a fresh sign-in. |
 | Approve an Emergency Commit afterwards, or reject it | Bell, "Review" on sam's Emergency Commit. A rejection makes the tool prepare a Revert, which lands in the inbox. |
 | Submit stopped by a deny Policy finding, then waive it | Bell, "Open" on the rejected "Open RDP for vendor", then Submit. Or flask: "Force a deny Policy finding" and Submit your own Change set. |
-| Resolve conflicts after a Rebase | Flask: "kim commits Version 1289 … with conflicts on a Rule, a position and a Folder". Then the red "3 conflicts after the Rebase" in the commit bar. |
+| Resolve conflicts after a Rebase | Flask: "kim commits Version 1291 … with conflicts on a Rule, a position and a Folder". Then the red "3 conflicts after the Rebase" in the commit bar. |
 | Approvals that survive a Rebase, and the Commit dialog listing what changed since | Edit a Rule (right click, Disable), Submit, "Approve as kim", then flask: "with a conflict on a Folder only", resolve, "Commit…". |
 | Commit at a chosen time | "Commit…", "At a time I choose". The bar then shows the schedule with Move and Cancel. |
 | A Tool path closes | Flask: "This Change set closes a Tool path", or a deny Rule to app0001-mgmt. Submit, Commit and Emergency Commit ask for a reason. |
@@ -181,7 +230,9 @@ The map owner chose, in the session for issue 35:
 
 In: Rule base table (10,000 Rules, drag-and-drop, inline editing, filter, clone, disable, bulk actions), Zone lens, Change set list, pending changes with Preview, write order (ADR 0018) including "cannot be ordered", Approval per Affected Zone, Policy findings (rough), Emergency Commit (rough), inbox (rough), Zone overview with limits, candidates and flagged Zones (20,000 Zones), object picker with Azure service tags, English and German, light and dark. Since issue 35 also: Zone detail with Security layers, Flow view, Zone settings, object editor with ASG members and VNet bindings, the not-onboardable reasons and the DNS Rule at onboarding.
 
-Out (follow-up prototype tickets): Deployment and Drift views, Import, access, audit, settings and health. Issue 35 added the Zone detail with Security layers, the Flow view and the object editors; issue 36 added the approver's view, conflicts after a Rebase, Policy findings in full, the Pre-check waiver, the Commit and Emergency Commit dialogs, the Version history with Restore and Revert, and the inbox in full.
+Since issue 37 also: the Deployments page with the Deployment history and Drift, the Deployment view, onboarding with Import, Import notes, the Import snapshot and the foreign-IaC Handover.
+
+Out (follow-up prototype tickets): access, audit, settings and health (issue 38 added them). Issue 35 added the Zone detail with Security layers, the Flow view and the object editors; issue 36 added the approver's view, conflicts after a Rebase, Policy findings in full, the Pre-check waiver, the Commit and Emergency Commit dialogs, the Version history with Restore and Revert, and the inbox in full.
 
 The dashed flask button in the rail holds prototype-only controls: it forces Crossing flows or a Change set that cannot be ordered.
 

@@ -1,6 +1,7 @@
 // PROTOTYPE, throwaway. Review: the whole Change set on one wide screen before Submit.
 // Left: what was edited. Middle: one Rule before and after, and what it writes in Azure. Right: order, Approval, Policy, and the action.
 import { ReactNode, useEffect, useState } from 'react';
+import { HandoverBlock } from './ImportNote';   // issue 37
 import { Dismiss20Regular, ArrowRight16Regular, Checkmark12Filled, Dismiss12Filled } from '@fluentui/react-icons';
 import { useStore } from './store';
 import { rules as baseRules, envs } from './data';
@@ -54,6 +55,7 @@ export function Review({ onClose, onRule, title, summary, banner, left, middle, 
           <h3>{t('Write order')}</h3><WriteOrderView pv={pv} />
           <h3>{t('Approval')}</h3><ApprovalView pv={pv} />
           <FlushNote envIds={[...new Set(pv.nsgs.map(n => n.env))]} />
+          <HandoverBlock />
           <h3>{t('Policy findings')}</h3><PolicyView pv={pv} />
           <div className="rv-act"><CsActions pv={pv} compact /></div></>}
         </section>

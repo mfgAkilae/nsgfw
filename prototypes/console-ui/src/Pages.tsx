@@ -91,7 +91,7 @@ export function ChangeSetsPage({ onFilter, onReview }: { onFilter: (k: FilterKey
     </div>);
   // Issue 36: the other Change sets open on the Review screen, the approver decides there.
   const dec = (id: string, st: CsState): CsState => (f.decisions[id]?.kind === 'rejected' ? 'Open' : f.decisions[id]?.kind === 'approved' && st === 'Submitted' ? 'Approved' : st);
-  const others = otherSets.map(c => ({ ...c, state: c.id === 'cs-2' && f.latest >= 1289 ? 'Committed' as CsState : dec(c.id, c.state) }));
+  const others = otherSets.map(c => ({ ...c, state: c.id === 'cs-2' && f.latest >= 1291 ? 'Committed' as CsState : dec(c.id, c.state) }));
   return (
     <div className="setspage">
       <h3 style={{ marginTop: 4 }}>{t('Waiting for you')}</h3>
@@ -100,7 +100,7 @@ export function ChangeSetsPage({ onFilter, onReview }: { onFilter: (k: FilterKey
       <div className="sheet sets">
         {row('cur', CUR_NAME, 'you', s.state === 'Committed' ? 'Committed' : ap.eff, `${n(s.edits.length, 'edit', 'edits')}, ${n(pv.affected.length, 'Zone', 'Zones')}, ${t('based on Version')} ${s.version}${behind(s.version)}`,
           <><span className="tag accent">{t('current')}</span>{f.pending && <span className="tag red">{t('Rebase needed')}</span>}{f.schedule['CHG-5120'] && <span className="tag">{t('Scheduled')} {f.schedule['CHG-5120']}</span>}</>, true, f.pending ? () => f.setRebaseOpen(true) : onReview)}
-        {row('cs-6', 'Open RDP for vendor', 'you', f.csState['cs-6'] ?? 'Open', `1 ${t('edit')}, 1 ${t('Zone')}, ${t('based on Version')} 1288${behind(1288)}`, f.csState['cs-6'] ? null : <span className="tag red">{t('Rejected')}</span>, false, () => f.openCs('cs-6'))}
+        {row('cs-6', 'Open RDP for vendor', 'you', f.csState['cs-6'] ?? 'Open', `1 ${t('edit')}, 1 ${t('Zone')}, ${t('based on Version')} 1290${behind(1290)}`, f.csState['cs-6'] ? null : <span className="tag red">{t('Rejected')}</span>, false, () => f.openCs('cs-6'))}
         {f.created.map(c => row(c.id, `${c.kind === 'revert' ? 'Revert Version' : 'Restore to Version'} ${c.of}`, c.author, f.decisions[c.id]?.kind === 'approved' ? 'Committed' : f.csState[c.id] ?? (c.author === 'nsgfw' ? 'Submitted' : 'Open'),
           `${t(c.kind === 'revert' ? 'Revert' : 'Restore')}, ${t('based on Version')} ${f.latest}`, c.author === 'nsgfw' ? <span className="tag">{t('prepared by the tool')}</span> : null, false, () => f.openCs(c.id)))}
         {f.retrans && row('rt-1', 'Re-translation for engine 1.6.0', 'nsgfw', f.decisions['rt-1'] ? 'Committed' : 'Submitted', `${t('no edits')}, 37 ${t('Zones')}, Production`, <span className="tag amber">{t('Commits in Production wait')}</span>, false, () => f.openCs('rt-1'))}

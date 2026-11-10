@@ -1,6 +1,8 @@
 // PROTOTYPE, throwaway. Issue 36: the Commit dialog (now or at a chosen time, what changed since the Approval, Folder edits since the
 // Approval, Tool paths, a waiting Re-translation), the Emergency Commit dialog with Pre-check waivers, and the buttons of the commit bar.
 import { useEffect, useMemo, useState } from 'react';
+import { TerraformCommitNotes } from './Deployments';   // issue 37
+import { HandoverLine, useHandover, useSnapshot, openSnapshot } from './ImportNote';   // issue 37
 import { Button, Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent, DialogActions, Field, Textarea, Input, Radio, RadioGroup, Checkbox, MessageBar, MessageBarBody, MessageBarTitle, Popover, PopoverTrigger, PopoverSurface } from '@fluentui/react-components';
 import { Flash16Regular, Send16Regular, Warning16Filled, CalendarClock16Regular, PlugDisconnected16Regular, ArrowSync16Regular, ShieldError16Filled } from '@fluentui/react-icons';
 import { useStore, Preview, placement } from './store';
@@ -44,7 +46,8 @@ export function CommitDialog({ pv, open, onClose, name }: { pv: Preview; open: b
   const byEnv = envs.map(e => ({ e, n: pv.nsgs.filter(x => x.env === e.id).length })).filter(x => x.n);
   const waived = fx.all.filter(x => fx.waivers[x.key]);
   const queue = wait.length > 0 && !folderOnly;
-  const blocked = tps.length > 0 && why.trim().length < 5;
+  const [tfOk, setTfOk] = useState(true);   // issue 37: the Terraform confirmations
+  const blocked = (tps.length > 0 && why.trim().length < 5) || !tfOk;
   const go = () => {
     if (when === 'at') f.setSchedule(cs, `${date} ${time}`);
     else if (queue) f.setSchedule(cs, QUEUED);
@@ -75,6 +78,8 @@ export function CommitDialog({ pv, open, onClose, name }: { pv: Preview; open: b
                 <ul className="cd-l">{folderSince.map(e => <li key={e.seq}>{e.after}</li>)}</ul><p className="cd-p">{t('Folder edits keep the Approvals: no Managed NSG changes through them.')}</p></>}
             </> : snap ? <p className="cd-p">{t('Nothing changed since the Approval.')}</p> : null}
           </section>}
+          <HandoverLine />
+          <TerraformCommitNotes onReady={setTfOk} />
           {waived.length > 0 && <section><h4>{t('Pre-check waivers')}</h4><ul className="cd-l">{waived.map(x => <li key={x.key}>{x.assignment} {t('on')} <span className="mono">{x.resource}</span>: {t('waived by')} {fx.waivers[x.key].by}, “{fx.waivers[x.key].reason}”</li>)}</ul></section>}
           {tps.length > 0 && <section className="cd-tool"><h4><PlugDisconnected16Regular /> {t('This Commit closes a Tool path')}</h4>
             <ToolPathList paths={tps} /><p className="cd-p">{t('The tool may lose its way to Azure or to its database. Confirm with a reason; it goes into the audit log.')}</p>
@@ -146,19 +151,20 @@ export function CsButtons({ pv, name = CUR_NAME, onReview, onPolicy, emergency =
   const discard = cs === CUR ? s.discard : () => s.rebaseOnto(s.version, () => baseEntries, () => [], false);
   const submit = () => { f.runCheck(cs, 'Submit', s.edits.length); if (fx.blocking.length) { onPolicy?.(); return; } if (tps.length) setDlg('submit'); else s.submit(); };
   const g = useGate(pv.affected, s.approvedBy);
-  const commitReady = s.edits.length > 0 && a.done && !stop && !deny && !g.commit;
+  const ho = useHandover(); const snap = useSnapshot(); const hoOpen = cs === CUR && ho.needed && !ho.confirmed; const snapStale = cs === CUR && snap.stale;   // issue 37
+  const commitReady = s.edits.length > 0 && a.done && !stop && !deny && !g.commit && !snapStale;
   return (
     <>
       {emergency && need && <Button size="small" appearance="subtle" icon={<Flash16Regular />} disabled={!s.edits.length || pv.unorderable || !!g.emergency} title={g.emergency ? t(g.emergency) : undefined} onClick={() => setDlg('emergency')}>{t('Emergency Commit')}<StepUpLock /></Button>}
       <Button size="small" appearance="subtle" onClick={discard} disabled={!s.edits.length}>{t('Discard')}</Button>
       {onReview && <Button size="small" onClick={onReview}>{t('Review')}</Button>}
-      {s.state === 'Open' && need && <Button size="small" appearance="primary" icon={<Send16Regular />} disabled={!s.edits.length || stop || deny > 0} onClick={submit} title={rb ? t('Resolve the conflicts of the Rebase first') : undefined}>{t('Submit for Approval')}</Button>}
+      {s.state === 'Open' && need && <Button size="small" appearance="primary" icon={<Send16Regular />} disabled={!s.edits.length || stop || deny > 0 || hoOpen} onClick={submit} title={rb ? t('Resolve the conflicts of the Rebase first') : hoOpen ? t('Confirm the handover in the Review first') : undefined}>{t('Submit for Approval')}</Button>}
       {s.state === 'Submitted' && !a.done && cs === CUR && <Button size="small" className="proto" onClick={() => s.approveAs('kim', a.byEnv.map(x => x.env.id))}>{t('Approve as kim (prototype)')}</Button>}
       {(s.state !== 'Open' || !need) && (sched
         ? <><span className="sched"><CalendarClock16Regular />{sched === QUEUED ? t('Waits for the Re-translation') : `${t('Scheduled for')} ${sched}`}</span><Button size="small" appearance="subtle" onClick={() => setDlg('commit')}>{t('Move')}</Button>
             <Button size="small" appearance="subtle" onClick={() => f.setSchedule(cs, undefined)}>{t('Cancel schedule')}</Button>
             {sched !== QUEUED && <Button size="small" className="proto" onClick={() => { f.setSchedule(cs, undefined); const n = s.version + 1; s.commit(); f.bumpLatest({ n, name, by: 'you', at: sched, kind: 'scheduled', nsgs: pv.nsgs.length, edits: s.edits.length }); }}>{t('Run it now (prototype)')}</Button>}</>
-        : <Button size="small" appearance="primary" disabled={!commitReady} onClick={() => setDlg('commit')} title={g.commit ? t(g.commit) : wait.length && pv.nsgs.length ? t('Commits after the Re-translation') : undefined}>{t('Commit…')}</Button>)}
+        : <Button size="small" appearance="primary" disabled={!commitReady} onClick={() => setDlg('commit')} title={snapStale ? t('Choose Re-import or Keep snapshot first') : g.commit ? t(g.commit) : wait.length && pv.nsgs.length ? t('Commits after the Re-translation') : undefined}>{t('Commit…')}</Button>)}
       <CommitDialog pv={pv} name={name} open={dlg === 'commit'} onClose={() => setDlg(null)} />
       <EmergencyDialog name={name} open={dlg === 'emergency'} onClose={() => setDlg(null)} />
       <SubmitConfirm open={dlg === 'submit'} onClose={() => setDlg(null)} onSubmit={s.submit} />
@@ -171,9 +177,18 @@ export function BarFlags({ pv }: { pv: Preview }) {
   const f = useFlow(); const cs = useCsId(); const { t } = useT(); const tps = useToolPaths(); const wait = useRetransWait(pv);
   const n = f.pending ? (f.pending.mode === 'full' ? 3 : 1) : 0;
   return (<>
+    <Bar37 />
     {cs === CUR && f.pending && <button className="bad" onClick={() => f.setRebaseOpen(true)}><ArrowSync16Regular /><b>{n}</b>{t(n === 1 ? 'conflict after the Rebase' : 'conflicts after the Rebase')}</button>}
     {tps.length > 0 && <Popover positioning="above"><PopoverTrigger disableButtonEnhancement><button className="warnb"><PlugDisconnected16Regular />{t('Closes a Tool path')}</button></PopoverTrigger>
       <PopoverSurface style={{ maxWidth: 420, padding: '12px 16px' }}><div className="panel-h">{t('Tool paths this Change set closes')}</div><ToolPathList paths={tps} /><p className="muted" style={{ lineHeight: 1.45 }}>{t('Submit and Commit ask for a confirmation with a reason.')}</p></PopoverSurface></Popover>}
     {wait.length > 0 && <button className="warnb" onClick={() => f.openCs('rt-1')}><Warning16Filled />{t('Commit waits for the Re-translation in')} {wait.join(', ')}</button>}
   </>);
+}
+
+// Issue 37: the commit bar names what stops the current Change set: a Handover the Author has not confirmed, a stale Import snapshot.
+function Bar37() {
+  const cs = useCsId(); const { t } = useT(); const ho = useHandover(); const snap = useSnapshot();
+  if (cs !== CUR) return null;
+  return <>{snap.stale && <button className="bad" onClick={openSnapshot}><ShieldError16Filled />{t('Import snapshot out of date')}</button>}
+    {ho.needed && !ho.confirmed && <button className="warnb" title={t('Confirm the handover in the Review first')}><PlugDisconnected16Regular />{t('Handover to confirm')}</button>}</>;
 }

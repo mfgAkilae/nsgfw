@@ -206,7 +206,8 @@ export interface EnvSettings { autoOverwrite: boolean; flush: boolean; hitsDays:
 export const initialEnvSettings: Record<string, EnvSettings> = {
   prod: { autoOverwrite: false, flush: false, hitsDays: 30, workspace: 'law-flowlogs-mgmt (outside every Environment)', naming: 'nsg-{vnet}-{subnet}', rgPattern: '{vnet-resource-group}', def: 'Management group mg-production' },
   nonprod: { autoOverwrite: false, flush: true, hitsDays: 30, workspace: 'law-flowlogs-mgmt (outside every Environment)', naming: 'nsg-{vnet}-{subnet}', rgPattern: 'rg-network-{region}', def: 'Management group mg-nonproduction', repo: 'https://git.example.org/network/nonprod-nsg', branch: 'main', pathPattern: 'stacks/{subscription}/{region}', autoMerge: true, applyTimeout: 120 },
-  sandbox: { autoOverwrite: false, flush: false, hitsDays: 14, workspace: 'law-sandbox', naming: 'nsg-{vnet}-{subnet}', rgPattern: '{vnet-resource-group}', def: 'Subscriptions sub-sandbox-01 to sub-sandbox-12' },
+  sandbox: { autoOverwrite: true,   // issue 37: the Drift tab shows its automatic Overwrites
+    flush: false, hitsDays: 14, workspace: 'law-sandbox', naming: 'nsg-{vnet}-{subnet}', rgPattern: '{vnet-resource-group}', def: 'Subscriptions sub-sandbox-01 to sub-sandbox-12' },
 };
 export const internalSpace = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7'];
 export const toolPaths = [

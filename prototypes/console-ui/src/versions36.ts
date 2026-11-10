@@ -1,5 +1,6 @@
 // PROTOTYPE, throwaway. Issue 36: mock Version history. The newest Versions carry their content, so Revert and Restore can build
-// real Change sets from it; older ones are generic. The current mock Rule base is the state of Version 1288.
+// real Change sets from it; older ones are generic. The current mock Rule base is the state of Version 1290.
+// Issue 37 added 1289 and 1290 in front, so the Deployment views have a failed and a running Deployment; issue 36's numbers moved up by two.
 import type { Store } from './store';
 import { entries, isFolder, rules, Rule, FolderRow } from './data';
 
@@ -23,11 +24,15 @@ const loose = (() => { const out: string[] = []; for (const e of entries) { if (
 const mon = fid('Monitoring and backup');
 
 export const VERSIONS: VersionRow[] = [
+  { n: 1290, name: 'CHG-5131 Reporting database access', by: 'jo', at: 'today 10:01', kind: 'normal', deploy: ['running', 'running', 'none'], rules: [{ id: '', what: 'Added 2 Rules to app0042-db, changed 1 Rule' }], folders: [],
+    approvals: ['Production: approved by kim and alex (four-eyes)', 'Non-production: approved by kim'], noRevert: 'Prototype: this Version carries no content. Issue 37 added it for its Deployment views.' },
+  { n: 1289, name: 'CHG-5118 Partner API for app0042', by: 'kim', at: 'today 09:12', kind: 'normal', deploy: ['failed', 'ok', 'none'], rules: [{ id: '', what: 'Added the Rule “Partner API to web”, changed “API from web”' }], folders: [],
+    approvals: ['Production: approved by jo and alex (four-eyes)', 'Non-production: approved by jo'], noRevert: 'Prototype: this Version carries no content. Issue 37 added it for its Deployment views.' },
   { n: 1288, name: 'Folder cleanup', by: 'jo', at: 'yesterday 17:40', kind: 'folders', deploy: ['none', 'none', 'none'], rules: [],
     folders: [`Created the Folder “Partner access” around its ${size(fid('Partner access'))} Rules`, 'Renamed the Folder “Legacy” to “Legacy, to review”'], approvals: [],
     note: 'Only Folder edits: no Approval and no Deployment. Any editor committed it.',
     revert: [s => s.deleteFolder(fid('Partner access')), s => s.renameFolder(fid('Legacy, to review'), 'Legacy')] },
-  { n: 1287, name: 'Hotfix: block ext-partner-0339', by: 'sam', at: 'yesterday 09:41', kind: 'emergency', deploy: ['ok', 'ok', 'ok'], rules: [{ id: 'R90001', what: 'Source: added ext-partner-0339' }], folders: [],
+  { n: 1287, name: 'Hotfix: block ext-partner-0339', by: 'sam', at: 'yesterday 09:41', kind: 'emergency', deploy: ['ok', 'running', 'ok'], rules: [{ id: 'R90001', what: 'Source: added ext-partner-0339' }], folders: [],
     approvals: ['Emergency Commit: Approval afterwards still open'], emergencyOpen: true, reason: 'Active scan from a partner network against the web tier, INC-2211',
     revert: [withBase([['R90001', { src: ['n3', 'n339'] }]]), s => s.editField('R90001', 'src', ['n3'])] },
   { n: 1286, name: 'Disable expired allow Rules', by: 'nsgfw', at: '2026-11-08 00:05', kind: 'expiry', deploy: ['ok', 'ok', 'none'], rules: exp3.map(r => ({ id: r.id, what: `Turned off, expired ${r.expiry}` })), folders: [],

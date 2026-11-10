@@ -12,6 +12,7 @@ import { useStore, alsoChanged, St, placement } from './store';
 import { layerWarn, hitsView } from './zonedata';
 import { useT } from './i18n';
 import { useFlow } from './flow';
+import { importLine } from './importdata';   // issue 37: the provenance of an imported Rule
 import { useMode } from './theme';
 import { Chip, RefsEditor } from './ObjectPicker';
 
@@ -63,14 +64,15 @@ function Toks({ ids, width, arrow }: { ids: string[]; width: number; arrow?: boo
   return <div className="chips">{arrow && <ArrowRight12Filled className="flow" />}{ids.slice(0, n).map(id => <Chip key={id} id={id} />)}{ids.length > n && <span className="more" title={ids.slice(n).map(id => (id.startsWith('svc') ? svcName(id) : ref(id).name)).join(', ')}>+{ids.length - n}</span>}</div>;
 }
 export const compact = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n));
-export type FilterKey = 'all' | 'deny' | 'disabled' | 'expiring' | 'findings' | 'unused' | 'changed' | 'layers';
+export type FilterKey = 'all' | 'deny' | 'disabled' | 'expiring' | 'findings' | 'unused' | 'changed' | 'layers' | 'imported';
 const passes: Record<FilterKey, (r: Rule, st?: St) => boolean> = {
   all: () => true, deny: r => r.action === 'deny', disabled: r => !r.enabled, expiring: r => !!r.expiry,
   findings: r => !!(r.policy || r.importNote || r.layerWarn), unused: r => r.hits === 0, changed: (_r, st) => !!st, layers: r => !!r.layerWarn,
+  imported: r => !!r.importNote,   // issue 37: imported with notes, until a Zone admin acknowledges them
 };
 export function countFilters(rules: Rule[], status: Map<string, St>) {
-  const c: Record<FilterKey, number> = { all: rules.length, deny: 0, disabled: 0, expiring: 0, findings: 0, unused: 0, changed: status.size, layers: 0 };
-  for (const r of rules) for (const k of ['deny', 'disabled', 'expiring', 'findings', 'unused', 'layers'] as const) if (passes[k](r)) c[k]++;
+  const c: Record<FilterKey, number> = { all: rules.length, deny: 0, disabled: 0, expiring: 0, findings: 0, unused: 0, changed: status.size, layers: 0, imported: 0 };
+  for (const r of rules) for (const k of ['deny', 'disabled', 'expiring', 'findings', 'unused', 'layers', 'imported'] as const) if (passes[k](r)) c[k]++;
   return c;
 }
 
@@ -308,7 +310,7 @@ export function Badges({ r }: { r: Rule }) {
   const also = alsoChanged.get(r.id);
   const out = [];
   if (r.policy) out.push(<Tooltip key="p" content={`Policy finding: ${r.policy}`} relationship="description"><ShieldError16Filled className="b-red" /></Tooltip>);
-  if (r.importNote) out.push(<Tooltip key="i" content={`Import note (${r.importNote}) from nsg-legacy-017, rule "allow-sql", priority 310, inbound`} relationship="description">{r.importNote === 'blocking' ? <ErrorCircle16Filled className="b-red" /> : r.importNote === 'warning' ? <Warning16Filled className="b-amber" /> : <Info16Regular className="b-accent" />}</Tooltip>);
+  if (r.importNote) out.push(<Tooltip key="i" content={importLine(r) || `Import note (${r.importNote})`} relationship="description">{r.importNote === 'blocking' ? <ErrorCircle16Filled className="b-red" /> : r.importNote === 'warning' ? <Warning16Filled className="b-amber" /> : <Info16Regular className="b-accent" />}</Tooltip>);
   if (r.layerWarn) out.push(<Tooltip key="l" content={`Security layer: ${r.layerWarn}`} relationship="description"><LayerDiagonal16Regular className={layerWarn(r)?.sev === 'high' ? 'b-red' : 'b-amber'} /></Tooltip>);
   if (r.expiry) out.push(<Tooltip key="e" content={`${t('Expiry')}: ${r.expiry}`} relationship="description"><Clock16Regular className="b-amber" /></Tooltip>);
   if (also) out.push(<Tooltip key="a" content={`${t('also changed in')} “${also.set}” ${t('by')} ${also.by}`} relationship="description"><PeopleSwap16Regular className={s.status.has(r.id) ? 'b-red' : 'b-grey'} /></Tooltip>);

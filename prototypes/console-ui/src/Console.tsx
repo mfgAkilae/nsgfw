@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Switch, Tooltip, Popover, PopoverTrigger, PopoverSurface } from '@fluentui/react-components';
 import { Add16Regular, Search16Regular, Dismiss16Regular, PanelRight20Regular, TextBulletListSquare20Regular, Grid20Regular, Box20Regular, BranchFork20Regular,
   WeatherMoon20Regular, WeatherSunny20Regular, Copy16Regular, Delete16Regular, Eye16Regular, EyeOff16Regular, ArrowSort16Regular, Send16Regular, ArrowRight12Filled,
-  Checkmark12Filled, Dismiss12Filled, Flash16Regular, ChevronDown12Regular, History20Regular, TextLineSpacing20Regular, Folder16Regular, FolderAdd16Regular, FolderArrowRight16Regular, ArrowMaximizeVertical20Regular, ArrowMinimizeVertical20Regular, LockClosed16Regular, Warning16Filled, ShieldError16Filled, PeopleSwap16Regular, LayerDiagonal16Regular, ShieldPerson20Regular, LockClosed12Regular } from '@fluentui/react-icons';
+  Checkmark12Filled, Dismiss12Filled, Flash16Regular, ChevronDown12Regular, History20Regular, TextLineSpacing20Regular, Folder16Regular, FolderAdd16Regular, FolderArrowRight16Regular, ArrowMaximizeVertical20Regular, ArrowMinimizeVertical20Regular, LockClosed16Regular, Warning16Filled, ShieldError16Filled, PeopleSwap16Regular, LayerDiagonal16Regular, ShieldPerson20Regular, LockClosed12Regular, CloudArrowUp20Regular } from '@fluentui/react-icons';
 import { RuleGrid, RuleGridHandle, FilterKey, countFilters, systemTop, systemBottom, SysRow, compact } from './RuleGrid';
 import { ZoneGrid, Bar, LIMITS, EgressBadge, Flags } from './ZoneGrid';
 import { Glyph } from './Glyph';
@@ -29,8 +29,14 @@ import { FlowScreens } from './Decide';
 import { VersionsPage } from './Versions';
 import { CsButtons, BarFlags } from './Commit';
 import { useBlocking } from './Policy';
+// Issue 37: Deployments, Drift, onboarding with Import.
+import { DeploymentsPage, DeployBanner, useDeployNav } from './Deployments';
+import { DeployView } from './DeployView';
+import { OnboardingScreen } from './Onboarding';
+import { SnapshotHost } from './ImportNote';
+import { navBus, type Go37 } from './ops37';
 
-type Page = 'rules' | 'zones' | 'objects' | 'sets' | 'versions' | 'admin';
+type Page = 'rules' | 'zones' | 'objects' | 'sets' | 'versions' | 'deploy' | 'admin';
 type CsTab = 'changes' | 'preview' | 'order' | 'approval' | 'policy';
 const typing = () => { const el = document.activeElement as HTMLElement | null; return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable || !!el.closest('.ag-root-wrapper')); };
 
@@ -51,6 +57,9 @@ export default function Console() {
   const [folderFor, setFolderFor] = useState<string[] | null>(null); const [fresh, setFresh] = useState<string | null>(null); const [review, setReview] = useState(false);
   // Zone detail (issue 35): the tab of the lens, the Security layer bands that are open, the object in the side panel, the candidate being onboarded.
   const [ztab, setZtab] = useState<ZTab>('rules'); const [openBands, setOpenBands] = useState<Set<string>>(new Set()); const [objId, setObjId] = useState<string | null>(null); const [onb, setOnb] = useState<Candidate | null>(null);
+  // Issue 37: the Deployments page (tab, Environment filter), the Deployment view and the wide onboarding screen.
+  const [dtab, setDtab] = useState<'deployments' | 'drift'>('deployments'); const [denv, setDenv] = useState<string | null>(null); const [dsel, setDsel] = useState<string | null>(null);
+  const [dview, setDview] = useState<string | null>(null); const [onbIds, setOnbIds] = useState<string[] | null>(null); const deployNav = useDeployNav();
   const toggleFolder = (id: string) => setCollapsed(c => { const n = new Set(c); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const allCollapsed = s.folders.length > 0 && s.folders.every(f => collapsed.has(f.id));
   const unfold = (ruleId: string) => { const f = s.rules.find(r => r.id === ruleId)?.folder; if (f) setCollapsed(c => { if (!c.has(f)) return c; const n = new Set(c); n.delete(f); return n; }); };
@@ -84,15 +93,29 @@ export default function Console() {
     // issue 38: ?page=admin&sec=setup|access|audit|health|envs|instance|alert, ?as=ia|envadmin|approver|editor|viewer|none
     'admin': 'page=admin', 'setup': 'page=admin&sec=setup', 'access': 'page=admin&sec=access', 'audit': 'page=admin&sec=audit', 'health': 'page=admin&sec=health',
     'environments': 'page=admin&sec=envs', 'instance': 'page=admin&sec=instance', 'alert-channel': 'page=admin&sec=alert',
-    'as-viewer': 'as=viewer', 'as-editor': 'as=editor', 'as-approver': 'as=approver', 'as-env-admin': 'page=admin&sec=access&as=envadmin', 'no-access': 'as=none', 'zones-as-approver': 'page=zones&as=approver' };
+    'as-viewer': 'as=viewer', 'as-editor': 'as=editor', 'as-approver': 'as=approver', 'as-env-admin': 'page=admin&sec=access&as=envadmin', 'no-access': 'as=none', 'zones-as-approver': 'page=zones&as=approver',
+    // issue 37: ?page=deploy&dtab=deployments|drift&env=prod|nonprod|sandbox, ?deployment=<id>, ?onboardMany=c903,c904
+    'deployments': 'page=deploy', 'drift': 'page=deploy&dtab=drift', 'deployment': 'deployment=d-1289-prod', 'deployment-running': 'deployment=d-1290-prod', 'deployment-failed': 'deployment=d-1289-prod',
+    'deployment-terraform': 'deployment=d-1290-nonprod', 'onboard-import': 'onboardMany=c903', 'onboard-many': 'onboardMany=c903,c904,c905', 'environment-terraform': 'page=admin&sec=envs&env=nonprod' };
   useEffect(() => { const p = new URLSearchParams(HASH[location.hash.slice(1)] ?? location.search); const zid = p.get('zone'); const pg = p.get('page'); const zt = p.get('ztab'); const b = p.get('bands');
     if (zid && zoneById.has(zid)) { openZone(zid); if (p.get('dir') === 'out') setLens({ zid, dir: 'out' }); if (zt === 'flows' || zt === 'settings') setTimeout(() => setZtab(zt), 0); if (b) setTimeout(() => setOpenBands(new Set(b.split(',').map(x => `sys-${x}`))), 0); }
-    if (pg === 'zones' || pg === 'objects' || pg === 'sets' || pg === 'versions' || pg === 'admin') setPage(pg);
+    if (pg === 'zones' || pg === 'objects' || pg === 'sets' || pg === 'versions' || pg === 'deploy' || pg === 'admin') setPage(pg);
     const sec = p.get('sec'); if (sec) setAdminSec(sec as AdminSec); const as = p.get('as'); if (as) se.setPersona(as);
-    const oc = candidates.find(c => c.id === p.get('onboard')); if (oc) { setPage('zones'); setOnb(oc); }
+    const oc = candidates.find(c => c.id === p.get('onboard')); if (oc) { setPage('zones'); if (oc.nsg && !oc.reason) setOnbIds([oc.id]); else setOnb(oc); }   // issue 37: with an existing NSG, the wide onboarding screen
     const ob = p.get('obj'); if (ob) openObject(ob);
+    const dt = p.get('dtab'); if (dt === 'drift' || dt === 'deployments') setDtab(dt); const de = p.get('env'); if (de && pg === 'deploy') setDenv(de);
+    const dv = p.get('deployment'); if (dv) { setPage('deploy'); setDview(dv); } const om = p.get('onboardMany'); if (om) { setPage('zones'); setOnbIds(om.split(',')); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEffect(() => { const h = (e: Event) => { const g = (e as CustomEvent<Go37>).detail;
+      if (g.to === 'deployments') { setDview(null); setPage('deploy'); setDtab(g.tab ?? 'deployments'); if (g.env !== undefined) setDenv(g.env); }
+      else if (g.to === 'deployment') setDview(g.id);
+      else if (g.to === 'drift') { setDview(null); setPage('deploy'); setDtab('drift'); setDsel(g.id ?? null); if (g.env !== undefined) setDenv(g.env); }
+      else if (g.to === 'onboard') { setOnbIds(g.candidates); }
+      else if (g.to === 'env') { setDview(null); setPage('admin'); setAdminSec('envs'); }
+      else if (g.to === 'audit') { setDview(null); setPage('admin'); setAdminSec('audit'); }
+      else if (g.to === 'rule') { setDview(null); setOnbIds(null); jumpToRule(g.id); } else if (g.to === 'zone') { setDview(null); setOnbIds(null); openZone(g.id); } else if (g.to === 'versions') { setDview(null); setPage('versions'); } };
+    navBus.addEventListener('go', h); return () => navBus.removeEventListener('go', h); });
   const newRule = () => { if (ro) return; setPage('rules'); if (focused) unfold(focused); const id = s.addRule(focused ?? undefined); setFresh(id); setTimeout(() => { grid.current?.reveal(id); openRule(id); }, 80); };
 
   useEffect(() => {
@@ -108,8 +131,8 @@ export default function Console() {
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h);
   });
 
-  const nav: [Page, string, JSX.Element][] = [['rules', 'Rules', <TextBulletListSquare20Regular />], ['zones', 'Zones', <Grid20Regular />], ['objects', 'Objects', <Box20Regular />], ['sets', 'Change sets', <BranchFork20Regular />], ['versions', 'Versions', <History20Regular />], ['admin', adminNav.label, <ShieldPerson20Regular />]];
-  const chips: [FilterKey, string][] = [['all', 'All'], ['deny', 'Deny'], ['disabled', 'Disabled'], ['expiring', 'Expiring'], ['findings', 'With findings'], ['unused', 'No hits'], ['layers', 'Layer warnings']];
+  const nav: [Page, string, JSX.Element][] = [['rules', 'Rules', <TextBulletListSquare20Regular />], ['zones', 'Zones', <Grid20Regular />], ['objects', 'Objects', <Box20Regular />], ['sets', 'Change sets', <BranchFork20Regular />], ['versions', 'Versions', <History20Regular />], ['deploy', 'Deployments', <CloudArrowUp20Regular />], ['admin', adminNav.label, <ShieldPerson20Regular />]];
+  const chips: [FilterKey, string][] = [['all', 'All'], ['deny', 'Deny'], ['disabled', 'Disabled'], ['expiring', 'Expiring'], ['findings', 'With findings'], ['unused', 'No hits'], ['layers', 'Layer warnings'], ['imported', 'Import notes']];
   const showBar = s.edits.length > 0 || s.state !== 'Open';
 
   // A principal without any Role sees only the no-access page (ADR 0013).
@@ -119,7 +142,7 @@ export default function Console() {
     <div className="app">
       <nav className="rail" aria-label="Main">
         <Brand />
-        {nav.map(([k, label, icon]) => <button key={k} className={`rail-b ${page === k ? 'on' : ''}`} aria-current={page === k} onClick={() => setPage(k)}>{icon}<span>{k === 'sets' && lang === 'de' ? 'Pakete' : t(label)}</span>{k === 'admin' && adminNav.worst !== 'ok' && <i className={`hpip h-${adminNav.worst}`} />}</button>)}
+        {nav.map(([k, label, icon]) => <button key={k} className={`rail-b ${page === k ? 'on' : ''}`} aria-current={page === k} onClick={() => setPage(k)}>{icon}<span>{k === 'sets' && lang === 'de' ? 'Pakete' : t(label)}</span>{k === 'admin' && adminNav.worst !== 'ok' && <i className={`hpip h-${adminNav.worst}`} />}{k === 'deploy' && deployNav.worst !== 'ok' && <i className={`hpip h-${deployNav.worst}`} />}</button>)}
         <span className="rail-sp" />
         <ProtoButton />
         <InboxButton onOpen={() => setPage('sets')} />
@@ -158,6 +181,7 @@ export default function Console() {
               {z && lens && ztab === 'flows' && <FlowView key={`${z.id}-${lens.dir}`} z={z} dir={lens.dir} here={rows} onRule={revealInLens} onNewRule={f => newRuleFrom(ruleFromFlow(z, f, s))} />}
               {z && lens && ztab === 'settings' && <ZoneSettings key={z.id} z={z} here={rows} onRule={revealInLens} onNewRule={f => newRuleFrom(ruleFromFlow(z, f, s))} onAddRule={newRuleFrom} />}
               {(!lens || ztab === 'rules') && <>
+              <DeployBanner />
               {sel.length ? (
                 <div className="chipbar selbar">
                   <b>{sel.length} {t('selected')}</b>
@@ -184,6 +208,7 @@ export default function Console() {
             {page === 'zones' && <><header className="phead"><h1>{t('Zones')}</h1><span className="sub">{t(se.myZones ? 'The Managed NSGs of the Zones in your Scopes against their Azure limits. Every Zone name stays available in the object picker.' : 'Every Managed NSG against its Azure limits. Click a Zone to see the Rules that land on it.')}</span></header><ZoneGrid only={se.myZones} onOpen={x => openZone(x.id)} onCandidate={setOnb} /></>}
             {page === 'objects' && <><header className="phead"><h1>{t('Objects')}</h1><span className="sub">{t('Every object and where it is used.')}</span></header><ObjectLibrary onZone={openZone} onShowRules={name => { setPage('rules'); setLens(null); setFilter('all'); setQ(name); }} /></>}
             {page === 'versions' && <><header className="phead"><h1>{t('Versions')}</h1><span className="sub">{t('Every committed Version: what it changed, its Deployments, Revert and Restore.')}</span></header><VersionsPage /></>}
+            {page === 'deploy' && <DeploymentsPage tab={dtab} setTab={setDtab} env={denv} setEnv={setDenv} sel={dsel} />}
             {page === 'admin' && <AdminPage sec={adminSec} setSec={setAdminSec} onZones={() => setPage('zones')} onRule={jumpToRule} onReview={() => setReview(true)} />}
             {page === 'sets' && <><header className="phead"><h1>{t('Change sets')}</h1><span className="sub">{t('What waits for you, and where every Change set stands.')}</span></header><ChangeSetsPage onFilter={k => { setPage('rules'); setLens(null); setFilter(k); }} onReview={() => { setPage('rules'); openDock('cs', 'preview'); }} /></>}
           </section>
@@ -207,6 +232,9 @@ export default function Console() {
 
         {review && <Review onClose={() => setReview(false)} onRule={jumpToRule} />}
         <FlowScreens onRule={jumpToRule} />
+        {dview && <DeployView id={dview} onClose={() => setDview(null)} />}
+        <SnapshotHost />
+        {onbIds && <OnboardingScreen ids={onbIds} onClose={() => setOnbIds(null)} onDone={zids => { setOnbIds(null); if (zids[0]) openZone(zids[0]); }} />}
         {showBar && <CommitBar onOpen={cs => openDock('cs', cs)} onReview={() => setReview(true)} />}
       </div>
 

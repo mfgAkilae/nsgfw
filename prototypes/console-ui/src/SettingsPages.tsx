@@ -2,6 +2,7 @@
 // assignments to create and checks them, the instance settings, and the alert channel. Settings are direct, audited changes; only the
 // Internal address space is part of the Rule base and changes through a Change set.
 import { useState } from 'react';
+import { DataContractSection } from './Deployments';   // issue 37
 import { Button, Input, Switch, Textarea, Spinner } from '@fluentui/react-components';
 import { Add16Regular, Dismiss12Regular, Checkmark16Filled, Dismiss16Filled, Warning16Filled, Copy16Regular, ArrowRight16Regular, ChevronLeft16Regular, Info16Regular, Send16Regular, LockClosed12Regular } from '@fluentui/react-icons';
 import { useSession, AlertCfg, hhmm, now } from './session';
@@ -120,6 +121,8 @@ function EnvSettingsView({ env, onBack }: { env: Env; onBack: () => void }) {
         </>}
       </section>
 
+      {env.mode === 'Terraform' && <DataContractSection envId={env.id} />}
+
       <section className="set"><h3>{t('Flow data')}</h3>
         <div className="frow"><label>{t('Workspace')}</label><div className="mono">{st.workspace}</div></div>
         <div className="frow"><label>{t('Hits window')}</label><Input disabled={!admin} type="number" value={String(draft.hitsDays)} onChange={(_, d) => setDraft({ ...draft, hitsDays: +d.value })} contentAfter={<span className="muted">{t('days')}</span>} /></div></section>
@@ -220,7 +223,7 @@ export function InstanceSettings({ onReview }: { onReview: () => void }) {
 }
 
 // ---------- Alert channel
-const deliveries = [{ at: '09:41', what: 'Deployment failed: Version 1287 to Production', ok: true }, { at: '06:00', what: 'Permission check: 2 actions missing in Production', ok: true }, { at: 'yesterday 22:13', what: 'Re-translation prepared for nsgfw 1.0.3', ok: true }, { at: 'yesterday 03:12', what: 'Audit chain verified', ok: true }];
+const deliveries = [{ at: '09:41', what: 'Deployment failed: Version 1289 to Production', ok: true }, { at: '06:00', what: 'Permission check: 2 actions missing in Production', ok: true }, { at: 'yesterday 22:13', what: 'Re-translation prepared for nsgfw 1.0.3', ok: true }, { at: 'yesterday 03:12', what: 'Audit chain verified', ok: true }];
 export function AlertChannel() {
   const se = useSession(); const { t } = useT(); const [a, setA] = useState<AlertCfg>(se.alert); const [test, setTest] = useState<null | 'sending' | 'ok'>(null);
   const admin = se.isAdminAt({ kind: 'instance', id: 'instance' }); const dirty = JSON.stringify(a) !== JSON.stringify(se.alert);

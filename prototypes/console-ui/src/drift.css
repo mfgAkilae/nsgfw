@@ -1,0 +1,50 @@
+/* PROTOTYPE, throwaway. Issue 37: the Drift tab of the Deployments page. Only the tokens of theme.tsx, so light and dark both hold.
+   app.css loads after this file: rules that override one of its rules carry a doubled class. */
+.drift { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.dr-poll { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; margin: 0 0 10px; font-size: 12.5px; color: var(--ink3); }
+.dr-poll > span { display: inline-flex; align-items: center; gap: 6px; } .dr-poll svg { flex-shrink: 0; }
+.dr-poll .dr-off { color: var(--amber); }
+.chip.c-ok::before { display: block; background: var(--allow); }
+
+/* ---------- the list */
+.drow { display: grid; grid-template-columns: 62px minmax(0, 1fr) 144px 136px 184px; gap: 12px; align-items: center; min-height: 54px; padding: 6px 16px; border-bottom: 1px solid var(--line2); font-size: 13px; cursor: pointer; }
+.drow:hover { background: var(--hover); } .drow.on { background: var(--sel); box-shadow: inset 3px 0 0 var(--accent); }
+.drow.dhead { min-height: 34px; cursor: default; color: var(--ink3); font-size: 12px; position: sticky; top: 0; background: var(--surface); z-index: 1; } .drow.dhead:hover { background: var(--surface); }
+.drow.done .sev, .drow.done .d2 { opacity: .55; }
+.sev { font-size: 12.5px; font-weight: 700; white-space: nowrap; } .sev.high { color: var(--deny); } .sev.medium { color: var(--amber); } .sev.low { color: var(--ink3); }
+.d2 { display: flex; flex-direction: column; gap: 3px; min-width: 0; line-height: 1.3; }
+.d2 > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d2 > b { font-weight: 600; } .d2 > :nth-child(2) { font-size: 12px; color: var(--ink3); } .d2 .mono { color: var(--ink2); }
+.dst { justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; font-weight: 650; padding: 1px 7px; border-radius: 5px; color: var(--ink2); background: var(--tok); }
+.dst.amber { color: var(--amber); background: var(--amber-tint); } .dst.ok { color: var(--allow); background: var(--allow-tint); }
+.dr-empty.dr-empty { padding: 28px 16px; }
+.dr-foot { margin: 0; padding: 12px 16px; line-height: 1.5; }
+
+/* ---------- one item */
+.drift .lib-d.dr-d { width: 440px; }
+.dr-d.dr-d h2 { margin-bottom: 8px; }
+.dr-where { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 13px; }
+.dr-where > .mono { color: var(--ink2); overflow-wrap: anywhere; }
+.dr-where .tok.tok { font-family: inherit; font-size: 12.5px; border: 0; } .dr-where button.tok { cursor: pointer; } .dr-where button.tok:hover { background: var(--accent-tint); color: var(--accent-text); }
+.dr-d .bn { margin-top: 14px; } .dr-d .bn .fui-Spinner { margin-top: 2px; }
+table.mini.dr-diff { table-layout: fixed; }
+table.mini.dr-diff th:first-child, table.mini.dr-diff td:first-child { width: 100px; color: var(--ink3); }
+table.mini.dr-diff td + td, table.mini.dr-diff th + th { padding-left: 6px; }
+table.mini.dr-diff td.mono { overflow-wrap: anywhere; font-size: 12px; }
+table.mini.dr-diff td.chg { background: var(--amber-tint); color: var(--ink); }
+table.mini.dr-diff td:nth-child(2) { color: var(--ink2); }
+.dr-fx { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 7px 10px; margin-bottom: 6px; border-radius: 8px; background: var(--sunken); font-size: 12.5px; line-height: 1.45; }
+.dr-fx b, .dr-k { font-weight: 650; } .dr-fx b.opens, .dr-k.opens { color: var(--allow); } .dr-fx b.closes, .dr-k.closes { color: var(--deny); }
+.dr-d .facts.facts { grid-template-columns: 104px minmax(0, 1fr); font-size: 12.5px; } .dr-d .facts dd { overflow-wrap: anywhere; } .dr-d .facts dd.mono { font-size: 12px; }
+.dr-src { margin: 8px 0 0; line-height: 1.45; }
+.dr-opts { display: flex; flex-direction: column; }
+.dr-opt { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 12px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line2); font-size: 12.5px; line-height: 1.45; color: var(--ink2); }
+.dr-opt:first-child { border-top: 0; padding-top: 0; } .dr-opt .fui-Button { width: 100%; }
+.dr-na { color: var(--ink); font-weight: 650; }
+.dr-note { display: inline-flex; gap: 6px; align-items: flex-start; color: var(--ink); } .dr-note svg { flex-shrink: 0; margin-top: 2px; color: var(--accent-text); }
+.dr-why { display: flex; gap: 6px; align-items: flex-start; margin: 10px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--amber); } .dr-why svg { flex-shrink: 0; margin-top: 1px; }
+.dr-dlg .fui-DialogActions .fui-Button { white-space: nowrap; }
+
+/* narrow content: drop the detection column first, then the actor */
+@container (max-width: 1240px) { .drow { grid-template-columns: 62px minmax(0, 1fr) 144px 176px; } .drow > :nth-child(4) { display: none; } }
+@container (max-width: 1020px) { .drow { grid-template-columns: 58px minmax(0, 1fr) 168px; } .drow > :nth-child(3) { display: none; } .drift .lib-d.dr-d { width: 380px; } }

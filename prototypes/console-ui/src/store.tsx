@@ -12,8 +12,8 @@ export interface ChangeSet { id: string; name: string; owner: string; state: CsS
 export type Scenario = 'auto' | 'crossing' | 'unorderable';
 
 export const otherSets: ChangeSet[] = [
-  { id: 'cs-2', name: 'Q4 cleanup of expired Rules', owner: 'kim', state: 'Submitted', base: 1288, authors: ['kim'], edits: 14, affected: 63 },
-  { id: 'cs-3', name: 'Partner VPN access', owner: 'sam', state: 'Approved', base: 1288, authors: ['sam', 'jo'], edits: 6, affected: 4, scheduled: 'today 22:00' },
+  { id: 'cs-2', name: 'Q4 cleanup of expired Rules', owner: 'kim', state: 'Submitted', base: 1290, authors: ['kim'], edits: 14, affected: 63 },
+  { id: 'cs-3', name: 'Partner VPN access', owner: 'sam', state: 'Approved', base: 1290, authors: ['sam', 'jo'], edits: 6, affected: 4, scheduled: 'today 22:00' },
   { id: 'cs-4', name: 'Onboard vnet-app0107', owner: 'alex', state: 'Open', base: 1286, authors: ['alex'], edits: 88, affected: 20, rebase: true },
   { id: 'cs-5', name: 'Hotfix: block ext-partner-0339', owner: 'sam', state: 'Committed', base: 1286, authors: ['sam'], edits: 1, affected: 1, emergency: true },
 ];

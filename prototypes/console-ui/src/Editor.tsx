@@ -13,6 +13,8 @@ import { layerWarn, hitsView } from './zonedata';
 import { useT } from './i18n';
 import { RulePolicy } from './Policy';
 import { useFlow } from './flow';
+import { NotDeployedNote } from './Deployments';   // issue 37
+import { ImportSection } from './ImportNote';      // issue 37
 
 // A field that looks like text until you touch it. Enter or leaving commits, Escape reverts.
 function EditText({ value, onCommit, className, placeholder, multiline, select, type }: { value: string; onCommit: (v: string) => void; className?: string; placeholder?: string; multiline?: boolean; select?: boolean; type?: string }) {
@@ -55,7 +57,8 @@ export function RuleEditor({ id, fresh, onMoveTo, onMoveToFolder, onZone, onObje
   if (!r.enabled) checks.push(['info', <Info16Regular />, 'Disabled: no NSG rule is written until you enable it.']);
   if (r.name === 'New Rule') checks.push(['info', <Info16Regular />, 'Give the Rule a name that says what it is for.']);
   if (r.policy) checks.push(['red', <ShieldError16Filled />, r.policy]);
-  if (r.importNote) checks.push(['amber', <Warning16Filled />, `Import note (${r.importNote}): from nsg-legacy-017, rule “allow-sql”, priority 310, inbound.`]);
+  // Issue 37: the Import note has its own section with provenance and Acknowledge (ImportSection); only a blocking one stops Submit.
+  if (r.importNote === 'blocking') checks.push(['red', <ErrorCircle16Filled />, 'A blocking Import note: resolve it before Submit.']);
   const lw = layerWarn(r);
   if (lw) checks.push([lw.sev === 'high' ? 'red' : 'amber', <LayerDiagonal16Regular />, `${t(lw.sev === 'high' ? 'High' : 'Medium')}, ${t('Security layer')}: ${lw.text}. ${lw.detail}`]);
   if (also) checks.push(['red', <PeopleSwap16Regular />, `${t('also changed in')} “${also.set}” ${t('by')} ${also.by}.`]);
@@ -84,6 +87,9 @@ export function RuleEditor({ id, fresh, onMoveTo, onMoveToFolder, onZone, onObje
           <span className="verdict">{pl.dst.length ? t('Inbound NSG rule on each. This side decides.') : t('Nothing to write.')}</span>
           {pl.dst.slice(0, 3).map(zid => <span key={zid} className="mono">{zoneById.get(zid)!.nsg}</span>)}{pl.dst.length > 3 && <span className="muted">{(pl.dst.length - 3).toLocaleString()} {t('more')}</span>}</div>
       </div>
+
+      <NotDeployedNote ruleId={r.id} />
+      <ImportSection ruleId={r.id} />
 
       {checks.length > 0 && <><h3>{t('Before you submit')}</h3>{checks.map(([tone, icon, text]) => <div key={text} className={`note ${tone}`}>{icon}{t(text)}</div>)}</>}
       <RulePolicy id={r.id} />
