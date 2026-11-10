@@ -156,7 +156,7 @@ for (let i = 1; i <= 10000; i++) {
     action: deny ? 'deny' : 'allow', enabled: rnd() > 0.04, comment: rnd() < 0.6 ? pick(['Release 24.3', 'Monitoring agents', 'Backup window', 'Partner access per contract', 'Legacy, review', '']) : '',
     ticket: rnd() < 0.7 ? `CHG-${pad(1000 + Math.floor(rnd() * 9000))}` : '', owner: pick(owners),
     expiry: rnd() < 0.05 ? `2026-${pad(11 + Math.floor(rnd() * 2), 2)}-${pad(1 + Math.floor(rnd() * 28), 2)}` : undefined,
-    hits: rnd() < 0.15 ? null : Math.floor(rnd() * rnd() * rnd() * 2_000_000),
+    hits: rnd() < 0.15 ? null : rnd() < 0.05 ? 0 : Math.floor(rnd() * rnd() * rnd() * 2_000_000),
   };
   if (rnd() < 0.002) r.src = ['any'];
   r.name = `${deny ? 'Block' : pick(verbs.slice(0, 4))} ${ref(r.src[0]).name} to ${ref(r.dst[0]).name} ${svcName(r.svc[0])}`;

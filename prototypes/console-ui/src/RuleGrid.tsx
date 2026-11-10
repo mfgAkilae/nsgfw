@@ -1,155 +1,186 @@
 // PROTOTYPE, throwaway. The Rule base table on AG Grid Community. This is also the AG Grid check of issue 25.
+// A row reads as a flow: source, arrow, destination, service, action.
 import { useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeQuartz, ColDef, GridApi, RowClassRules, ICellRendererParams } from 'ag-grid-community';
-import { Menu, MenuTrigger, MenuPopover, MenuList, MenuItem, Button, Tooltip } from '@fluentui/react-components';
-import { MoreHorizontal16Regular, ShieldError16Filled, Warning16Filled, Info16Regular, Clock16Regular, PeopleSwap16Regular, LayerDiagonal16Regular, ErrorCircle16Filled } from '@fluentui/react-icons';
+import { Tooltip } from '@fluentui/react-components';
+import { ShieldError16Filled, Warning16Filled, Info16Regular, Clock16Regular, PeopleSwap16Regular, LayerDiagonal16Regular, ErrorCircle16Filled, LockClosed12Regular,
+  Copy16Regular, Delete16Regular, Eye16Regular, EyeOff16Regular, ArrowRight12Filled, PanelRight16Regular, Checkmark12Filled, Dismiss12Filled } from '@fluentui/react-icons';
 import { Rule, svcName, ref } from './data';
-import { useStore, alsoChanged, cost } from './store';
-import { tok } from './theme';
-import { LockClosed12Regular } from '@fluentui/react-icons';
+import { useStore, alsoChanged, St } from './store';
 import { useT } from './i18n';
 import { Chip, RefsEditor } from './ObjectPicker';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
+// Every colour is a CSS variable, so the same grid theme serves light and dark.
 export const gridTheme = themeQuartz.withParams({
-  fontFamily: "'Recursive Variable', system-ui, sans-serif", fontSize: 13, rowHeight: 38, headerHeight: 34, spacing: 5, cellHorizontalPadding: 10,
-  accentColor: tok.cobalt, foregroundColor: tok.ink, borderColor: tok.line, backgroundColor: tok.surface, chromeBackgroundColor: tok.surface,
-  headerBackgroundColor: tok.surface, headerTextColor: tok.ink3, headerFontWeight: 600, headerFontSize: 12, columnBorder: false, headerColumnBorder: false,
-  rowBorder: { color: '#eef1f5' }, wrapperBorder: false, wrapperBorderRadius: 0, rowHoverColor: '#f6f8fc', selectedRowBackgroundColor: '#e9eefc', iconSize: 14,
+  fontFamily: 'inherit', fontSize: 13, headerHeight: 36, spacing: 6, cellHorizontalPadding: 12,
+  accentColor: 'var(--accent)', foregroundColor: 'var(--ink)', backgroundColor: 'var(--surface)', chromeBackgroundColor: 'var(--surface)', borderColor: 'var(--line)',
+  headerBackgroundColor: 'var(--surface)', headerTextColor: 'var(--ink3)', headerFontWeight: 500, headerFontSize: 12, columnBorder: false, headerColumnBorder: false,
+  headerColumnResizeHandleColor: 'var(--line)', rowBorder: { style: 'solid', width: 1, color: 'var(--line2)' }, wrapperBorder: false, wrapperBorderRadius: 0, rowHoverColor: 'var(--hover)',
+  selectedRowBackgroundColor: 'var(--sel)', iconSize: 14, checkboxBorderRadius: 4, checkboxUncheckedBorderColor: 'var(--ink3)', checkboxUncheckedBackgroundColor: 'transparent',
+  menuBackgroundColor: 'var(--raised)', inputBorder: { style: 'solid', width: 1, color: 'var(--line)' }, focusShadow: '0 0 0 2px var(--accent)', pinnedRowBorder: { style: 'solid', width: 1, color: 'var(--line)' },
+  pinnedColumnBorder: false, dragHandleColor: 'var(--ink3)',
 });
 
-export type SysRow = { id: string; system: 'pe' | 'intra' | 'inherited' | 'denyall' | 'azure'; name: string; text: string };
+export type SysRow = { id: string; system: 'pe' | 'intra' | 'inherited' | 'egress' | 'denyall' | 'azure'; name: string; text: string };
 export const systemTop: SysRow[] = [{ id: 'sys-pe', system: 'pe', name: 'Platform exceptions', text: 'Azure Load Balancer health probes are allowed above every Rule. No Rule can override them.' }];
 export const systemBottom: SysRow[] = [
   { id: 'sys-intra', system: 'intra', name: 'Intra-zone default', text: 'Traffic that stays inside one Zone is allowed. A Rule above can override it.' },
   { id: 'sys-inh', system: 'inherited', name: 'Inherited defaults', text: '1,612 Zones keep what Azure allowed before onboarding: VirtualNetwork in and out, Internet out.' },
   { id: 'sys-deny', system: 'denyall', name: 'Deny-all rules', text: 'Everything else is denied, inbound and outbound, on every Managed NSG.' },
-  { id: 'sys-az', system: 'azure', name: 'Azure default rules (read-only)', text: 'AllowVnetInBound, AllowAzureLoadBalancerInBound, DenyAllInBound, AllowVnetOutBound, AllowInternetOutBound, DenyAllOutBound. Never reached.' },
+  { id: 'sys-az', system: 'azure', name: 'Azure default rules', text: 'Read-only and never reached: AllowVnetInBound, AllowInternetOutBound and the other four sit below the Deny-all rules.' },
 ];
 
-const compact = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n));
+// How many object tokens fit a cell: whole tokens only, the rest collapses into "+N" (never a token cut to one letter).
+const tokW = (id: string) => 35 + 7.2 * (id.startsWith('svc') ? svcName(id) : ref(id).name).length;
+function fit(ids: string[], avail: number) {
+  let used = tokW(ids[0]); let n = 1;
+  while (n < ids.length) { const w = tokW(ids[n]) + 5; if (used + w + (ids.length - n - 1 ? 30 : 0) > avail) break; used += w; n++; }
+  return n;
+}
+function Toks({ ids, width, arrow }: { ids: string[]; width: number; arrow?: boolean }) {
+  const n = fit(ids, width - 24 - (arrow ? 20 : 0));
+  return <div className="chips">{arrow && <ArrowRight12Filled className="flow" />}{ids.slice(0, n).map(id => <Chip key={id} id={id} />)}{ids.length > n && <span className="more" title={ids.slice(n).map(id => (id.startsWith('svc') ? svcName(id) : ref(id).name)).join(', ')}>+{ids.length - n}</span>}</div>;
+}
+export const compact = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n));
+export type FilterKey = 'all' | 'deny' | 'disabled' | 'expiring' | 'findings' | 'unused' | 'changed';
+const passes: Record<FilterKey, (r: Rule, st?: St) => boolean> = {
+  all: () => true, deny: r => r.action === 'deny', disabled: r => !r.enabled, expiring: r => !!r.expiry,
+  findings: r => !!(r.policy || r.importNote || r.layerWarn), unused: r => r.hits === 0, changed: (_r, st) => !!st,
+};
+export function countFilters(rules: Rule[], status: Map<string, St>) {
+  const c: Record<FilterKey, number> = { all: rules.length, deny: 0, disabled: 0, expiring: 0, findings: 0, unused: 0, changed: status.size };
+  for (const r of rules) for (const k of ['deny', 'disabled', 'expiring', 'findings', 'unused'] as const) if (passes[k](r)) c[k]++;
+  return c;
+}
 
-export interface RuleGridHandle { selected(): string[]; api(): GridApi | undefined }
-interface Props { rows: Rule[]; quick?: string; readOnly?: boolean; onlyChanged?: boolean; showSystem?: boolean; systemRows?: { top: SysRow[]; bottom: SysRow[] }; showCost?: boolean; onSelection?: (ids: string[]) => void; onMoveTo?: (ids: string[]) => void; height?: string; onReady?: (ms: number) => void; compactCols?: boolean }
+export interface RuleGridHandle { selected(): string[]; api(): GridApi | undefined; reveal(id: string): void; clearSelection(): void }
+interface Props { rows: Rule[]; quick?: string; filter?: FilterKey; bands?: { top: SysRow[]; bottom: SysRow[] } | null; dense?: boolean; focusedId?: string | null;
+  onFocus?: (id: string) => void; onOpen?: (id: string) => void; onSelection?: (ids: string[]) => void; onMoveTo?: (ids: string[]) => void; onReady?: (ms: number) => void }
 
 export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, refH) {
   const s = useStore();
   const { t, lang } = useT();
   const sRef = useRef(s); sRef.current = s;
+  const pRef = useRef(p); pRef.current = p;
+  const tRef = useRef(t); tRef.current = t;
   const grid = useRef<AgGridReact>(null);
   const [sorted, setSorted] = useState(false);
   const t0 = useRef(performance.now());
-  useImperativeHandle(refH, () => ({ selected: () => grid.current?.api?.getSelectedRows().map((r: Rule) => r.id) ?? [], api: () => grid.current?.api }));
+  useImperativeHandle(refH, () => ({
+    selected: () => grid.current?.api?.getSelectedRows().map((r: Rule) => r.id) ?? [], api: () => grid.current?.api,
+    reveal: id => { const n = grid.current?.api?.getRowNode(id); if (n) grid.current?.api?.ensureNodeVisible(n, 'middle'); },
+    clearSelection: () => grid.current?.api?.deselectAll(),
+  }));
 
-  // Numbers, row classes and badges depend on the store, not on the row object: redraw the visible rows when they change.
+  // Numbers, markers and badges depend on the store, not on the row object: redraw the visible rows when they change.
   useEffect(() => { grid.current?.api?.redrawRows(); }, [s.status, s.numbers]);
+
   useEffect(() => { grid.current?.api?.refreshHeader(); grid.current?.api?.redrawRows(); }, [lang]);
+  useEffect(() => { grid.current?.api?.onFilterChanged(); }, [p.filter]);
+  useEffect(() => { grid.current?.api?.resetRowHeights(); }, [p.dense]);
 
   const st = (id: string) => sRef.current.status.get(id);
   const isSys = (x: any) => !!x?.system;
-  const editable = (x: any) => !p.readOnly && !isSys(x?.data) && !st(x?.data?.id)?.deleted;
+  const editable = (x: any) => !isSys(x?.data) && !st(x?.data?.id)?.deleted;
   const changedCls = (field: string) => ({ 'cell-changed': (x: any) => !!st(x.data?.id)?.changed?.has(field) });
+  const mark = (id: string) => { const m = st(id); return m?.deleted ? ['del', 'deleted'] : m?.added ? ['add', 'new'] : m?.moved ? ['mov', 'moved'] : m?.changed ? ['chg', 'edited'] : null; };
 
   const cols = useMemo<ColDef[]>(() => [
-    { colId: 'drag', headerName: '', width: 30, rowDrag: x => !p.readOnly && !isSys(x.data), sortable: false, suppressMovable: true, pinned: 'left' },
-    { colId: 'no', headerName: t('No.'), width: 92, pinned: 'left', sortable: true,
-      cellRenderer: (x: ICellRendererParams) => { if (isSys(x.data)) return null; const m = st(x.data.id); const mark = m?.deleted ? ['del', 'deleted'] : m?.added ? ['add', 'new'] : m?.moved ? ['mov', 'moved'] : m?.changed ? ['chg', 'edited'] : null;
-        return <span className="no">{x.value}{mark && <em className={`mk ${mark[0]}`}>{t(mark[1])}</em>}</span>; }, comparator: (_a, _b, na, nb) => (sRef.current.numbers.get(na.data.id) ?? 0) - (sRef.current.numbers.get(nb.data.id) ?? 0),
-      valueGetter: x => (isSys(x.data) ? '' : sRef.current.numbers.get(x.data.id) ?? '—'), cellClass: 'num' },
-    { field: 'name', headerName: t('Name'), width: p.compactCols ? 230 : 300, editable, cellClassRules: changedCls('name'), getQuickFilterText: x => `${x.data.name} ${x.data.id}`,
-      cellRenderer: (x: ICellRendererParams) => isSys(x.data) ? <span className={`band b-${x.data.system}`}><LockClosed12Regular /><b>{t(x.data.name)}</b><span>{x.data.text}</span></span>
-        : <span className="rname"><span className="rn">{x.data.name}</span><span className="rid">{x.data.id}</span>{!x.data.enabled && <em className="off">{t('disabled')}</em>}</span>,
-      colSpan: x => (isSys(x.data) ? 8 : 1) },
-    ...(['src', 'dst'] as const).map((f): ColDef => ({ field: f, headerName: t(f === 'src' ? 'Source' : 'Destination'), width: p.compactCols ? 190 : 230, editable, cellDataType: false, cellClassRules: changedCls(f),
-      cellEditor: RefsEditor, cellEditorParams: { mode: 'addr' }, cellEditorPopup: true, cellEditorPopupPosition: 'under',
+    { colId: 'no', headerName: t('No.'), width: 80, pinned: 'left', rowDrag: true, cellClass: 'c-no', resizable: false, comparator: (_a, _b, na, nb) => (sRef.current.numbers.get(na.data.id) ?? 0) - (sRef.current.numbers.get(nb.data.id) ?? 0),
+      valueGetter: x => sRef.current.numbers.get(x.data.id) ?? '',
+      cellRenderer: (x: ICellRendererParams) => { const m = mark(x.data.id); return <span className="no">{x.value}{m && <i className={`mdot ${m[0]}`} title={t(m[1])} />}</span>; } },
+    { field: 'name', headerName: t('Name'), flex: 1.5, minWidth: 210, editable, cellClassRules: changedCls('name'), getQuickFilterText: x => `${x.data.name} ${x.data.id} ${x.data.ticket} ${x.data.owner}`,
+      cellRenderer: (x: ICellRendererParams) => { const r = x.data as Rule; const m = mark(r.id); return (
+        <div className="rname"><div className="rn">{r.name}</div>
+          <div className="rmeta">{m && <em className={`mk ${m[0]}`}>{t(m[1])}</em>}{!r.enabled && <em className="mk off">{t('disabled')}</em>}<span className="mono">{r.id}</span>{r.ticket && <span>{r.ticket}</span>}<span>{r.owner}</span>{r.expiry && <span className="exp">{t('expires')} {r.expiry}</span>}</div></div>); } },
+    ...(['src', 'dst'] as const).map((f): ColDef => ({ field: f, headerName: t(f === 'src' ? 'Source' : 'Destination'), flex: f === 'src' ? 1 : 1.1, minWidth: f === 'src' ? 162 : 182, editable, cellDataType: false, cellClassRules: changedCls(f),
+      cellEditor: RefsEditor, cellEditorParams: { mode: 'addr' }, cellEditorPopup: true, cellEditorPopupPosition: 'under', sortable: false,
       getQuickFilterText: x => (x.data[f] as string[]).map(id => ref(id).name).join(' '),
-      cellRenderer: (x: ICellRendererParams) => isSys(x.data) ? null : <div className="chips">{(x.value as string[]).slice(0, 3).map(id => <Chip key={id} id={id} />)}{x.value.length > 3 && <span className="more">+{x.value.length - 3}</span>}</div> })),
-    { field: 'svc', headerName: t('Service'), width: p.compactCols ? 130 : 170, editable, cellDataType: false, cellClassRules: changedCls('svc'), cellEditor: RefsEditor, cellEditorParams: { mode: 'svc' }, cellEditorPopup: true,
+      cellRenderer: (x: ICellRendererParams) => <Toks ids={x.value} width={x.column!.getActualWidth()} arrow={f === 'dst'} /> })),
+    { field: 'svc', headerName: t('Service'), flex: 0.75, minWidth: 110, editable, cellDataType: false, cellClassRules: changedCls('svc'), cellEditor: RefsEditor, cellEditorParams: { mode: 'svc' }, cellEditorPopup: true, sortable: false,
       getQuickFilterText: x => x.data.svc.map(svcName).join(' '),
-      cellRenderer: (x: ICellRendererParams) => isSys(x.data) ? null : <div className="chips">{(x.value as string[]).map(id => <Chip key={id} id={id} />)}</div> },
-    { field: 'action', headerName: t('Action'), width: 104, editable, cellClassRules: changedCls('action'), cellEditor: 'agSelectCellEditor', cellEditorParams: { values: ['allow', 'deny'] },
-      cellRenderer: (x: ICellRendererParams) => isSys(x.data) ? null : <span className={`act ${x.value}`}><i />{t(x.value === 'allow' ? 'Allow' : 'Deny')}</span> },
-    { field: 'hits', headerName: t('Hits'), width: 86, type: 'rightAligned', headerTooltip: t('hits ~70 min old'),
-      cellRenderer: (x: ICellRendererParams) => isSys(x.data) ? null : x.value == null ? <Tooltip content={t('no flow data')} relationship="label"><span className="nodata">—</span></Tooltip> : <span className={`hits ${x.value === 0 ? 'zero' : ''}`}>{compact(x.value)}</span> },
-    ...(p.showCost ? [{ colId: 'cost', headerName: t('Rule cost'), width: 120, cellDataType: false, headerTooltip: 'Managed NSGs · NSG rules this Rule generates',
-      valueGetter: (x: any) => (isSys(x.data) ? '' : cost(x.data)), cellRenderer: (x: ICellRendererParams) => x.value ? <span className="cost"><b>{x.value.nsgs}</b> NSGs, <b>{x.value.nsgRules}</b> rules</span> : null } as ColDef] : []),
-    { colId: 'flags', headerName: '', width: 92, sortable: false, cellRenderer: (x: ICellRendererParams) => isSys(x.data) ? null : <Badges r={x.data} /> },
-    { field: 'comment', headerName: t('Comment'), width: 190, editable, cellClassRules: changedCls('comment') },
-    ...(p.compactCols ? [] : [
-      { field: 'ticket', headerName: t('Ticket'), width: 104, editable, cellClassRules: changedCls('ticket') } as ColDef,
-      { field: 'owner', headerName: t('Owner'), width: 120, editable, cellClassRules: changedCls('owner') } as ColDef,
-      { field: 'expiry', headerName: t('Expiry'), width: 106, editable, cellClassRules: changedCls('expiry') } as ColDef,
-    ]),
-    { field: 'enabled', headerName: t('Enabled'), width: 80, editable, cellDataType: 'boolean', cellClassRules: changedCls('enabled') },
-    { colId: 'menu', headerName: '', width: 44, pinned: 'right', sortable: false, cellRenderer: (x: ICellRendererParams) => isSys(x.data) || p.readOnly ? null : <RowMenu r={x.data} onMoveTo={p.onMoveTo} /> },
+      cellRenderer: (x: ICellRendererParams) => <Toks ids={x.value} width={x.column!.getActualWidth()} /> },
+    { field: 'action', headerName: t('Action'), width: 98, editable, cellClassRules: changedCls('action'), cellEditor: 'agSelectCellEditor', cellEditorParams: { values: ['allow', 'deny'] },
+      cellRenderer: (x: ICellRendererParams) => <span className={`act ${x.value}`}>{x.value === 'allow' ? <Checkmark12Filled /> : <Dismiss12Filled />}{t(x.value === 'allow' ? 'Allow' : 'Deny')}</span> },
+    { field: 'hits', headerName: t('Hits'), width: 84, headerTooltip: t('Flow data is about 70 minutes old'), comparator: (a, b) => (a ?? -1) - (b ?? -1),
+      cellRenderer: (x: ICellRendererParams) => x.value == null ? <Tooltip content={t('No flow data for this Rule')} relationship="label"><span className="nodata">—</span></Tooltip>
+        : <div className={`hitc ${x.value === 0 ? 'zero' : ''}`}><span>{compact(x.value)}</span><i><b style={{ width: `${(Math.log10(x.value + 1) / 6.7) * 100}%` }} /></i></div> },
+    { colId: 'flags', headerName: '', width: 64, sortable: false, resizable: false, cellRenderer: (x: ICellRendererParams) => <Badges r={x.data} /> },
+    { field: 'comment', headerName: t('Comment'), flex: 1, minWidth: 150, editable, cellClass: 'c-comment', cellClassRules: changedCls('comment') },
+    { colId: 'acts', headerName: '', width: 120, pinned: 'right', sortable: false, resizable: false, cellClass: 'c-acts', cellRenderer: (x: ICellRendererParams) => <RowActs r={x.data} onOpen={id => pRef.current.onOpen?.(id)} /> },
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [lang, p.readOnly, p.showCost, p.compactCols]);
+  ], [lang]);
 
-  const spine = useMemo(() => ({ 'spine-allow': (x: any) => !isSys(x.data) && x.data?.action === 'allow' && x.data.enabled, 'spine-deny': (x: any) => !isSys(x.data) && x.data?.action === 'deny' && x.data.enabled, 'spine-off': (x: any) => !isSys(x.data) && x.data && !x.data.enabled }), []);
+  const spine = useMemo(() => ({ 'spine-allow': (x: any) => x.data?.action === 'allow' && x.data.enabled, 'spine-deny': (x: any) => x.data?.action === 'deny' && x.data.enabled, 'spine-off': (x: any) => x.data && !isSys(x.data) && !x.data.enabled }), []);
   const rowClassRules = useMemo<RowClassRules>(() => ({
-    'row-sys': x => isSys(x.data), 'row-added': x => !!st(x.data?.id)?.added, 'row-deleted': x => !!st(x.data?.id)?.deleted,
-    'row-moved': x => !!st(x.data?.id)?.moved, 'row-changed': x => !!st(x.data?.id)?.changed, 'row-disabled': x => x.data && !isSys(x.data) && !x.data.enabled,
+    'row-added': x => !!st(x.data?.id)?.added, 'row-deleted': x => !!st(x.data?.id)?.deleted, 'row-disabled': x => x.data && !isSys(x.data) && !x.data.enabled,
   }), []);
 
-  const rows = useMemo(() => (p.onlyChanged ? p.rows.filter(r => s.status.has(r.id)) : p.rows), [p.rows, p.onlyChanged, s.status]);
+  // Every option object and callback below is created once. A new identity on re-render would make AG Grid rebuild its columns,
+  // and a rebuild between two clicks swallows the double click that starts editing.
+  const opts = useMemo(() => ({
+    defaultColDef: { sortable: true, resizable: true, suppressHeaderMenuButton: true } as ColDef,
+    rowSelection: { mode: 'multiRow', checkboxes: true, headerCheckbox: true, enableClickSelection: false, selectAll: 'filtered' } as const,
+    selectionColumnDef: { pinned: 'left', width: 42, resizable: false, cellClassRules: spine } as ColDef,
+    getRowId: (x: any) => x.data.id,
+    getRowHeight: (x: any) => (x.node.rowPinned ? 36 : pRef.current.dense ? 34 : 48),
+    isFullWidthRow: (x: any) => isSys(x.rowNode.data),
+    fullWidthCellRenderer: (x: ICellRendererParams) => <div className={`band b-${x.data.system}`}><LockClosed12Regular /><b>{tRef.current(x.data.name)}</b><span>{tRef.current(x.data.text)}</span></div>,
+    isExternalFilterPresent: () => (pRef.current.filter ?? 'all') !== 'all',
+    doesExternalFilterPass: (n: any) => passes[pRef.current.filter ?? 'all'](n.data, st(n.data.id)),
+    onCellEditRequest: (e: any) => sRef.current.editField(e.data.id, e.colDef.field as keyof Rule, e.newValue),
+    onSortChanged: (e: any) => setSorted(e.api.getColumnState().some((c: any) => c.sort && c.colId !== 'no')),
+    onRowDragEnd: (e: any) => {
+      const target = e.overNode?.data as Rule | undefined;
+      if (!target || isSys(target)) return;
+      const moving = (e.nodes?.length ? e.nodes : [e.node]).map((n: any) => (n.data as Rule).id).filter((id: string) => id !== target.id);
+      if (!moving.length) return;
+      const all = sRef.current.rules; const from = all.findIndex(r => r.id === moving[0]); const to = all.findIndex(r => r.id === target.id);
+      sRef.current.move(moving, target.id, from < to ? 'after' : 'before');
+    },
+    onRowClicked: (e: any) => { const el = e.event?.target as HTMLElement | null; if (!e.data || isSys(e.data) || el?.closest('.rowacts, .ag-selection-checkbox, .ag-drag-handle, .ag-cell-inline-editing')) return; if (e.data.id !== pRef.current.focusedId) pRef.current.onFocus?.(e.data.id); },
+    onSelectionChanged: (e: any) => pRef.current.onSelection?.(e.api.getSelectedRows().map((r: Rule) => r.id)),
+    onGridSizeChanged: (e: any) => { e.api.setColumnsVisible(['comment'], e.clientWidth >= 1330); setTimeout(() => e.api.refreshCells({ columns: ['src', 'dst', 'svc'], force: true }), 0); },
+    onColumnResized: (e: any) => { if (e.finished) e.api.refreshCells({ columns: ['src', 'dst', 'svc'], force: true }); },
+    onFirstDataRendered: () => pRef.current.onReady?.(Math.round(performance.now() - t0.current)),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
 
   return (
-    <div style={{ height: p.height ?? '100%', width: '100%', position: 'relative' }}>
-      {sorted && !p.readOnly && <div className="grid-hint">{t('Drag is off while sorted or filtered: use Move to…')}</div>}
-      <AgGridReact
-        ref={grid} theme={gridTheme} rowData={rows} columnDefs={cols} getRowId={x => x.data.id}
-        defaultColDef={{ sortable: true, resizable: true, suppressHeaderMenuButton: true }}
-        rowSelection={{ mode: 'multiRow', checkboxes: x => !isSys(x.data), headerCheckbox: true, enableClickSelection: false, isRowSelectable: x => !isSys(x.data), selectAll: 'filtered' }}
-        selectionColumnDef={{ pinned: 'left', width: 46, cellClassRules: spine }}
-        pinnedTopRowData={p.showSystem ? (p.systemRows?.top ?? systemTop) : undefined}
-        pinnedBottomRowData={p.showSystem ? (p.systemRows?.bottom ?? systemBottom) : undefined}
-        quickFilterText={p.quick} rowClassRules={rowClassRules} readOnlyEdit
-        onCellEditRequest={e => s.editField(e.data.id, e.colDef.field as keyof Rule, e.newValue)}
-        rowDragMultiRow suppressRowDrag={sorted} animateRows={false}
-        onSortChanged={e => setSorted(e.api.getColumnState().some(c => c.sort && c.colId !== 'no'))}
-        onRowDragEnd={e => {
-          const target = e.overNode?.data as Rule | undefined;
-          if (!target || isSys(target)) return;
-          const moving = (e.nodes?.length ? e.nodes : [e.node]).map(n => (n.data as Rule).id).filter(id => id !== target.id);
-          if (!moving.length) return;
-          const all = s.rules; const from = all.findIndex(r => r.id === moving[0]); const to = all.findIndex(r => r.id === target.id);
-          s.move(moving, target.id, from < to ? 'after' : 'before');
-        }}
-        onSelectionChanged={e => p.onSelection?.(e.api.getSelectedRows().map((r: Rule) => r.id))}
-        onFirstDataRendered={() => p.onReady?.(Math.round(performance.now() - t0.current))}
-        tooltipShowDelay={300}
-      />
+    <div className={`gridbox ${p.dense ? 'dense' : ''}`}>
+      {/* The focused Rule is marked by a style rule, not a redraw, for the same reason. */}
+      {p.focusedId && <style>{`.gridbox .ag-row[row-id="${p.focusedId}"]{background:var(--sel)!important}.gridbox .ag-row[row-id="${p.focusedId}"] .rowacts{opacity:1}`}</style>}
+      {sorted && <div className="grid-hint">{t('Drag is off while sorted: use Move to…')}</div>}
+      <AgGridReact ref={grid} theme={gridTheme} rowData={p.rows} columnDefs={cols} {...opts}
+        pinnedTopRowData={p.bands?.top} pinnedBottomRowData={p.bands?.bottom} quickFilterText={p.quick} rowClassRules={rowClassRules}
+        readOnlyEdit rowDragMultiRow suppressRowDrag={sorted} animateRows={false} tooltipShowDelay={300} />
     </div>
   );
 });
 
-function Badges({ r }: { r: Rule }) {
+export function Badges({ r }: { r: Rule }) {
   const { t } = useT();
   const s = useStore();
   const also = alsoChanged.get(r.id);
   const out = [];
-  if (r.policy) out.push(<Tooltip key="p" content={`Policy finding · ${r.policy}`} relationship="description"><ShieldError16Filled className="b-red" /></Tooltip>);
-  if (r.importNote) out.push(<Tooltip key="i" content={`Import note (${r.importNote}): from nsg-legacy-017 rule "allow-sql", priority 310, inbound`} relationship="description">{r.importNote === 'blocking' ? <ErrorCircle16Filled className="b-red" /> : r.importNote === 'warning' ? <Warning16Filled className="b-amber" /> : <Info16Regular className="b-blue" />}</Tooltip>);
+  if (r.policy) out.push(<Tooltip key="p" content={`Policy finding: ${r.policy}`} relationship="description"><ShieldError16Filled className="b-red" /></Tooltip>);
+  if (r.importNote) out.push(<Tooltip key="i" content={`Import note (${r.importNote}) from nsg-legacy-017, rule "allow-sql", priority 310, inbound`} relationship="description">{r.importNote === 'blocking' ? <ErrorCircle16Filled className="b-red" /> : r.importNote === 'warning' ? <Warning16Filled className="b-amber" /> : <Info16Regular className="b-accent" />}</Tooltip>);
   if (r.layerWarn) out.push(<Tooltip key="l" content={`Security layer: ${r.layerWarn}`} relationship="description"><LayerDiagonal16Regular className="b-amber" /></Tooltip>);
   if (r.expiry) out.push(<Tooltip key="e" content={`${t('Expiry')}: ${r.expiry}`} relationship="description"><Clock16Regular className="b-amber" /></Tooltip>);
-  if (also && s.status.has(r.id)) out.push(<Tooltip key="a" content={`${t('also changed in')} "${also.set}" ${t('by')} ${also.by}`} relationship="description"><PeopleSwap16Regular className="b-red" /></Tooltip>);
-  else if (also) out.push(<Tooltip key="a" content={`${t('also changed in')} "${also.set}" ${t('by')} ${also.by}`} relationship="description"><PeopleSwap16Regular className="b-grey" /></Tooltip>);
+  if (also) out.push(<Tooltip key="a" content={`${t('also changed in')} “${also.set}” ${t('by')} ${also.by}`} relationship="description"><PeopleSwap16Regular className={s.status.has(r.id) ? 'b-red' : 'b-grey'} /></Tooltip>);
   return <span className="badges">{out}</span>;
 }
 
-function RowMenu({ r, onMoveTo }: { r: Rule; onMoveTo?: (ids: string[]) => void }) {
+function RowActs({ r, onOpen }: { r: Rule; onOpen: (id: string) => void }) {
   const s = useStore(); const { t } = useT();
   return (
-    <Menu>
-      <MenuTrigger disableButtonEnhancement><Button appearance="subtle" size="small" icon={<MoreHorizontal16Regular />} aria-label="Rule actions" /></MenuTrigger>
-      <MenuPopover><MenuList>
-        <MenuItem onClick={() => s.clone([r.id])}>{t('Clone')}</MenuItem>
-        <MenuItem onClick={() => s.setEnabled([r.id], !r.enabled)}>{t(r.enabled ? 'Disable' : 'Enable')}</MenuItem>
-        <MenuItem onClick={() => onMoveTo?.([r.id])}>{t('Move to…')}</MenuItem>
-        <MenuItem onClick={() => s.addRule(r.id)}>{t('New Rule')} ↓</MenuItem>
-        <MenuItem onClick={() => s.remove([r.id])}>{t('Delete')}</MenuItem>
-      </MenuList></MenuPopover>
-    </Menu>
+    <div className="rowacts">
+      <button title={t('Open details')} onClick={() => onOpen(r.id)}><PanelRight16Regular /></button>
+      <button title={t(r.enabled ? 'Disable' : 'Enable')} onClick={() => s.setEnabled([r.id], !r.enabled)}>{r.enabled ? <EyeOff16Regular /> : <Eye16Regular />}</button>
+      <button title={t('Clone')} onClick={() => s.clone([r.id])}><Copy16Regular /></button>
+      <button title={t('Delete')} className="danger" onClick={() => s.remove([r.id])}><Delete16Regular /></button>
+    </div>
   );
 }

@@ -1,6 +1,6 @@
 // PROTOTYPE, throwaway. Building blocks of the pending changes panel. Each variant arranges them differently.
 import { useMemo, useState } from 'react';
-import { Button, Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent, DialogActions, Field, Textarea, MessageBar, MessageBarBody, MessageBarTitle, Popover, PopoverTrigger, PopoverSurface, CounterBadge, Input, Radio, RadioGroup } from '@fluentui/react-components';
+import { Button, Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent, DialogActions, Field, Textarea, MessageBar, MessageBarBody, MessageBarTitle, Popover, PopoverTrigger, PopoverSurface, Input, Radio, RadioGroup } from '@fluentui/react-components';
 import { Alert20Regular, ArrowSync16Regular, CheckmarkCircle16Filled, Clock16Regular, Flash16Regular, Send16Regular, ShieldError16Filled, ShieldCheckmark16Regular, PeopleSwap16Regular } from '@fluentui/react-icons';
 import { useStore, buildPreview, otherSets, alsoChanged, CsState, Preview } from './store';
 import { envs, rules as baseRules } from './data';
@@ -28,7 +28,7 @@ export function ChangesList({ onFocus }: { onFocus?: (id: string) => void }) {
         const r = s.rules.find(x => x.id === id) ?? baseRules.find(x => x.id === id); const also = alsoChanged.get(id);
         return (
           <div key={id} className="li clickable" onClick={() => onFocus?.(id)}>
-            <div className="li-h"><span className="muted">{s.numbers.get(id) ?? '—'}</span><b>{r?.name}</b><span className="rid">{id}</span></div>
+            <div className="li-h"><span className="muted">{s.numbers.get(id) ?? '—'}</span><b>{r?.name}</b><span className="mono">{id}</span></div>
             {es.map(e => <div key={e.seq} className="edit"><span className={`ek ${e.kind}`}>{t(editLabel[e.kind])}</span>
               {e.kind === 'edit' ? <span>{e.field}: <s>{e.before || '∅'}</s> to {e.after}</span> : e.kind === 'move' ? <span>from {e.before} to {e.after}</span> : null}</div>)}
             {also && <div className="warn"><PeopleSwap16Regular /> {t('also changed in')} “{also.set}” {t('by')} {also.by}</div>}
@@ -50,13 +50,12 @@ export function PreviewView({ pv }: { pv: Preview }) {
   return (
     <div>
       <div className="counts">
-        <span><b>{pv.nsgs.length}</b>{t('Managed NSG')}s</span><span className="create"><b>{c('create')}</b>{t('created')}</span>
-        <span className="change"><b>{c('change')}</b>{t('changed')}</span><span className="delete"><b>{c('delete')}</b>{t('deleted')}</span>
-        {ren > 0 && <span><b>{ren}</b>{t('Renumbered only').toLowerCase()}</span>}
+        <span><b>{pv.nsgs.length}</b>NSGs</span><span className={c('create') ? 'create' : 'nil'}><b>{c('create')}</b>{t('created')}</span>
+        <span className={c('change') ? 'change' : 'nil'}><b>{c('change')}</b>{t('changed')}</span><span className={c('delete') ? 'delete' : 'nil'}><b>{c('delete')}</b>{t('deleted')}</span>
       </div>
       {pv.nsgs.slice(0, 60).map(n => (
         <details key={n.nsg} className="nsg">
-          <summary><span className="sum-main"><span className="nsgname">{n.nsg}</span><span className="muted">{envs.find(e => e.id === n.env)?.name}</span></span>
+          <summary><span className="sum-main"><span className="mono">{n.nsg}</span><span className="muted">{envs.find(e => e.id === n.env)?.name}</span></span>
             <Ops c={n.ops.filter(o => o.op === 'create').length} ch={n.ops.filter(o => o.op === 'change').length} d={n.ops.filter(o => o.op === 'delete').length} /></summary>
           <table className="mini"><thead><tr><th></th><th>Dir.</th><th>Priority</th><th>NSG rule</th><th>Why</th></tr></thead>
             <tbody>{n.ops.map((o, i) => <tr key={i}><td className={`op ${o.op}`}>{o.op}</td><td>{o.dir === 'in' ? t('Inbound') : t('Outbound')}</td><td>{o.priority}</td><td className="mono">{o.name}</td><td className="muted">{o.detail}</td></tr>)}</tbody></table>
@@ -65,7 +64,7 @@ export function PreviewView({ pv }: { pv: Preview }) {
       {ren > 0 && <div className="renum">{ren} {t('NSG rules')} in {pv.nsgs.filter(n => n.renumbered).length} NSGs only get a new priority. What they allow stays the same.</div>}
       {pv.nsgs.length > 60 && <p className="muted">{pv.nsgs.length - 60} more NSGs</p>}
       <h4>{t('Rule cost')}</h4>
-      <table className="mini"><thead><tr><th>Rule</th><th>NSGs</th><th>{t('NSG rules')}</th></tr></thead><tbody>{[...pv.cost].map(([id, k]) => <tr key={id}><td className="rid">{id}</td><td>{k.nsgs}</td><td>{k.nsgRules}</td></tr>)}</tbody></table>
+      <table className="mini"><thead><tr><th>Rule</th><th>NSGs</th><th>{t('NSG rules')}</th></tr></thead><tbody>{[...pv.cost].map(([id, k]) => <tr key={id}><td className="mono">{id}</td><td>{k.nsgs}</td><td>{k.nsgRules}</td></tr>)}</tbody></table>
     </div>
   );
 }
@@ -85,7 +84,7 @@ export function WriteOrderView({ pv }: { pv: Preview }) {
         {pv.steps.map((step, i) => (
           <div key={i} className="stepx"><span className="n">{i + 1}</span>
             <div className="h">{step.length} NSGs{i === 0 && pv.steps.length > 1 ? ' first' : i > 0 ? ' after that' : ''}</div>
-            {step.slice(0, 12).map(w => <div key={w.nsg} className="w"><span className="nsgname mono">{w.nsg}</span><span className="why">{w.why}</span>
+            {step.slice(0, 12).map(w => <div key={w.nsg} className="w"><span className="mono">{w.nsg}</span><span className="why">{w.why}</span>
               {w.waitsFor && <div className="wait">{t('waits for')} <span className="mono">{w.waitsFor}</span>{w.holdsBack ? `, ${w.holdsBack}` : ''}</div>}</div>)}
             {step.length > 12 && <div className="muted" style={{ paddingTop: 4 }}>{step.length - 12} more</div>}
           </div>
@@ -116,7 +115,7 @@ export function PolicyView({ pv }: { pv: Preview }) {
   return (
     <div>
       {pv.policy.map((f, i) => <div key={i} className="li"><div className="li-h">{f.effect === 'deny' ? <ShieldError16Filled className="b-red" /> : <ShieldCheckmark16Regular />}<b>{f.assignment}</b></div>
-        <div className="edit"><span className={`ek ${f.effect === 'deny' ? 'delete' : 'move'}`}>{f.effect}</span>{f.reason}{f.rule ? <span className="rid">{f.rule}</span> : null}</div></div>)}
+        <div className="edit"><span className={`ek ${f.effect === 'deny' ? 'delete' : 'move'}`}>{f.effect}</span>{f.reason}{f.rule ? <span className="mono">{f.rule}</span> : null}</div></div>)}
       <div style={{ paddingTop: 8 }}><Button size="small" icon={<ArrowSync16Regular />} onClick={() => setRan(new Date().toLocaleTimeString())}>{t('Run check now')}</Button> {ran && <span className="muted">checked at {ran}</span>}</div>
     </div>
   );
@@ -143,7 +142,7 @@ export function CsActions({ pv, compact }: { pv: Preview; compact?: boolean }) {
   );
 }
 
-function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const s = useStore(); const { t } = useT(); const [reason, setReason] = useState('');
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
@@ -168,7 +167,7 @@ export function ChangeSetList() {
       {otherSets.map(c => (
         <div key={c.id} className="csrow"><span className={`dot ${c.state}`} /><div><b>{c.name}</b>
           <div className="meta">{t(c.state)} {t('by')} {c.owner}, {c.edits} {t('edits')}, {c.affected} {t('Zones')}{c.scheduled ? `, ${t('Scheduled')} ${c.scheduled}` : ''}
-            {c.rebase && <span className="flag red">{t('Rebase needed')}</span>}{c.emergency && <span className="flag amber">{t('Emergency Commit')}</span>}</div></div></div>
+            {c.rebase && <span className="tag red">{t('Rebase needed')}</span>}{c.emergency && <span className="tag amber">{t('Emergency Commit')}</span>}</div></div></div>
       ))}
     </div>
   );
@@ -184,9 +183,9 @@ const inbox = [
 export function InboxButton() {
   const { t } = useT();
   return (
-    <Popover positioning="below-end"><PopoverTrigger disableButtonEnhancement>
-      <Button appearance="transparent" icon={<span style={{ position: 'relative', display: 'inline-flex' }}><Alert20Regular /><CounterBadge count={inbox.length} size="small" color="danger" style={{ position: 'absolute', top: -6, right: -8 }} /></span>} aria-label={t('Inbox')} />
-    </PopoverTrigger><PopoverSurface style={{ width: 400, padding: '12px 16px' }}>
+    <Popover positioning="after-bottom"><PopoverTrigger disableButtonEnhancement>
+      <button className="rail-i" aria-label={t('Inbox')} title={t('Inbox')}><Alert20Regular /><span className="pip">{inbox.length}</span></button>
+    </PopoverTrigger><PopoverSurface style={{ width: 420, padding: '14px 18px' }}>
       <div className="panel-h">{t('Inbox')}</div>
       {inbox.map((i, n) => <div key={n} className="li"><div className="li-h"><span className="ek move">{i.k}</span></div><div style={{ marginTop: 3 }}>{i.text}</div></div>)}
     </PopoverSurface></Popover>

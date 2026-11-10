@@ -22,13 +22,13 @@ export function Chip({ id, onRemove }: { id: string; onRemove?: () => void }) {
   const r = isSvc ? { name: svcById.get(id)?.name ?? id, kind: 'svc' as const, value: svcById.get(id)?.value ?? '' } : ref(id);
   return (
     <span className={`tok t-${r.kind}`} title={`${kindLabel[r.kind]}: ${r.value}`}>
-      <Glyph kind={r.kind} />{r.name}
+      <Glyph kind={r.kind} /><span className="tl">{r.name}</span>
       {onRemove && <button className="tok-x" onClick={onRemove} aria-label={`remove ${r.name}`}><Dismiss12Regular /></button>}
     </span>
   );
 }
 
-export function ObjectPicker({ value, onChange, mode, autoFocus }: { value: string[]; onChange: (v: string[]) => void; mode: 'addr' | 'svc'; autoFocus?: boolean }) {
+export function ObjectPicker({ value, onChange, mode, autoFocus, tall }: { value: string[]; onChange: (v: string[]) => void; mode: 'addr' | 'svc'; autoFocus?: boolean; tall?: boolean }) {
   const { t } = useT();
   const [q, setQ] = useState('');
   const [tab, setTab] = useState('All');
@@ -42,7 +42,7 @@ export function ObjectPicker({ value, onChange, mode, autoFocus }: { value: stri
   }, [q, tab, items]);
   const toggle = (id: string) => onChange(value.includes(id) ? value.filter(v => v !== id) : [...value.filter(v => v !== 'any' && v !== 'svc-any'), id]);
   return (
-    <div className="picker">
+    <div className={`picker ${tall ? 'tall' : ''}`}>
       <div className="picker-sel">{value.map(id => <Chip key={id} id={id} onRemove={() => toggle(id)} />)}</div>
       <Input ref={input} contentBefore={<Search16Regular />} value={q} onChange={(_, d) => setQ(d.value)} placeholder={mode === 'svc' ? 'https, TCP 8443, svcgrp…' : 'app0042, 10.10., Storage, asg-…'} size="small" style={{ width: '100%' }} />
       {mode === 'addr' && (
@@ -71,7 +71,7 @@ export function RefsEditor(props: CustomCellEditorProps & { mode: 'addr' | 'svc'
   return (
     <div className="picker-pop" onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); props.stopEditing(); } }}>
       <ObjectPicker value={props.value ?? []} onChange={v => props.onValueChange(v.length ? v : [props.mode === 'svc' ? 'svc-any' : 'any'])} mode={props.mode} autoFocus />
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', paddingTop: 6 }}>
+      <div className="picker-foot">
         <Button size="small" onClick={() => props.stopEditing(true)}>{t('Cancel')}</Button>
         <Button size="small" appearance="primary" onClick={() => props.stopEditing()}>{t('Apply')}</Button>
       </div>

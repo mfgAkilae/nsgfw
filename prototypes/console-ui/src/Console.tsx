@@ -1,0 +1,276 @@
+// PROTOTYPE, throwaway. The console shell: rail, Rule base with filter chips and Zone lens, right dock (Rule inspector, Change set),
+// commit bar and jump palette. One design, light and dark.
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Input, Switch, Tooltip } from '@fluentui/react-components';
+import { Add16Regular, Search16Regular, Dismiss16Regular, PanelRight20Regular, TextBulletListSquare20Regular, Grid20Regular, Box20Regular, BranchFork20Regular,
+  WeatherMoon20Regular, WeatherSunny20Regular, Copy16Regular, Delete16Regular, Eye16Regular, EyeOff16Regular, ArrowSort16Regular, Send16Regular, ArrowRight12Filled,
+  Checkmark12Filled, Dismiss12Filled, Flash16Regular, TextLineSpacing20Regular, LockClosed16Regular, Warning16Filled, ShieldError16Filled, PeopleSwap16Regular, LayerDiagonal16Regular } from '@fluentui/react-icons';
+import { RuleGrid, RuleGridHandle, FilterKey, countFilters, systemTop, systemBottom, SysRow, compact } from './RuleGrid';
+import { ZoneGrid, Bar, LIMITS, EgressBadge, Flags } from './ZoneGrid';
+import { ObjectPicker } from './ObjectPicker';
+import { Glyph } from './Glyph';
+import { ChangesList, PreviewView, WriteOrderView, ApprovalView, PolicyView, ChangeSetList, InboxButton, MoveDialog, EmergencyDialog, usePreview, useApproval } from './ChangeViews';
+import { Brand, useDebounced, reportReady } from './bits';
+import { ProtoButton } from './Proto';
+import { useStore, placement, cost, alsoChanged } from './store';
+import { zones, zoneById, envs, ref, svcById } from './data';
+import { useT } from './i18n';
+import { useMode } from './theme';
+
+type Page = 'rules' | 'zones' | 'objects' | 'sets';
+type CsTab = 'changes' | 'preview' | 'order' | 'approval' | 'policy';
+const typing = () => { const el = document.activeElement as HTMLElement | null; return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable || !!el.closest('.ag-root-wrapper')); };
+
+export default function Console() {
+  const s = useStore(); const { t, lang, setLang } = useT(); const { mode, toggle } = useMode(); const pv = usePreview(); const ap = useApproval(pv);
+  const [page, setPage] = useState<Page>('rules');
+  const [lens, setLens] = useState<{ zid: string; dir: 'in' | 'out' } | null>(null);
+  const [filter, setFilter] = useState<FilterKey>('all'); const [q, dq, setQ] = useDebounced();
+  const [dense, setDense] = useState(false); const [bands, setBands] = useState(true);
+  const [sel, setSel] = useState<string[]>([]); const [focused, setFocused] = useState<string | null>(null);
+  const [dock, setDock] = useState<{ open: boolean; tab: 'rule' | 'cs'; cs: CsTab; auto: boolean }>({ open: false, tab: 'rule', cs: 'preview', auto: true });
+  const [palette, setPalette] = useState(false); const [moveIds, setMoveIds] = useState<string[] | null>(null); const [objSel, setObjSel] = useState<string[]>([]);
+  const grid = useRef<RuleGridHandle>(null); const search = useRef<HTMLInputElement>(null);
+
+  const z = lens ? zoneById.get(lens.zid)! : null;
+  const rows = useMemo(() => (!lens ? s.rules : s.rules.filter(r => { const p = placement(r); return lens.dir === 'in' ? p.dst.includes(lens.zid) : p.src.includes(lens.zid); })), [s.rules, lens]);
+  const counts = useMemo(() => { const c = countFilters(rows, s.status); if (lens) c.changed = rows.filter(r => s.status.has(r.id)).length; return c; }, [rows, s.status, lens]);
+  const bandRows = useMemo<{ top: SysRow[]; bottom: SysRow[] } | null>(() => {
+    if (!bands) return null;
+    if (!z || !lens) return { top: systemTop, bottom: systemBottom };
+    const inb = lens.dir === 'in';
+    return {
+      top: [{ id: 'sys-pe', system: 'pe', name: 'Platform exceptions', text: inb ? 'Azure Load Balancer health probes to this Zone are allowed, priority 100.' : 'None outbound.' }],
+      bottom: [
+        { id: 'sys-intra', system: 'intra', name: 'Intra-zone default', text: `Traffic inside ${z.name} is allowed.` },
+        ...(z.inherited ? [{ id: 'sys-inh', system: 'inherited', name: 'Inherited defaults', text: inb ? 'VirtualNetwork to this Zone is allowed, as before onboarding.' : 'This Zone to VirtualNetwork and Internet is allowed, as before onboarding.' } as SysRow] : []),
+        ...(!inb && z.egress === 'dest' ? [{ id: 'sys-egress', system: 'egress', name: 'Egress posture', text: 'Outbound to the Internal address space is open. The destination Zone decides.' } as SysRow] : []),
+        { id: 'sys-deny', system: 'denyall', name: 'Deny-all rules', text: inb ? 'Everything else to this Zone is denied, priority 4096.' : 'Everything else from this Zone is denied, priority 4096.' },
+        { id: 'sys-az', system: 'azure', name: 'Azure default rules', text: 'Read-only and never reached.' },
+      ],
+    };
+  }, [bands, z, lens]);
+
+  const openDock = (tab: 'rule' | 'cs', cs?: CsTab) => setDock(d => ({ ...d, open: true, tab, cs: cs ?? d.cs }));
+  const focusRule = (id: string) => { setFocused(id); setDock(d => (d.open && d.tab !== 'rule' ? d : d)); };
+  const openRule = (id: string) => { setFocused(id); openDock('rule'); };
+  const jumpToRule = (id: string) => { setPage('rules'); setLens(null); setFilter('all'); setQ(''); setTimeout(() => { grid.current?.reveal(id); openRule(id); }, 80); };
+  const openZone = (zid: string) => { setPage('rules'); setLens({ zid, dir: 'in' }); setFilter('all'); setQ(''); };
+  const newRule = () => { setPage('rules'); const id = s.addRule(focused ?? undefined); setTimeout(() => { grid.current?.reveal(id); setFocused(id); }, 80); };
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette(p => !p); return; }
+      if (e.key === 'Escape') setPalette(false);
+      if (typing() || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === '/') { e.preventDefault(); setPage('rules'); setTimeout(() => search.current?.focus(), 30); }
+      if (e.key === 'n') { e.preventDefault(); newRule(); }
+      if (e.key === 'p') setDock(d => (d.open && d.tab === 'cs' ? { ...d, open: false, auto: false } : { ...d, open: true, tab: 'cs' }));
+      if (e.key === 'i') setDock(d => (d.open && d.tab === 'rule' ? { ...d, open: false, auto: false } : { ...d, open: true, tab: 'rule' }));
+    };
+    window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h);
+  });
+
+  const nav: [Page, string, JSX.Element][] = [['rules', 'Rules', <TextBulletListSquare20Regular />], ['zones', 'Zones', <Grid20Regular />], ['objects', 'Objects', <Box20Regular />], ['sets', 'Change sets', <BranchFork20Regular />]];
+  const chips: [FilterKey, string][] = [['all', 'All'], ['deny', 'Deny'], ['disabled', 'Disabled'], ['expiring', 'Expiring'], ['findings', 'With findings'], ['unused', 'No hits']];
+  const showBar = s.edits.length > 0 || s.state !== 'Open';
+
+  return (
+    <div className="app">
+      <nav className="rail" aria-label="Main">
+        <Brand />
+        {nav.map(([k, label, icon]) => <button key={k} className={`rail-b ${page === k ? 'on' : ''}`} aria-current={page === k} onClick={() => setPage(k)}>{icon}<span>{k === 'sets' && lang === 'de' ? 'Pakete' : t(label)}</span></button>)}
+        <span className="rail-sp" />
+        <ProtoButton />
+        <InboxButton />
+        <Tooltip content={t(mode === 'dark' ? 'Light mode' : 'Dark mode')} relationship="label" positioning="after"><button className="rail-i" onClick={toggle}>{mode === 'dark' ? <WeatherSunny20Regular /> : <WeatherMoon20Regular />}</button></Tooltip>
+        <Tooltip content={lang === 'en' ? 'Deutsch' : 'English'} relationship="label" positioning="after"><button className="rail-i rail-lang" onClick={() => setLang(lang === 'en' ? 'de' : 'en')}>{lang.toUpperCase()}</button></Tooltip>
+        <span className="avatar" title="You, signed in with Entra ID: editor and approver">YO</span>
+      </nav>
+
+      <div className="main">
+        <div className="work">
+          <section className="content">
+            {page === 'rules' && <>
+              <header className="phead">
+                <h1>{t('Rule base')}</h1>
+                <button className="cs-pill" onClick={() => setPage('sets')} title={t('Change sets')}><span className={`dot ${ap.eff}`} />CHG-5120 Release app0042</button>
+                <span className="sp" />
+                <Input ref={search} className="search" contentBefore={<Search16Regular />} contentAfter={<kbd>/</kbd>} placeholder={t('Filter Rules by name, object, ID or ticket')} value={q} onChange={(_, d) => setQ(d.value)} />
+                <button className="jump" onClick={() => setPalette(true)}>{t('Jump to')}<kbd>Ctrl K</kbd></button>
+                <Tooltip content={t(dense ? 'Comfortable rows' : 'Compact rows')} relationship="label"><button className={`ib opt ${dense ? 'on' : ''}`} onClick={() => setDense(!dense)}><TextLineSpacing20Regular /></button></Tooltip>
+                <Tooltip content={t('Show what sits above and below the Rules')} relationship="label"><button className={`ib opt ${bands ? 'on' : ''}`} onClick={() => setBands(!bands)}><LockClosed16Regular /></button></Tooltip>
+                <Tooltip content={t('Side panel')} relationship="label"><button className={`ib ${dock.open ? 'on' : ''}`} onClick={() => setDock(d => ({ ...d, open: !d.open, auto: false }))}><PanelRight20Regular /></button></Tooltip>
+                <Button appearance="primary" icon={<Add16Regular />} onClick={newRule}>{t('New Rule')}</Button>
+              </header>
+
+              {z && lens && (
+                <div className="lens">
+                  <div className="lens-top">
+                    <span className="lens-name"><Glyph kind="zone" />{z.name}</span><span className="mono">{z.prefix}{z.extra ? ` + ${z.extra.join(', ')}` : ''}</span>
+                    <span className="sp" />
+                    <div className="seg2" role="group"><button className={lens.dir === 'in' ? 'on' : ''} onClick={() => setLens({ ...lens, dir: 'in' })}>{t('Inbound')}</button><button className={lens.dir === 'out' ? 'on' : ''} onClick={() => setLens({ ...lens, dir: 'out' })}>{t('Outbound')}</button></div>
+                    <button className="lens-x" onClick={() => setLens(null)}><Dismiss16Regular />{t('All Rules')}</button>
+                  </div>
+                  <div className="lens-facts"><span>{z.vnet}</span><span>{envs.find(e => e.id === z.env)?.name}</span><EgressBadge e={z.egress} /><Flags z={z} /><span className="sp" />
+                    <span>{t('NSG rules')}<Bar v={z.rules} max={LIMITS.rules} /></span><span>{t('Source addresses')}<Bar v={z.addrSrc} max={LIMITS.addr} /></span><span>{t('ASGs')}<Bar v={z.asgs} max={LIMITS.asgs} /></span></div>
+                </div>
+              )}
+
+              {sel.length ? (
+                <div className="chipbar selbar">
+                  <b>{sel.length} {t('selected')}</b>
+                  <button onClick={() => s.setEnabled(sel, true)}><Eye16Regular />{t('Enable')}</button><button onClick={() => s.setEnabled(sel, false)}><EyeOff16Regular />{t('Disable')}</button>
+                  <button onClick={() => s.clone(sel)}><Copy16Regular />{t('Clone')}</button><button onClick={() => setMoveIds(sel)}><ArrowSort16Regular />{t('Move to…')}</button>
+                  <button className="danger" onClick={() => { s.remove(sel); grid.current?.clearSelection(); }}><Delete16Regular />{t('Delete')}</button>
+                  <span className="sp" /><button onClick={() => grid.current?.clearSelection()}><Dismiss16Regular />{t('Clear selection')}</button>
+                </div>
+              ) : (
+                <div className="chipbar">
+                  {chips.map(([k, label]) => <button key={k} className={`chip ${filter === k ? 'on' : ''} c-${k} ${counts[k] ? '' : 'zero'}`} aria-pressed={filter === k} disabled={!counts[k] && filter !== k} onClick={() => setFilter(k)}>{t(label)}<i>{counts[k].toLocaleString()}</i></button>)}
+                  {counts.changed > 0 && <button className={`chip c-changed ${filter === 'changed' ? 'on' : ''}`} aria-pressed={filter === 'changed'} onClick={() => setFilter('changed')}>{t('Changed')}<i>{counts.changed}</i></button>}
+                  <span className="sp" /><span className="hint">{lens ? `${rows.length} ${t('Rules')} ${t(lens.dir === 'in' ? 'land on this Zone inbound' : 'land on this Zone outbound')}` : t('Top-down, the first match wins. Flow data is about 70 minutes old.')}</span>
+                </div>
+              )}
+
+              <div className="sheet"><RuleGrid key={lens ? `${lens.zid}-${lens.dir}` : 'all'} ref={grid} rows={rows} quick={dq} filter={filter} bands={bandRows} dense={dense} focusedId={focused}
+                onFocus={focusRule} onOpen={openRule} onSelection={setSel} onMoveTo={setMoveIds} onReady={reportReady(lens ? `Zone lens, ${rows.length} Rules` : 'Rule base, 10,000 Rules')} /></div>
+            </>}
+
+            {page === 'zones' && <><header className="phead"><h1>{t('Zones')}</h1><span className="sub">{t('Every Managed NSG against its Azure limits. Click a Zone to see the Rules that land on it.')}</span></header><ZoneGrid onOpen={x => openZone(x.id)} /></>}
+            {page === 'objects' && <><header className="phead"><h1>{t('Objects')}</h1><span className="sub">{t('Zones, addresses, Azure service tags, ASG objects and groups.')}</span></header><div className="sheet pad"><ObjectPicker value={objSel} onChange={setObjSel} mode="addr" tall /></div></>}
+            {page === 'sets' && <><header className="phead"><h1>{t('Change sets')}</h1></header><div className="sheet pad" style={{ maxWidth: 760, flex: 'none' }}><ChangeSetList /></div></>}
+          </section>
+
+          {dock.open && (
+            <aside className="dock">
+              <div className="dock-h">
+                <div className="seg2" role="tablist"><button className={dock.tab === 'rule' ? 'on' : ''} onClick={() => setDock({ ...dock, tab: 'rule' })}>{t('Rule')}</button><button className={dock.tab === 'cs' ? 'on' : ''} onClick={() => setDock({ ...dock, tab: 'cs' })}>{t('Change set')}{s.edits.length > 0 && <i className="cnt">{s.edits.length}</i>}</button></div>
+                <span className="sp" /><button className="ib" title={t('Close')} onClick={() => setDock({ ...dock, open: false, auto: false })}><Dismiss16Regular /></button>
+              </div>
+              {dock.tab === 'rule' ? <div className="dock-b"><Inspector id={focused} onMoveTo={setMoveIds} onZone={openZone} /></div> : <>
+                <div className="subtabs">{(['changes', 'preview', 'order', 'approval', 'policy'] as CsTab[]).map(k => <button key={k} className={dock.cs === k ? 'on' : ''} onClick={() => setDock({ ...dock, cs: k })}>{k === 'order' && lang === 'de' ? 'Reihenfolge' : t({ changes: 'Changes', preview: 'Preview', order: 'Write order', approval: 'Approval', policy: 'Policy' }[k])}{k === 'order' && pv.unorderable ? <Warning16Filled className="b-red" /> : null}</button>)}</div>
+                <div className="dock-b">
+                  {dock.cs === 'changes' && <ChangesList onFocus={jumpToRule} />}{dock.cs === 'preview' && <PreviewView pv={pv} />}{dock.cs === 'order' && <WriteOrderView pv={pv} />}
+                  {dock.cs === 'approval' && <ApprovalView pv={pv} />}{dock.cs === 'policy' && <PolicyView pv={pv} />}
+                </div>
+              </>}
+            </aside>
+          )}
+        </div>
+
+        {showBar && <CommitBar onOpen={cs => openDock('cs', cs)} />}
+      </div>
+
+      {palette && <Palette onClose={() => setPalette(false)} run={{ rule: jumpToRule, zone: openZone, page: setPage, newRule, review: () => openDock('cs', 'preview'), theme: toggle, lang: () => setLang(lang === 'en' ? 'de' : 'en') }} />}
+      <MoveDialog ids={moveIds} onClose={() => setMoveIds(null)} />
+    </div>
+  );
+}
+
+// ---------- Commit bar: what the pending edits mean, always visible, one click to submit.
+function CommitBar({ onOpen }: { onOpen: (tab: CsTab) => void }) {
+  const s = useStore(); const { t } = useT(); const pv = usePreview(); const ap = useApproval(pv); const [em, setEm] = useState(false);
+  const need = ap.byEnv.filter(x => x.env.level !== 'none'); const got = need.filter(x => s.approvedBy[x.env.id]).length;
+  const deny = pv.policy.filter(p => p.effect === 'deny').length;
+  if (s.state === 'Committed') return (
+    <footer className="cbar done"><Checkmark12Filled /><b>{t('Committed as Version')} {s.version}</b><span>{t('Deployments started')}: Production (ARM), Non-production (Terraform, {t('step')} 1 {t('of')} {Math.max(1, pv.steps.length)})</span>{s.emergency && <span className="tag amber">{t('Emergency Commit')}: {t('awaiting approval afterwards')}</span>}<span className="sp" /><Button size="small" className="proto" onClick={s.discard}>Reset prototype</Button></footer>
+  );
+  return (
+    <footer className={`cbar ${pv.unorderable || deny ? 'blocked' : ''}`}>
+      <span className={`dot ${ap.eff}`} /><b>CHG-5120</b><span className="st">{t(ap.eff)}</span>
+      <button onClick={() => onOpen('changes')}><b>{s.edits.length}</b>{t('edits')}</button>
+      <button onClick={() => onOpen('preview')}><b>{pv.nsgs.length}</b>{t('Managed NSGs change')}</button>
+      <button onClick={() => onOpen('order')} className={pv.unorderable ? 'bad' : ''}>{pv.unorderable ? <><Warning16Filled />{t('Cannot be ordered')}</> : <><b>{Math.max(1, pv.steps.length)}</b>{t(pv.steps.length > 1 ? 'write steps' : 'write step')}</>}</button>
+      <button onClick={() => onOpen('approval')}>{need.length ? <><b>{got}/{need.length}</b>{t('Approvals')}</> : t('No Approval needed')}</button>
+      {deny > 0 && <button className="bad" onClick={() => onOpen('policy')}><ShieldError16Filled /><b>{deny}</b>{t('Policy finding blocks')}</button>}
+      <span className="sp" />
+      <Button size="small" appearance="subtle" icon={<Flash16Regular />} disabled={pv.unorderable} onClick={() => setEm(true)}>{t('Emergency Commit')}</Button>
+      <Button size="small" appearance="subtle" onClick={s.discard}>{t('Discard')}</Button>
+      <Button size="small" onClick={() => onOpen('preview')}>{t('Review')}</Button>
+      {s.state === 'Open' && <Button size="small" appearance="primary" icon={<Send16Regular />} disabled={pv.unorderable || deny > 0} onClick={s.submit}>{t('Submit for Approval')}</Button>}
+      {s.state === 'Submitted' && !ap.done && <Button size="small" className="proto" onClick={() => s.approveAs('kim', ap.byEnv.map(x => x.env.id))}>{t('Approve as kim (prototype)')}</Button>}
+      {s.state !== 'Open' && <Button size="small" appearance="primary" disabled={!ap.done || pv.unorderable} onClick={() => s.commit()}>{t('Commit')}</Button>}
+      <EmergencyDialog open={em} onClose={() => setEm(false)} />
+    </footer>
+  );
+}
+
+// ---------- Inspector: one Rule in full, and what it becomes in Azure.
+function Inspector({ id, onMoveTo, onZone }: { id: string | null; onMoveTo: (ids: string[]) => void; onZone: (zid: string) => void }) {
+  const s = useStore(); const { t } = useT();
+  const r = id ? s.rules.find(x => x.id === id) : undefined;
+  if (!r) return <div className="empty"><b>{t('No Rule selected')}</b><p>{t('Click a Rule to see its objects in full and what it becomes in Azure.')}</p></div>;
+  const pl = placement(r); const c = cost(r); const also = alsoChanged.get(r.id); const del = s.status.get(r.id)?.deleted;
+  const side = (ids: string[], svc?: boolean) => ids.map(x => { const o = svc ? { name: svcById.get(x)?.name ?? x, kind: 'svc' as const, value: svcById.get(x)?.value ?? '', cov: [] as string[] } : ref(x); return (
+    <div key={x} className={`orow t-${o.kind}`}><Glyph kind={o.kind} /><b>{o.name}</b><span className="mono">{o.value}</span>
+      {!svc && (o.kind === 'zone' ? <a className="link" onClick={() => onZone(x.slice(5))}>{t('open Zone')}</a> : <span className="cov">{o.cov.length ? `${o.cov.length} ${t(o.cov.length === 1 ? 'Zone' : 'Zones')}` : t('outside every Zone')}</span>)}</div>); });
+  const nsg = (zid: string, dir: string) => <div key={zid + dir} className="nrow"><span className={`dir ${dir}`}>{t(dir === 'in' ? 'Inbound' : 'Outbound')}</span><span className="mono">{zoneById.get(zid)!.nsg}</span></div>;
+  const whyOut = !pl.src.length ? null : r.action === 'deny' ? 'Deny Rules land on both sides.' : pl.dst.length ? 'Outbound too, where the source Zone has a strict Egress posture.' : 'Outbound on the source Zones, because the destination lies outside every Zone.';
+  return (
+    <div className="insp">
+      <div className="insp-h"><span className="no">{s.numbers.get(r.id) ?? '—'}</span><h2>{r.name}</h2></div>
+      <div className="insp-s"><span className={`act ${r.action}`}>{r.action === 'allow' ? <Checkmark12Filled /> : <Dismiss12Filled />}{t(r.action === 'allow' ? 'Allow' : 'Deny')}</span>
+        <Switch checked={r.enabled} disabled={del} onChange={(_, d) => s.setEnabled([r.id], d.checked)} label={t(r.enabled ? 'Enabled' : 'disabled')} /></div>
+
+      <div className="flowbox">
+        <h3>{t('From')}</h3>{side(r.src)}
+        <div className="flowsep"><ArrowRight12Filled />{t('to')}</div>{side(r.dst)}
+        <div className="flowsep">{t('on')}</div>{side(r.svc, true)}
+      </div>
+
+      <h3>{t('In Azure')}</h3>
+      <p className="lead">{c.nsgRules ? <><b>{c.nsgRules} {t(c.nsgRules === 1 ? 'NSG rule' : 'NSG rules')}</b> {t('on')} <b>{c.nsgs} {t(c.nsgs === 1 ? 'Managed NSG' : 'Managed NSGs')}</b></> : t('No NSG rule: neither side covers a Zone.')}</p>
+      {pl.dst.slice(0, 4).map(zid => nsg(zid, 'in'))}{pl.src.slice(0, 4).map(zid => nsg(zid, 'out'))}
+      {pl.dst.length + pl.src.length > 8 && <p className="muted">{pl.dst.length + pl.src.length - Math.min(4, pl.dst.length) - Math.min(4, pl.src.length)} {t('more NSGs')}</p>}
+      {whyOut && <p className="muted">{whyOut}</p>}
+
+      {(r.policy || r.importNote || r.layerWarn || also) && <><h3>{t('Needs attention')}</h3>
+        {r.policy && <div className="note red"><ShieldError16Filled />{r.policy}</div>}
+        {r.importNote && <div className="note amber"><Warning16Filled />Import note ({r.importNote}): from nsg-legacy-017, rule “allow-sql”, priority 310, inbound.</div>}
+        {r.layerWarn && <div className="note amber"><LayerDiagonal16Regular />Security layer: {r.layerWarn}.</div>}
+        {also && <div className="note red"><PeopleSwap16Regular />{t('also changed in')} “{also.set}” {t('by')} {also.by}.</div>}</>}
+
+      <h3>{t('Details')}</h3>
+      <dl className="facts"><dt>{t('Ticket')}</dt><dd>{r.ticket || '—'}</dd><dt>{t('Owner')}</dt><dd>{r.owner}</dd><dt>{t('Expiry')}</dt><dd>{r.expiry ?? t('never')}</dd>
+        <dt>{t('Hits')}</dt><dd>{r.hits == null ? t('No flow data for this Rule') : `${compact(r.hits)}, ${t('data about 70 minutes old')}`}</dd><dt>{t('Comment')}</dt><dd>{r.comment || '—'}</dd><dt>Rule ID</dt><dd className="mono">{r.id}</dd></dl>
+
+      <div className="insp-a"><Button size="small" icon={<Copy16Regular />} onClick={() => s.clone([r.id])}>{t('Clone')}</Button><Button size="small" icon={<ArrowSort16Regular />} onClick={() => onMoveTo([r.id])}>{t('Move to…')}</Button><Button size="small" icon={<Delete16Regular />} onClick={() => s.remove([r.id])}>{t('Delete')}</Button></div>
+    </div>
+  );
+}
+
+// ---------- Jump palette (Ctrl K): every Rule, Zone and action from one field.
+type Run = { rule: (id: string) => void; zone: (zid: string) => void; page: (p: Page) => void; newRule: () => void; review: () => void; theme: () => void; lang: () => void };
+function Palette({ onClose, run }: { onClose: () => void; run: Run }) {
+  const s = useStore(); const { t } = useT(); const [q, setQ] = useState(''); const [i, setI] = useState(0);
+  const items = useMemo(() => {
+    const ql = q.trim().toLowerCase(); const out: { group: string; label: string; sub?: string; kind?: string; go: () => void }[] = [];
+    const cmds: [string, () => void][] = [['New Rule', run.newRule], ['Review Change set', run.review], ['Go to Rule base', () => run.page('rules')], ['Go to Zones', () => run.page('zones')],
+      ['Go to Objects', () => run.page('objects')], ['Go to Change sets', () => run.page('sets')], ['Switch light and dark mode', run.theme], ['Switch language', run.lang]];
+    cmds.filter(([l]) => !ql || t(l).toLowerCase().includes(ql)).slice(0, ql ? 4 : 8).forEach(([l, go]) => out.push({ group: 'Actions', label: t(l), go }));
+    if (ql) {
+      const num = /^#?(\d+)$/.exec(ql);
+      if (num) { const r = s.rules.filter(x => !s.status.get(x.id)?.deleted)[Number(num[1]) - 1]; if (r) out.push({ group: 'Rules', label: r.name, sub: `${t('No.')} ${num[1]}`, go: () => run.rule(r.id) }); }
+      let n = 0; for (const r of s.rules) { if (n >= 6) break; if (r.name.toLowerCase().includes(ql) || r.id.toLowerCase() === ql) { out.push({ group: 'Rules', label: r.name, sub: `${t('No.')} ${s.numbers.get(r.id)}`, go: () => run.rule(r.id) }); n++; } }
+      n = 0; for (const z of zones) { if (n >= 6) break; if (z.name.includes(ql) || z.prefix.startsWith(ql)) { out.push({ group: 'Zones', label: z.name, sub: `${z.prefix}, ${z.vnet}`, kind: 'zone', go: () => run.zone(z.id) }); n++; } }
+    }
+    return out;
+  }, [q]);
+  useEffect(() => setI(0), [q]);
+  const pick = (k: number) => { items[k]?.go(); onClose(); };
+  return (
+    <div className="pal-bg" onMouseDown={onClose}>
+      <div className="pal" role="dialog" aria-label={t('Jump to')} onMouseDown={e => e.stopPropagation()}>
+        <input autoFocus value={q} placeholder={t('Rule name, number or ID, Zone, or an action')} onChange={e => setQ(e.target.value)}
+          onKeyDown={e => { if (e.key === 'ArrowDown') { e.preventDefault(); setI(Math.min(items.length - 1, i + 1)); } if (e.key === 'ArrowUp') { e.preventDefault(); setI(Math.max(0, i - 1)); } if (e.key === 'Enter') pick(i); if (e.key === 'Escape') onClose(); }} />
+        <div className="pal-l">
+          {items.map((it, k) => <div key={k}>{(k === 0 || items[k - 1].group !== it.group) && <div className="pal-g">{t(it.group)}</div>}
+            <div className={`pal-i ${k === i ? 'on' : ''}`} onMouseEnter={() => setI(k)} onClick={() => pick(k)}>{it.kind && <Glyph kind="zone" />}<b>{it.label}</b>{it.sub && <span>{it.sub}</span>}</div></div>)}
+          {!items.length && <div className="pal-e">{t('Nothing matches. Try a Rule number like 42, a Zone name or an address prefix.')}</div>}
+        </div>
+        <div className="pal-f"><kbd>↑</kbd><kbd>↓</kbd> {t('choose')} <kbd>Enter</kbd> {t('open')} <kbd>Esc</kbd> {t('close')}</div>
+      </div>
+    </div>
+  );
+}
