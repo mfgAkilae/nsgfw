@@ -142,6 +142,10 @@ _Avoid_: traffic log, flow log (the Azure resource)
 The number of flows that matched the NSG rules of a Rule, from the same data as the Flow view.
 _Avoid_: hit count, policy hit
 
+**Azure inventory**:
+The facts about Azure that the Translation engine needs besides the Rule base: the address spaces and peerings of VNets, the prefixes of subnets, the IPs of network interfaces and private endpoints, the members of External ASG objects and the Environment of each subscription. Every Version records the Azure inventory it was translated against. A change in Azure reaches it only through Adopt.
+_Avoid_: snapshot, cache, live state
+
 **Translation engine**:
 The part of the tool that converts the Rule base into Managed NSGs, NSG rules, ASGs and subnet associations.
 
@@ -207,7 +211,7 @@ A Commit that an admin makes without the required Approval, with a mandatory rea
 _Avoid_: break-glass, bypass
 
 **Version**:
-A stored, committed state of the Rule base that can be rolled back to. It records what was decided; whether Azure matches it is the result of its Deployments.
+A stored, committed state of the Rule base that can be rolled back to, together with the Azure inventory it was translated against. It records what was decided; whether Azure matches it is the result of its Deployments.
 _Avoid_: revision, snapshot
 
 **Restore**:
@@ -240,7 +244,7 @@ A flag on an imported Rule where the NSG rule did not map cleanly, naming the so
 A difference between Azure and the Deployed state, caused outside the tool, for example in the portal, the CLI or other IaC. A resource that a Deployment has not reached yet is pending, not drifted. Drift is resolved by Adopt or Overwrite.
 
 **Adopt**:
-Resolving Drift, or another change in Azure such as a new subnet prefix, by changing the Rule base to match Azure, through a Change set that the tool prepares. The tool adopts on its own what only closes traffic, a deleted ASG member, a changed IP of an ASG member, and every change of an Object that an admin set to adopt automatically.
+Resolving Drift, or a change of the Azure inventory such as a new subnet prefix, by changing the Rule base to match Azure, through a Change set that the tool prepares. The tool adopts on its own what only closes traffic, a deleted ASG member, a changed IP of an ASG member, and every change of an Object that an admin set to adopt automatically.
 _Avoid_: accept, import, adopt in place (taking over a resource)
 
 **Overwrite**:

@@ -14,14 +14,15 @@ The Translation engine is `packages/engine`. It is pure: the same inputs give th
 | Plan | Which writes does a Deployment make, and in which order? | [Plan](#plan-the-write-order) |
 | Import | Which Rules does an existing NSG become, and where do they go in the Rule base? | [Import](#import) |
 
-The Data contract and the order check at Rebase use the same functions and are described here too. Whether the Data contract generator and the Import mapping live in this package is open in [Grilling: Server internals at the design target][t30].
+The Data contract and the order check at Rebase use the same functions and are described here too. The Import mapping and the constraint merge live in this package. The Data contract generator lives in `packages/contract`, with a data contract version of its own, so a new field format is not a new engine version ([Grilling: Server internals at the design target][t30]).
 
 ## Inputs and outputs
 
 | Input | Content | Why |
 |---|---|---|
 | Rule base of one Version, or of a Change set on its base Version | Rules in order (Rule ID, source, destination, service, action, enabled flag); Objects with their VNet bindings; the ASG members of every ASG object; Zones with Egress posture, Extra prefixes and Inherited defaults; the Internal address space | the only source of NSG content |
-| Azure inventory snapshot | VNets with address spaces and peerings; subnets with prefixes; network interfaces and private endpoints with their IPs; the ASG members of every External ASG object; the Environment of each subscription with its Deployment mode and naming patterns; the existing NSGs at Import | Coverage, the IP fallback and the tag facts depend on Azure ([ADR 0004](../adr/0004-place-rules-by-coverage.md)) |
+| Azure inventory of the Version | VNets with address spaces and peerings; subnets with prefixes; network interfaces and private endpoints with their IPs; the ASG members of every External ASG object; the Environment of each subscription with its Deployment mode and naming patterns; the existing NSGs at Import | Coverage, the IP fallback and the tag facts depend on Azure ([ADR 0004](../adr/0004-place-rules-by-coverage.md)); every Version records the Azure inventory it was translated against, so the Commit writes what the Preview showed ([ADR 0020](../adr/0020-versions-record-the-azure-inventory.md)) |
+| Peerings of the observed Azure inventory | the peerings the Drift poll last saw | the write plan takes a peering as a documented tag fact only when the Version's Azure inventory holds it too ([ADR 0020](../adr/0020-versions-record-the-azure-inventory.md)) |
 | NSG rules stored with the last committed Version | names and priorities per Managed NSG and direction | priorities stay stable ([ADR 0005](../adr/0005-stable-nsg-rule-identity.md)); live Azure state never feeds into them |
 | Deployed state of every resource a Deployment touches | the content the tool last wrote | the write order ([ADR 0018](../adr/0018-write-order-from-dominance-gaps.md)) |
 | Limits data file | each limit with documentation URL and date | limit checks |
@@ -529,7 +530,7 @@ A Deployment plans from the Deployed state to the target ([ADR 0018](../adr/0018
 
 The plan assumes that one whole-NSG PUT takes effect as a whole (T2) and that a rejected PUT applies nothing (T3), as measured, and that one subnet write that swaps the NSG takes effect as a whole, which [Task: Empirical check of subnet NSG swaps and private endpoint ASG writes][t33] measures.
 
-How the engine finds Crossing flows and runs the combination test at the design target is open in [Grilling: Server internals at the design target][t30]. The prototype tests one address per range segment and one port per port segment, for pairs of changed Zones only. When no deny NSG rule references the ASGs of a flow's atoms, the states before and after a step suffice.
+How the engine finds Crossing flows and runs the combination test at the design target is in [At the design target](#at-the-design-target).
 
 #### Example 11: A Crossing flow, and a cycle
 
@@ -594,6 +595,18 @@ Prototype keys `legacy` and `failed`. Shows [ADR 0011](../adr/0011-import-preser
 There is no interim content: the legacy NSG rules are replaced in one write.
 
 A failed write: a Deployment writes the NSGs of web, api, app and db, with the edge "web before api" from Example 11. If the write of web fails, api waits, and app and db are written. If the write of db fails instead, nothing waits. If a newer Version is committed while web still has its old content, the new Deployment plans from the Deployed state and api still waits for web.
+
+## At the design target
+
+The design target per instance is 10,000 Rules, 20,000 Zones and 10,000 Objects, with 20 administrators editing at once. These rules were decided in [Grilling: Server internals at the design target][t30].
+
+**Incremental translation.** Priorities are kept per Managed NSG and direction, so every NSG translates on its own. The engine translates again only the Managed NSGs whose inputs change: the Zones in the Coverage of the source and destination of every changed Rule, before and after the change, and the Zones the Change set onboards, removes or changes. A change of the Internal address space adds every destination-enforced Zone. Every other NSG keeps the NSG rules stored with the base Version.
+
+**Crossing flows from delta sets.** For every Managed NSG whose content changes, and for each of its two directions, the engine computes the flows whose decision differs between the Deployed state and the target. It writes them as boxes of source range × destination range × protocol × port range, split into the boxes that open and the boxes that close. A service tag that decides a box is an unknown of its own and is evaluated both ways, as [ADR 0018](../adr/0018-write-order-from-dominance-gaps.md) requires. A Crossing flow exists where the closing boxes of a source Zone's outbound side meet the opening boxes of a destination Zone's inbound side (source NSG first), or the opening outbound boxes meet the closing inbound boxes (destination NSG first), within the addresses of the two Zones. An interval index over the Zone prefixes finds the Zones a box reaches. The cost therefore grows with the size of the change, not with the number of Zones, and the result is exact.
+
+**The combination test of the member steps.** For a flow, only the atoms of its two endpoints count. When no deny NSG rule references the ASGs of those atoms, the states before and after the step suffice. Otherwise the engine enumerates the combinations of those atoms, at most 2^12 = 4,096 per pair of endpoints. Above that, the step fails validation, and the Preview asks to split the Change set. A network interface usually changes one to three ASG objects, which is at most 64 combinations.
+
+**Where it runs.** The Preview runs in a worker-thread pool of `api` after every edit, the Commit and the Deployment plan in `worker`. The targets are a p95 within 2 s for a Change set of up to 50 changed Rules, and up to 60 s with progress for a change of the Internal address space, a re-translation or an Import ([architecture](architecture.md#from-edit-to-version)). A load test with a synthetic estate of this size checks them in the increment plan.
 
 ## Data contract
 
@@ -738,7 +751,7 @@ The hash function of Step 7, the fill threshold of Step 8 and the address-family
 
 The prototype is a reference for behaviour, with these known shortcuts:
 
-- It finds Crossing flows by testing sample addresses and ports. That does not scale to the design target ([Grilling: Server internals at the design target][t30]).
+- It finds Crossing flows by testing sample addresses and ports. That does not scale to the design target; the engine uses delta sets instead ([At the design target](#at-the-design-target)).
 - It puts the deletion of a Managed ASG into the first pull request step. The decided rule is the last pull request ([ADR 0010](../adr/0010-terraform-mode-data-contract-and-azure-observation.md)).
 - It models network interfaces only, no private endpoints.
 - Its Data contract field names, NSG names and resource groups are placeholders.
@@ -748,7 +761,6 @@ The prototype is a reference for behaviour, with these known shortcuts:
 ## Open points
 
 - Whether one subnet write that swaps the NSG takes effect as a whole, and the lag and ASG swaps of private endpoint writes: [Task: Empirical check of subnet NSG swaps and private endpoint ASG writes][t33]. The write order and the member steps themselves were decided in [Grilling: Write order under data-plane lag and split ASG membership writes][t32].
-- How the engine finds Crossing flows and runs the combination test of the member steps at the design target, where the Preview runs, where the Azure inventory is stored, and the package placement of the Import mapping and the Data contract generator: [Grilling: Server internals at the design target][t30].
 - Deferred checks that can change engine output, each with a nightly integration test and the conservative default described here ([Task: Empirical checks of undocumented Azure behaviour][t24]): IPv4 and IPv6 prefixes in one NSG rule, a service tag inside a prefix list, an ASG on one side with prefixes on the other, the count of prefixes per NSG rule or per NSG, whether the Azure default rules count against 2,000, an outbound deny on an Application Gateway v2 subnet, and ASG membership on IPv6 IP configurations.
 - The field names of the Data contract and the data contract version 1: with the Terraform stage of the increment plan.
 

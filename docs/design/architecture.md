@@ -1,6 +1,6 @@
 # Architecture proposal
 
-Status: draft from [Prototype: Architecture proposal][t26], 2026-11-10. It puts the decisions of the closed tickets and the ADRs into one picture. It decides only what the review round left to it: the tool's own subnets are not onboardable, and the minimum azurerm version is 3.39.0. Every other hole is listed under [Gaps for the map](#gaps-for-the-map) with the ticket that now holds it. On 2026-11-10 [Grilling: Operations: restore, exit, upgrades and exposure][t29] decided gaps 2 to 7, 11 and 12. The design-package review covers this document. Terms follow [GLOSSARY.md](../../GLOSSARY.md).
+Status: draft from [Prototype: Architecture proposal][t26], 2026-11-10. It puts the decisions of the closed tickets and the ADRs into one picture. It decides only what the review round left to it: the tool's own subnets are not onboardable, and the minimum azurerm version is 3.39.0. Every other hole is listed under [Gaps for the map](#gaps-for-the-map) with the ticket that now holds it. On 2026-11-10 [Grilling: Operations: restore, exit, upgrades and exposure][t29] decided gaps 2 to 7, 11 and 12, and [Grilling: Server internals at the design target][t30] decided gaps 8, 9, 10, 13 and 15. The design-package review covers this document. Terms follow [GLOSSARY.md](../../GLOSSARY.md).
 
 ## What nsgfw is
 
@@ -41,14 +41,17 @@ A pnpm workspace with TypeScript project references, ESM only, `strict`, MIT lic
 
 | Path | Holds |
 |---|---|
-| `apps/server` | Fastify 5 API and worker, serves the web build |
+| `apps/server` | Fastify 5 API and worker, the notification channels (inbox, e-mail, webhooks), serves the web build |
 | `apps/web` | Vite and React 19 SPA, Fluent UI React v9, AG Grid Community for the Rule base table, react-intl for English and German, TanStack Query |
 | `packages/model` | Rule base types, Zod 4 schemas, validation with error codes and parameters, the evaluation function that the packet tracer will reuse |
-| `packages/engine` | the Translation engine, pure, no I/O |
+| `packages/engine` | the Translation engine with the Import mapping and the constraint merge, pure, no I/O |
+| `packages/contract` | the Data contract generator and the default HCL of the bootstrap pull request, pure, no I/O, with its own data contract version |
+| `packages/db` | Kysely table types, the migrations and the queries; the `migrate` role needs only this package |
 | `packages/azure` | the only code that calls Azure (`@azure/identity`, `@azure/arm-network`, `@azure/arm-resourcegraph`, raw requests through the same pipeline where the SDK lacks an option) |
+| `packages/git` | the only code that calls Git providers (GitHub App, Azure DevOps) |
 | `infra/` | Terraform for the tool itself: the `instance` and `environment-access` modules |
 
-Where the database layer, the Data contract generator and the Git provider code live is not decided yet ([gap 8](#gaps-for-the-map)).
+The Data contract has a package of its own because its format and the engine's output change independently: a new field format is not a new engine version. Only the server sends notifications, so they stay in `apps/server` ([Grilling: Server internals at the design target][t30]).
 
 ### Process roles
 
@@ -69,16 +72,19 @@ Jobs go through a durable queue in PostgreSQL (pg-boss behind the tool's own job
 |---|---|---|
 | Deployment | after a Commit, at a scheduled time, on Retry, as an Emergency Commit, as a catch-up after a re-home. Holds a lease with a heartbeat; another worker takes over when it expires | [Grilling: Deployment execution and failure handling][t16] |
 | Terraform stage watch | polls the pull request state, then reads Azure until it matches the target or the apply timeout ends (default 2 hours) | [Grilling: Terraform mode workflow][t17] |
-| Drift poll | every 5 minutes per Environment (a setting): Resource Graph `resourcechanges` for watched resources, each hit confirmed with a GET. Also refreshes Security layers and compares Data contract files on the base branch | [Grilling: Import and drift handling][t18], [Grilling: Policy and security-layer visibility][t21] |
-| Full reconcile | every 24 hours, all tool resources; also the Recovery check, which runs at startup too ([Backup and recovery](#backup-and-recovery)) | [Grilling: Import and drift handling][t18], [Grilling: Operations: restore, exit, upgrades and exposure][t29] |
+| Drift poll | every 5 minutes per Environment (a setting): Resource Graph `resourcechanges` for watched resources, each hit confirmed with a GET. Also reads the changes of VNets, peerings, subnets, network interfaces and private endpoints into the observed [Azure inventory](#azure-inventory), refreshes Security layers and compares Data contract files on the base branch | [Grilling: Import and drift handling][t18], [Grilling: Policy and security-layer visibility][t21], [Grilling: Server internals at the design target][t30] |
+| Full reconcile | every 24 hours, all tool resources and the whole observed Azure inventory, which Environment onboarding also reads; also the Recovery check, which runs at startup too ([Backup and recovery](#backup-and-recovery)) | [Grilling: Import and drift handling][t18], [Grilling: Operations: restore, exit, upgrades and exposure][t29], [Grilling: Server internals at the design target][t30] |
 | Permission check | at Environment onboarding, at Zone onboarding, daily, before the first write of every Deployment | [ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) |
 | Rule expiry | notice to the owner 14 days ahead; at expiry the tool's own Commit disables the allow Rule, also while a Re-translation is open ([Engine upgrades](#engine-upgrades)) | [Grilling: Change sets, concurrency and approval][t15] |
-| Prepared Change sets | regenerated when Azure changes: Coverage changes, stale member IPs, External ASG object members, expired deny Rules | [Grilling: Change sets, concurrency and approval][t15] |
+| Prepared Change sets | regenerated when Azure changes: an Azure inventory change that changes the translation of the latest Version, stale member IPs, External ASG object members, expired deny Rules | [Grilling: Change sets, concurrency and approval][t15] |
 | Member IP adoption | removes a deleted ASG member from its object, deny Rules included, and adopts a changed member IP, on IP-fallback NSGs and without Approval, also while a Re-translation is open | [Grilling: Review round on placement, egress posture and MVP shape][t27], [Prototype: Translation engine worked examples][t22] |
 | Lost-update check | after membership writes, Resource Graph `resourcechanges` for another writer between GET and PUT, unless `If-Match` works | [Grilling: Deployment execution and failure handling][t16] |
-| Audit chain verify | reports a broken hash chain; accepts a fork only at a recovery entry | [Grilling: Access, roles and audit][t19], [ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md) |
-| Flow data | aggregated, cached queries against the Environment's workspace for the Flow view and hits | [Research: Traffic Analytics access for the Flow view and hits][t28] |
+| Audit chain verify | daily over the whole chain, and on demand by an admin; reports a broken hash chain to the alert channel and the health view; accepts a fork only at a recovery entry | [Grilling: Access, roles and audit][t19], [ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md), [Grilling: Server internals at the design target][t30] |
+| Flow data | hits every hour per Environment, one aggregated query over 30 days (an Environment setting); Flow view queries on demand, cached for 10 minutes ([Flow view and hits](#flow-view-and-hits)) | [Research: Traffic Analytics access for the Flow view and hits][t28], [Grilling: Server internals at the design target][t30] |
+| Service-tag prefixes | daily for every region the instance uses | [Grilling: Server internals at the design target][t30] |
 | Certificate expiry | warns 30 days ahead in the admin view and the health endpoint | [Grilling: Hosting, identity and least-privilege role][t20] |
+
+**Budgets across processes** ([Grilling: Server internals at the design target][t30]). Environments share no subscription, so each write budget per subscription and region belongs to one Environment. Every ARM write of an Environment runs under its Environment write lease: the Deployment lease, which an automatic Overwrite takes as well, because it runs as a Deployment of the Deployed state. The holder keeps the write budget and the in-flight limits in memory. A new holder rebuilds the budget from the stored writes of the last 5 minutes, so nothing is counted in PostgreSQL. Read limits apply per Tool identity, and so to all processes together: every Log Analytics query takes one of 5 slots, held as PostgreSQL advisory locks, Resource Graph queries take slots the same way, and every read honours 429 with Retry-After.
 
 Group memberships are resolved through Graph at sign-in and every 15 minutes per session. That happens in `api`, on the request path. Key Vault secrets are cached in memory and refreshed every 30 minutes and after an authentication failure.
 
@@ -89,7 +95,8 @@ Group memberships are resolved through Graph at sign-in and every 15 minutes per
 In:
 
 - the Rule base of one Version: Rules, Objects, Zones with their Egress posture, Extra prefixes and Inherited defaults, the Internal address space, VNet bindings;
-- an Azure inventory snapshot: VNets, peerings, subnets and prefixes, ASG members and their IPs, existing NSGs at Import;
+- the Azure inventory of that Version: VNets with address spaces and peerings, subnets and prefixes, network interfaces and private endpoints with their IPs, the members of External ASG objects, the Environment of each subscription; the existing NSGs at Import;
+- for the write plan, the peerings of the observed Azure inventory;
 - the NSG rule names and priorities of the previous Version, so priorities stay stable ([ADR 0005](../adr/0005-stable-nsg-rule-identity.md));
 - the Deployed state of every resource the Deployment touches, for the write order ([ADR 0018](../adr/0018-write-order-from-dominance-gaps.md));
 - the versioned limits data file.
@@ -101,7 +108,15 @@ Out:
 - validation errors and warnings as codes with parameters, limit counts, Affected Zones and the Preview diff;
 - the write order: dependency edges, Crossing-flow edges and the three ASG member steps, or "not orderable" with the flows that cause it.
 
-Every Version stores the engine version that produced its NSG rules ([Grilling: Review round on placement, egress posture and MVP shape][t27], point 20). How the engine finds Crossing flows at the design target (10,000 Rules, 20,000 Zones) is still open. Only pairs of Zones whose NSGs both change need a look ([ADR 0018](../adr/0018-write-order-from-dominance-gaps.md)).
+Every Version stores the engine version that produced its NSG rules ([Grilling: Review round on placement, egress posture and MVP shape][t27], point 20). At the design target (10,000 Rules, 20,000 Zones, 10,000 Objects) the engine translates only the Managed NSGs whose inputs change and finds Crossing flows from the flows whose decision changes, so its cost grows with the Change set, not with the estate ([Translation engine](translation-engine.md#at-the-design-target)).
+
+### Azure inventory
+
+Every Version records the [Azure inventory](../../GLOSSARY.md) it was translated against ([ADR 0020](../adr/0020-versions-record-the-azure-inventory.md)). The Preview, the Commit and the write plan read it, never live Azure, so what an approver saw is what the Deployment writes. A Change set uses the Azure inventory of its base Version; a Rebase moves it to the latest one.
+
+The tool also keeps an observed Azure inventory, in PostgreSQL tables per Environment. The Drift poll reads the changes of VNets, peerings, subnets, network interfaces and private endpoints from `resourcechanges` every 5 minutes. The full reconcile and the onboarding of an Environment read everything through Resource Graph. After each Drift poll the tool translates the latest Version again with the observed Azure inventory, for the NSGs whose inputs changed. Where the result differs, it prepares an Adopt Change set, and it commits on its own what only closes traffic. Until that Change set is committed, other Commits and Deployments go ahead with their Version's Azure inventory, because the NSGs already in Azure have the same gap. The Preview marks the Zones concerned with "Azure differs, Adopt open". The write plan takes a peering as a documented tag fact only when the Version's and the observed Azure inventory both hold it.
+
+Whether a Version stores its Azure inventory as a full copy or as changes is part of the data model.
 
 ## Identities and permissions
 
@@ -311,6 +326,13 @@ Terraform mode, the read filter by Coverage, Pre-check waivers, Rule warnings fr
 
 Edits go into a Change set based on a Version. The Preview runs the engine on the Change set and shows NSGs, NSG rules, associations, ASGs, Affected Zones, limit counts, Policy findings and the write order. The policy pre-check (`checkPolicyRestrictions`) runs at Submit, on demand and before every Deployment. Approval runs per Affected Zone at the level none, approver or four-eyes ([ADR 0008](../adr/0008-approval-by-affected-zones.md)). The Commit rebases, validates and creates Version N with its NSG rules and engine version ([ADR 0007](../adr/0007-isolated-change-sets-with-optimistic-rebase.md), [Grilling: Change sets, concurrency and approval][t15]).
 
+The commit bar shows NSGs, write steps and Approvals after every edit, so the Preview runs after every edit ([Grilling: Server internals at the design target][t30]):
+
+- It runs in a worker-thread pool of `api`, so the event loop never blocks, also in the role `all`. It starts about 500 ms after the last edit. Only the newest revision of a Change set computes; an older run is cancelled. The result is cached per revision, and the commit bar shows that it is computing.
+- Targets at the design target (10,000 Rules, 20,000 Zones, 10,000 Objects, 20 administrators at once): p95 within 2 s for a Change set of up to 50 changed Rules. A change of the Internal address space, a re-translation or an Import may take up to 60 s and shows its progress.
+- A load test in the increment plan checks these targets with a synthetic estate of that size and 20 editors at once, and sets the container sizes (vCPU, memory) of `api` and `worker`.
+- The Commit and the Deployment plan run the same engine functions in `worker`.
+
 ### Deployment
 
 ```mermaid
@@ -351,7 +373,8 @@ Common to both modes:
 ARM mode:
 
 - one whole-NSG PUT per NSG, tags and other properties from a fresh GET; one subnet PUT for an association or swap;
-- a client-side token bucket of 500 Microsoft.Network writes per 5 minutes per subscription and region (adjustable per Environment), at most one write in flight per resource and ten per subscription and region, 429 with Retry-After honoured;
+- a client-side token bucket of 500 Microsoft.Network writes per 5 minutes per subscription and region (adjustable per Environment), at most one write in flight per resource and ten per subscription and region, 429 with Retry-After honoured; the holder of the Environment write lease keeps them in memory ([Budgets across processes](#job-queue-and-jobs));
+- at most one subnet write in flight per VNet, as `locks` does in the default HCL; `AnotherOperationInProgress` counts as transient;
 - `flushConnection` is an Environment setting, off by default;
 - resume after a crash: the new lease holder GETs each write in flight; target means done, Deployed state means PUT again, neither means Drift; a write that waited for a Settle time waits the full Settle time again once the earlier write shows as done;
 - membership writes read right before the PUT and send `If-Match` if the empirical check shows Azure honours it.
@@ -427,7 +450,7 @@ The Drift poll reads `resourcechanges` every 5 minutes and confirms each hit wit
 
 ### Flow view and hits
 
-The operator enables VNet flow logs and Traffic Analytics; the tool only reads. The workspace is an Environment setting. The worker queries `NTANetAnalytics` at workspace scope and caches hits per Rule with the time of the newest flow data, mapped through the Rule ID in `AclRule`. Data is about 1 to 2 hours old. The query limits (200 requests per 30 seconds, 5 concurrent) apply to the whole instance, because one Tool identity runs every query, so the tool aggregates and caches. A query that returns no rows is not "0 hits" until the permission check (`Prefer: include-permissions=true`) has passed. Without flow data the hits column shows "—". The workspace may lie outside every Environment, with a Reader assignment on the workspace alone ([ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) as amended by [Grilling: Operations: restore, exit, upgrades and exposure][t29]). NSG flow logs retire on 2027-09-30, so only VNet flow logs are supported ([Research: Traffic Analytics access for the Flow view and hits][t28]).
+The operator enables VNet flow logs and Traffic Analytics; the tool only reads. The workspace is an Environment setting. The worker queries `NTANetAnalytics` at workspace scope and caches hits per Rule with the time of the newest flow data, mapped through the Rule ID in `AclRule`. Data is about 1 to 2 hours old. The query limits (200 requests per 30 seconds, 5 concurrent) apply to the whole instance, because one Tool identity runs every query, so the tool aggregates and caches: one hits query per Environment every hour over a window of 30 days, an Environment setting that a shorter workspace retention caps (the hits column then shows the oldest time covered), and Flow view queries on demand, cached for 10 minutes. A query that returns no rows is not "0 hits" until the permission check (`Prefer: include-permissions=true`) has passed. Without flow data the hits column shows "—". The workspace may lie outside every Environment, with a Reader assignment on the workspace alone ([ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) as amended by [Grilling: Operations: restore, exit, upgrades and exposure][t29]). NSG flow logs retire on 2027-09-30, so only VNet flow logs are supported ([Research: Traffic Analytics access for the Flow view and hits][t28]).
 
 ### Notifications and the alert channel
 
@@ -497,7 +520,7 @@ A team that needs these keeps a firewall in the path. nsgfw does not show Azure 
 
 ## Gaps for the map
 
-Questions this draft found. Two were settled in [Prototype: Architecture proposal][t26]. The rest went to [Grilling: Operations: restore, exit, upgrades and exposure][t29] (gaps 2 to 7, 11, 12), which decided them on 2026-11-10, and [Grilling: Server internals at the design target][t30] (gaps 8, 9, 10, 13, 15).
+Questions this draft found. Two were settled in [Prototype: Architecture proposal][t26]. The rest went to [Grilling: Operations: restore, exit, upgrades and exposure][t29] (gaps 2 to 7, 11, 12), which decided them on 2026-11-10, and [Grilling: Server internals at the design target][t30] (gaps 8, 9, 10, 13, 15), which decided them on 2026-11-10.
 
 1. **Self-lockout.** Decided: the tool's own subnets are not onboardable ([No self-lockout](#no-self-lockout)).
 2. **The tool's own addresses.** Decided: the `instance` module passes the tool's subnets and Tool paths as configuration, admins add more, and closing a Tool path needs a confirmation with a reason ([No self-lockout](#no-self-lockout)).
@@ -506,14 +529,14 @@ Questions this draft found. Two were settled in [Prototype: Architecture proposa
 5. **Exit and reinstall.** Decided: the Instance ID lives in the database, another Instance's NSGs go through a Handover, and every Version exports as JSON ([Exit](#exit)).
 6. **Health endpoint exposure.** Decided: anonymous probes with a status code only on a health port of their own, the detail for every Role in the instance Scope ([Health endpoint](#health-endpoint)).
 7. **Flow-data workspace outside Environments.** Decided: a Reader assignment on the workspace alone, and the data action with a condition on `NTANetAnalytics` ([ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) as amended).
-8. **Package placement** of the database layer, the Data contract generator, the Git provider interface, the Import mapping and constraint merge, and the notification channels. [Grilling: Tech stack and repository architecture][t10] left the first two to later tickets, which did not place them.
-9. **Throttling across workers.** The token bucket per subscription and region and the per-resource limits live in one process today. With separate `worker` containers, do they move into PostgreSQL? And does ARM mode serialize subnet writes per VNet, as `locks` does in the default HCL?
-10. **Cadences** not set yet: the audit chain verify, the flow-data queries for hits, and the refresh of service-tag prefixes.
+8. **Package placement.** Decided: `packages/db`, `packages/contract` with its own data contract version, the Import mapping and the constraint merge in `packages/engine`, `packages/git`, and the notification channels in `apps/server` ([Repository](#repository)).
+9. **Throttling across workers.** Decided: one Environment write lease holds the write budget in memory, read limits use slots as PostgreSQL advisory locks, and ARM mode writes one subnet per VNet at a time ([Job queue and jobs](#job-queue-and-jobs), [Deployment](#deployment)).
+10. **Cadences.** Decided: the audit chain verify daily and on demand, hits every hour over 30 days, service-tag prefixes daily per region ([Job queue and jobs](#job-queue-and-jobs)).
 11. **Image source.** Decided: an image reference pinned by digest, optionally through a registry with an artifact cache ([Image source](#image-source)).
 12. **Webhook URL as a secret.** Decided: every webhook URL goes into Key Vault ([Notifications and the alert channel](#notifications-and-the-alert-channel)).
-13. **Preview cost at the design target.** Where the Preview runs (in `api` on the request, or as a worker job) and how long it may take for 10,000 Rules and 20,000 Zones, together with the open question of finding Crossing flows at that size.
+13. **Preview cost at the design target.** Decided: incremental, in a worker-thread pool of `api`, p95 within 2 s for up to 50 changed Rules; Crossing flows from delta sets ([From edit to Version](#from-edit-to-version), [Translation engine](translation-engine.md#at-the-design-target)).
 14. **Reason text for `serviceTagDetails/read`.** Corrected in the Reader table: the prefixes serve the Security layer overlap warnings and the later packet tracer, because service tags have no Coverage.
-15. **Azure inventory store.** The engine reads an inventory snapshot (VNets, peerings, subnets, prefixes, network interfaces, ASG members). The data-model fog on the map does not list where that inventory is stored and refreshed.
+15. **Azure inventory store.** Decided: every Version records its Azure inventory, and the observed one lives in PostgreSQL tables per Environment ([Azure inventory](#azure-inventory), [ADR 0020](../adr/0020-versions-record-the-azure-inventory.md)).
 
 [t3]: https://github.com/mfgAkilae/nsgfw/issues/3
 [t10]: https://github.com/mfgAkilae/nsgfw/issues/10
