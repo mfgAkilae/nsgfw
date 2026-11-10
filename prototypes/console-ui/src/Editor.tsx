@@ -37,7 +37,7 @@ export function RuleEditor({ id, fresh, onMoveTo, onMoveToFolder, onZone }: { id
       <button className={`addb ${adding === field ? 'on' : ''}`} onClick={() => setAdding(adding === field ? null : field)}>{adding === field ? t('Done') : <><Add12Regular />{t('Add')}</>}</button></div>
     {ids.map(x => { const o = svc ? { name: svcById.get(x)?.name ?? x, kind: 'svc' as const, value: svcById.get(x)?.value ?? '', cov: [] as string[] } : ref(x); return (
       <div key={x} className={`orow t-${o.kind}`}><Glyph kind={o.kind} /><b>{o.name}</b><span className="mono">{o.kind === 'vnet' || o.kind === 'group' ? '' : o.value}</span>
-        {!svc && (o.kind === 'zone' ? <a className="link" onClick={() => onZone(x.slice(5))}>{t('open Zone')}</a> : <span className="cov">{o.cov.length ? `${o.cov.length} ${t(o.cov.length === 1 ? 'Zone' : 'Zones')}` : t('outside every Zone')}</span>)}
+        {!svc && (o.kind === 'zone' ? <a className="link" onClick={() => onZone(x.slice(5))}>{t('open Zone')}</a> : <span className="cov">{o.kind === 'any' ? t('every Zone and beyond') : o.cov.length ? `${o.cov.length.toLocaleString()} ${t(o.cov.length === 1 ? 'Zone' : 'Zones')}` : t('outside every Zone')}</span>)}
         <button className="rmb" title={t('Remove')} onClick={() => { const rest = ids.filter(y => y !== x); set(field, rest.length ? rest : [svc ? 'svc-any' : 'any']); }}><Dismiss12Regular /></button></div>); })}
     {adding === field && <div className="inl-pick"><ObjectPicker value={ids} onChange={v => set(field, v.length ? v : [svc ? 'svc-any' : 'any'])} mode={svc ? 'svc' : 'addr'} autoFocus /></div>}
   </>); };
@@ -47,6 +47,7 @@ export function RuleEditor({ id, fresh, onMoveTo, onMoveToFolder, onZone }: { id
   const checks: [string, JSX.Element, string][] = [];
   if (r.action === 'allow' && r.src.includes('any') && r.dst.includes('any')) checks.push(['red', <ErrorCircle16Filled />, 'This Rule allows everything from everywhere.']);
   if (r.action === 'allow' && wide(r.src) && r.svc.some(x => x === 'svc-rdp' || x === 'svc-ssh' || x === 'svc-any') && !r.dst.includes('any')) checks.push(['red', <ShieldError16Filled />, 'A management port is open from the Internet. A deny Policy finding will block Submit.']);
+  if (c.nsgs > 500) checks.push(['amber', <Warning16Filled />, 'This Rule lands on very many Managed NSGs. Each one spends a rule slot on it.']);
   if (!c.nsgRules) checks.push(['amber', <Warning16Filled />, 'Neither side covers a Zone, so this Rule writes nothing.']);
   if (!r.enabled) checks.push(['info', <Info16Regular />, 'Disabled: no NSG rule is written until you enable it.']);
   if (r.name === 'New Rule') checks.push(['info', <Info16Regular />, 'Give the Rule a name that says what it is for.']);
@@ -67,17 +68,17 @@ export function RuleEditor({ id, fresh, onMoveTo, onMoveToFolder, onZone }: { id
       <div className="flowbox">{group('src', 'From')}{group('dst', 'to')}{group('svc', 'on')}</div>
 
       <h3>{t('In Azure')}</h3>
-      <p className="lead">{c.nsgRules ? <><b>{c.nsgRules} {t(c.nsgRules === 1 ? 'NSG rule' : 'NSG rules')}</b> {t('on')} <b>{c.nsgs} {t(c.nsgs === 1 ? 'Managed NSG' : 'Managed NSGs')}</b></> : t('No NSG rule: neither side covers a Zone.')}</p>
+      <p className="lead">{c.nsgRules ? <><b>{c.nsgRules.toLocaleString()} {t(c.nsgRules === 1 ? 'NSG rule' : 'NSG rules')}</b> {t('on')} <b>{c.nsgs.toLocaleString()} {t(c.nsgs === 1 ? 'Managed NSG' : 'Managed NSGs')}</b></> : t('No NSG rule: neither side covers a Zone.')}</p>
       <div className="landing">
         <div className={`side ${pl.src.length ? 'writes' : ''}`}><span className="lbl">{t('Source side')}</span>
-          <b>{!srcCov.length ? t('outside every Zone') : `${srcCov.length} ${t(srcCov.length === 1 ? 'Zone' : 'Zones')}`}</b>
-          <span className="verdict">{!srcCov.length ? t('Nothing to write.') : !pl.src.length ? t('No NSG rule here. Outbound is open, the destination decides.') : `${t('Outbound NSG rule on')} ${pl.src.length} ${t('of')} ${srcCov.length}. ${t(whyOut ?? '')}`}</span>
-          {pl.src.slice(0, 3).map(zid => <span key={zid} className="mono">{zoneById.get(zid)!.nsg}</span>)}{pl.src.length > 3 && <span className="muted">{pl.src.length - 3} {t('more')}</span>}</div>
+          <b>{!srcCov.length ? t('outside every Zone') : `${srcCov.length.toLocaleString()} ${t(srcCov.length === 1 ? 'Zone' : 'Zones')}`}</b>
+          <span className="verdict">{!srcCov.length ? t('Nothing to write.') : !pl.src.length ? t('No NSG rule here. Outbound is open, the destination decides.') : `${t('Outbound NSG rule on')} ${pl.src.length.toLocaleString()} ${t('of')} ${srcCov.length.toLocaleString()}. ${t(whyOut ?? '')}`}</span>
+          {pl.src.slice(0, 3).map(zid => <span key={zid} className="mono">{zoneById.get(zid)!.nsg}</span>)}{pl.src.length > 3 && <span className="muted">{(pl.src.length - 3).toLocaleString()} {t('more')}</span>}</div>
         <ArrowRight12Filled className="flow" />
         <div className={`side ${pl.dst.length ? 'writes' : ''}`}><span className="lbl">{t('Destination side')}</span>
-          <b>{!pl.dst.length ? t('outside every Zone') : `${pl.dst.length} ${t(pl.dst.length === 1 ? 'Zone' : 'Zones')}`}</b>
+          <b>{!pl.dst.length ? t('outside every Zone') : `${pl.dst.length.toLocaleString()} ${t(pl.dst.length === 1 ? 'Zone' : 'Zones')}`}</b>
           <span className="verdict">{pl.dst.length ? t('Inbound NSG rule on each. This side decides.') : t('Nothing to write.')}</span>
-          {pl.dst.slice(0, 3).map(zid => <span key={zid} className="mono">{zoneById.get(zid)!.nsg}</span>)}{pl.dst.length > 3 && <span className="muted">{pl.dst.length - 3} {t('more')}</span>}</div>
+          {pl.dst.slice(0, 3).map(zid => <span key={zid} className="mono">{zoneById.get(zid)!.nsg}</span>)}{pl.dst.length > 3 && <span className="muted">{(pl.dst.length - 3).toLocaleString()} {t('more')}</span>}</div>
       </div>
 
       {checks.length > 0 && <><h3>{t('Before you submit')}</h3>{checks.map(([tone, icon, text]) => <div key={text} className={`note ${tone}`}>{icon}{t(text)}</div>)}</>}

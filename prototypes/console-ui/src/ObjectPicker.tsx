@@ -56,7 +56,7 @@ export function ObjectPicker({ value, onChange, mode, autoFocus, tall }: { value
             <span className={`pk-kind t-${it.kind}`}><Glyph kind={it.kind} />{kindLabel[it.kind]}</span>
             <b>{it.name}</b>
             <span className="addr">{it.value}</span>
-            <span className="cov">{mode === 'svc' ? '' : it.kind === 'tag' || it.kind === 'any' || (it.kind === 'cidr' && !it.cov) || it.kind === 'subnet' ? <span className="cov-none">{t('covers no Zone')}</span> : `${t('covers')} ${it.cov} ${it.cov === 1 ? t('Zone') : t('Zones')}`}</span>
+            <span className="cov">{mode === 'svc' ? '' : it.kind === 'tag' || (it.kind === 'cidr' && !it.cov) || it.kind === 'subnet' ? <span className="cov-none">{t('covers no Zone')}</span> : `${t('covers')} ${it.cov.toLocaleString()} ${it.cov === 1 ? t('Zone') : t('Zones')}`}</span>
           </div>
         ))}
         {hits.length >= 120 && <div className="muted" style={{ padding: 6 }}>Showing the first 120 of {items.length.toLocaleString()}. Type to narrow down.</div>}

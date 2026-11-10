@@ -95,7 +95,8 @@ export const serviceTags = ['Internet', 'VirtualNetwork', 'AzureLoadBalancer', '
   'AzureUpdateDelivery', 'WindowsVirtualDesktop', 'AzureSignalR', 'BatchNodeManagement', 'AzureResourceManager', 'AzurePlatformDNS'];
 const regional = ['Storage', 'Sql', 'AzureCloud', 'EventHub', 'ServiceBus', 'AzureKeyVault', 'AzureMonitor', 'AppService'];
 
-export const objects: Obj[] = [{ id: 'any', name: 'any', kind: 'any', value: '0.0.0.0/0, ::/0', cov: [] }];
+// any overlaps every Zone's addresses, so it covers every Zone (and reaches outside all of them as well).
+export const objects: Obj[] = [{ id: 'any', name: 'any', kind: 'any', value: '0.0.0.0/0, ::/0', cov: zones.map(z => z.id) }];
 serviceTags.forEach(t => objects.push({ id: `tag:${t}`, name: t, kind: 'tag', value: 'Azure service tag', cov: [] }));
 regional.forEach(t => regions.forEach(r => objects.push({ id: `tag:${t}.${r}`, name: `${t}.${regionTag[r]}`, kind: 'tag', value: 'Azure service tag', cov: [] })));
 vnets.forEach(v => objects.push({ id: `vnet:${v.name}`, name: v.name, kind: 'vnet', value: `${v.zones.length} Zones`, cov: v.zones }));

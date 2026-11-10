@@ -46,7 +46,7 @@ export function ObjectLibrary({ onZone, onShowRules }: { onZone: (zid: string) =
           {list.map(i => { const u = usage.get(i.id) ?? 0; return (
             <div key={i.id} className={`lrow t-${i.kind} ${sel === i.id ? 'on' : ''}`} onClick={() => setSel(i.id)}>
               <Glyph kind={i.kind} /><b>{i.name}</b><span className="mono">{i.value}</span>
-              <span className="lcov">{i.kind === 'svc' ? '' : i.cov.length ? `${i.cov.length} ${t(i.cov.length === 1 ? 'Zone' : 'Zones')}` : t('outside every Zone')}</span>
+              <span className="lcov">{i.kind === 'svc' ? '' : i.cov.length ? `${i.cov.length.toLocaleString()} ${t(i.cov.length === 1 ? 'Zone' : 'Zones')}` : t('outside every Zone')}</span>
               {u ? <span className="use"><em>{u}</em><i><b style={{ width: `${Math.min(100, (u / max) * 100)}%` }} /></i></span> : <span className="use none">{i.kind === 'zone' ? '0' : t('unused')}</span>}
             </div>); })}
           {list.length >= 250 && <div className="muted" style={{ padding: 12 }}>{t('Showing the first 250. Search to narrow down.')}</div>}
