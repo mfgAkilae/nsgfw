@@ -303,7 +303,7 @@ The first stage that ships ([Grilling: Review round on placement, egress posture
 - an alert channel as part of the setup, and the proposal to switch on automatic Overwrite of association Drift.
 - the `nsgfw-version` tag and Recovery mode, because recovery detection sees only resources that carry the tag ([ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md)).
 
-Terraform mode, the read filter by Coverage, Pre-check waivers, Rule warnings from Security layers, dual-stack and ASG objects with tool-written membership follow as later MVP stages. Until the last of these ships, the small profile needs no `nsgfw ASG Writer`.
+Terraform mode, the read filter by Coverage, Pre-check waivers, Rule warnings from Security layers, dual-stack, ASG objects with tool-written membership and Folders ([ADR 0021](../adr/0021-folders-are-layout-outside-approval-and-rule-conflicts.md)) follow as later MVP stages. Until the last of these ships, the small profile needs no `nsgfw ASG Writer`.
 
 ## Runtime paths
 
@@ -480,7 +480,7 @@ Managed NSGs are plain NSGs and keep working without the tool. Stopping it chang
 - ARM Environments keep their Managed NSGs, Retired NSGs, Managed ASGs and memberships. What is left of the tool: the marker tags, the NSG rule names with Rule IDs, and the role assignments and definitions, which `environment-access` and `instance` remove.
 - Terraform Environments keep the HCL and the last Data contract in their repositories. The team can keep applying them as they are.
 - A new installation with a recovered or moved database is the same Instance. One with an empty database is a new Instance, and it takes over the old Instance's NSGs and ASGs through a Handover when their subnets are onboarded. There is no release step ([ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md)).
-- Every Version can be exported as one documented, versioned JSON document: Rules, Objects, Zones, Instance settings and the generated NSG rules, as a download in the UI and through the API. The MVP has no import ([Grilling: Operations: restore, exit, upgrades and exposure][t29]).
+- Every Version can be exported as one documented, versioned JSON document: Rules, Folders, Objects, Zones, Instance settings and the generated NSG rules, as a download in the UI and through the API. The MVP has no import ([Grilling: Operations: restore, exit, upgrades and exposure][t29]).
 
 ### What NSGs do not do
 

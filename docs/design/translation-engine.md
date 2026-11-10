@@ -654,9 +654,9 @@ A new single IP or CIDR object whose prefix also matches Zones in VNets that X i
 2. The existing Rule base is one more policy and keeps its order.
 3. Where two Rules of different policies overlap and have different actions, the deny comes first. A service tag counts as overlapping.
 4. If the constraints form a cycle, the engine moves a deny above an allow of its own imported policy. That only closes flows, and a warning Import note lists them.
-5. Among the orders that fit, existing Rules stay as early as possible and imported Rules go as low as their constraints allow. Any fitting order gives the same verdicts.
+5. Among the orders that fit, existing Rules stay as early as possible and imported Rules go as low as their constraints allow, at the lowest position outside every Folder. An imported Rule stands inside a Folder only where the constraints force it there, with an info Import note. Import creates no Folders ([ADR 0021](../adr/0021-folders-are-layout-outside-approval-and-rule-conflicts.md)). Any fitting order gives the same verdicts.
 
-The tool recomputes this placement on every Rebase until someone moves an imported Rule by hand.
+The tool recomputes this placement on every Rebase until someone moves an imported Rule by hand or puts it into a Folder.
 
 **Import notes for changed flows.** The engine compares the new NSG of X with the old one, with the evaluation function, and lists the flows whose verdict changes: opening as warning, closing as info.
 
@@ -722,7 +722,9 @@ A cycle (prototype key `cycle-break`): the Rule base has "spoke1-range → any t
 
 ## Order conflicts at Rebase
 
-A Rebase conflicts when both sides changed the same Rule, Object or Zone ([ADR 0007](../adr/0007-isolated-change-sets-with-optimistic-rebase.md)). For a Rule that the Change set inserted or moved, the engine adds one check: the Rebase conflicts when the latest Version changed the order between that Rule and an overlapping Rule with the other action. Two Rules overlap when their sources, destinations and services overlap; a service tag counts as overlapping.
+A Rebase conflicts when both sides changed the same Rule, Object or Zone, or renamed, moved or removed the same Folder ([ADR 0007](../adr/0007-isolated-change-sets-with-optimistic-rebase.md), [ADR 0021](../adr/0021-folders-are-layout-outside-approval-and-rule-conflicts.md)). For a Rule that the Change set inserted or moved, the engine adds one check: the Rebase conflicts when the latest Version changed the order between that Rule and an overlapping Rule with the other action. Two Rules overlap when their sources, destinations and services overlap; a service tag counts as overlapping. Moving a Folder moves each of its Rules, on either side, so the check covers every Rule of a moved Folder.
+
+**Where a placed Rule lands.** Before the check, the engine puts each inserted or moved Rule into the latest Version. It lands after the nearest Rule that stood above it in the base Version and still exists. If the Rule has a Folder that still exists, only that Folder's Rules count, and with none left it goes to the top of the Folder. A Rule without a Folder never lands inside a Folder; it goes after that Folder's end. The Folder of a Rule is not part of its content: a Rule that only joined or left a Folder at the same position is not checked, and it does not conflict with an edit of the Rule's fields ([ADR 0021](../adr/0021-folders-are-layout-outside-approval-and-rule-conflicts.md)).
 
 Prototype key `rebase`: a Change set on Version 5 inserts Rule 9 "app10 → Zone db ssh allow" between Rule 2 and Rule 3. If Version 6 moved the deny Rule 1 "Zone app → Zone db ssh" from above Rule 9's place to below it, the Rebase conflicts and an Author confirms the position. If Version 6 moved the allow Rule 4 "onprem-clients → Zone db ssh" to the top, the Rebase is clean and the Approvals stay.
 
