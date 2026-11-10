@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Switch, Tooltip } from '@fluentui/react-components';
 import { Add16Regular, Search16Regular, Dismiss16Regular, PanelRight20Regular, TextBulletListSquare20Regular, Grid20Regular, Box20Regular, BranchFork20Regular,
   WeatherMoon20Regular, WeatherSunny20Regular, Copy16Regular, Delete16Regular, Eye16Regular, EyeOff16Regular, ArrowSort16Regular, Send16Regular, ArrowRight12Filled,
-  Checkmark12Filled, Dismiss12Filled, Flash16Regular, TextLineSpacing20Regular, LockClosed16Regular, Warning16Filled, ShieldError16Filled, PeopleSwap16Regular, LayerDiagonal16Regular } from '@fluentui/react-icons';
+  Checkmark12Filled, Dismiss12Filled, Flash16Regular, ChevronDown12Regular, TextLineSpacing20Regular, LockClosed16Regular, Warning16Filled, ShieldError16Filled, PeopleSwap16Regular, LayerDiagonal16Regular } from '@fluentui/react-icons';
 import { RuleGrid, RuleGridHandle, FilterKey, countFilters, systemTop, systemBottom, SysRow, compact } from './RuleGrid';
 import { ZoneGrid, Bar, LIMITS, EgressBadge, Flags } from './ZoneGrid';
 import { ObjectPicker } from './ObjectPicker';
@@ -29,7 +29,7 @@ export default function Console() {
   const [dense, setDense] = useState(false); const [bands, setBands] = useState(true);
   const [sel, setSel] = useState<string[]>([]); const [focused, setFocused] = useState<string | null>(null);
   const [dock, setDock] = useState<{ open: boolean; tab: 'rule' | 'cs'; cs: CsTab; auto: boolean }>({ open: false, tab: 'rule', cs: 'preview', auto: true });
-  const [palette, setPalette] = useState(false); const [moveIds, setMoveIds] = useState<string[] | null>(null); const [objSel, setObjSel] = useState<string[]>([]);
+  const [palette, setPalette] = useState<false | 'all' | 'zone'>(false); const [moveIds, setMoveIds] = useState<string[] | null>(null); const [objSel, setObjSel] = useState<string[]>([]);
   const grid = useRef<RuleGridHandle>(null); const search = useRef<HTMLInputElement>(null);
 
   const z = lens ? zoneById.get(lens.zid)! : null;
@@ -60,7 +60,7 @@ export default function Console() {
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette(p => !p); return; }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette(p => (p ? false : 'all')); return; }
       if (e.key === 'Escape') setPalette(false);
       if (typing() || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === '/') { e.preventDefault(); setPage('rules'); setTimeout(() => search.current?.focus(), 30); }
@@ -94,10 +94,10 @@ export default function Console() {
             {page === 'rules' && <>
               <header className="phead">
                 <h1>{t('Rule base')}</h1>
-                <button className="cs-pill" onClick={() => setPage('sets')} title={t('Change sets')}><span className={`dot ${ap.eff}`} />CHG-5120 Release app0042</button>
+                <button className={`lensbtn ${z ? 'on' : ''}`} onClick={() => setPalette('zone')} title={t('Show only the Rules that land on one Zone')}><Glyph kind="zone" />{z ? z.name : t('All Zones')}<ChevronDown12Regular /></button>
                 <span className="sp" />
                 <Input ref={search} className="search" contentBefore={<Search16Regular />} contentAfter={<kbd>/</kbd>} placeholder={t('Filter Rules by name, object, ID or ticket')} value={q} onChange={(_, d) => setQ(d.value)} />
-                <button className="jump" onClick={() => setPalette(true)}>{t('Jump to')}<kbd>Ctrl K</kbd></button>
+                <button className="jump" onClick={() => setPalette('all')}>{t('Jump to')}<kbd>Ctrl K</kbd></button>
                 <Tooltip content={t(dense ? 'Comfortable rows' : 'Compact rows')} relationship="label"><button className={`ib opt ${dense ? 'on' : ''}`} onClick={() => setDense(!dense)}><TextLineSpacing20Regular /></button></Tooltip>
                 <Tooltip content={t('Show what sits above and below the Rules')} relationship="label"><button className={`ib opt ${bands ? 'on' : ''}`} onClick={() => setBands(!bands)}><LockClosed16Regular /></button></Tooltip>
                 <Tooltip content={t('Side panel')} relationship="label"><button className={`ib ${dock.open ? 'on' : ''}`} onClick={() => setDock(d => ({ ...d, open: !d.open, auto: false }))}><PanelRight20Regular /></button></Tooltip>
@@ -134,7 +134,7 @@ export default function Console() {
               )}
 
               <div className="sheet"><RuleGrid key={lens ? `${lens.zid}-${lens.dir}` : 'all'} ref={grid} rows={rows} quick={dq} filter={filter} bands={bandRows} dense={dense} focusedId={focused}
-                onFocus={focusRule} onOpen={openRule} onSelection={setSel} onMoveTo={setMoveIds} onReady={reportReady(lens ? `Zone lens, ${rows.length} Rules` : 'Rule base, 10,000 Rules')} /></div>
+                onFocus={focusRule} onOpen={openRule} onQuick={setQ} onSelection={setSel} onMoveTo={setMoveIds} onReady={reportReady(lens ? `Zone lens, ${rows.length} Rules` : 'Rule base, 10,000 Rules')} /></div>
             </>}
 
             {page === 'zones' && <><header className="phead"><h1>{t('Zones')}</h1><span className="sub">{t('Every Managed NSG against its Azure limits. Click a Zone to see the Rules that land on it.')}</span></header><ZoneGrid onOpen={x => openZone(x.id)} /></>}
@@ -162,7 +162,7 @@ export default function Console() {
         {showBar && <CommitBar onOpen={cs => openDock('cs', cs)} />}
       </div>
 
-      {palette && <Palette onClose={() => setPalette(false)} run={{ rule: jumpToRule, zone: openZone, page: setPage, newRule, review: () => openDock('cs', 'preview'), theme: toggle, lang: () => setLang(lang === 'en' ? 'de' : 'en') }} />}
+      {palette && <Palette mode={palette} onClose={() => setPalette(false)} run={{ all: () => { setPage('rules'); setLens(null); }, rule: jumpToRule, zone: openZone, page: setPage, newRule, review: () => openDock('cs', 'preview'), theme: toggle, lang: () => setLang(lang === 'en' ? 'de' : 'en') }} />}
       <MoveDialog ids={moveIds} onClose={() => setMoveIds(null)} />
     </div>
   );
@@ -178,7 +178,8 @@ function CommitBar({ onOpen }: { onOpen: (tab: CsTab) => void }) {
   );
   return (
     <footer className={`cbar ${pv.unorderable || deny ? 'blocked' : ''}`}>
-      <span className={`dot ${ap.eff}`} /><b>CHG-5120</b><span className="st">{t(ap.eff)}</span>
+      <b>CHG-5120</b>
+      <ol className="track" aria-label="Change set progress">{['Edit', 'Submit', 'Approval', 'Commit'].map((l, i) => { const idx = ap.eff === 'Approved' ? 3 : s.state === 'Submitted' ? 2 : 0; return <li key={l} className={i < idx ? 'done' : i === idx ? 'on' : ''}><i>{i < idx ? <Checkmark12Filled /> : i + 1}</i><span>{t(l)}</span></li>; })}</ol>
       <button onClick={() => onOpen('changes')}><b>{s.edits.length}</b>{t('edits')}</button>
       <button onClick={() => onOpen('preview')}><b>{pv.nsgs.length}</b>{t('Managed NSGs change')}</button>
       <button onClick={() => onOpen('order')} className={pv.unorderable ? 'bad' : ''}>{pv.unorderable ? <><Warning16Filled />{t('Cannot be ordered')}</> : <><b>{Math.max(1, pv.steps.length)}</b>{t(pv.steps.length > 1 ? 'write steps' : 'write step')}</>}</button>
@@ -241,20 +242,22 @@ function Inspector({ id, onMoveTo, onZone }: { id: string | null; onMoveTo: (ids
 }
 
 // ---------- Jump palette (Ctrl K): every Rule, Zone and action from one field.
-type Run = { rule: (id: string) => void; zone: (zid: string) => void; page: (p: Page) => void; newRule: () => void; review: () => void; theme: () => void; lang: () => void };
-function Palette({ onClose, run }: { onClose: () => void; run: Run }) {
+type Run = { all: () => void; rule: (id: string) => void; zone: (zid: string) => void; page: (p: Page) => void; newRule: () => void; review: () => void; theme: () => void; lang: () => void };
+function Palette({ onClose, run, mode }: { onClose: () => void; run: Run; mode: 'all' | 'zone' }) {
   const s = useStore(); const { t } = useT(); const [q, setQ] = useState(''); const [i, setI] = useState(0);
   const items = useMemo(() => {
     const ql = q.trim().toLowerCase(); const out: { group: string; label: string; sub?: string; kind?: string; go: () => void }[] = [];
     const cmds: [string, () => void][] = [['New Rule', run.newRule], ['Review Change set', run.review], ['Go to Rule base', () => run.page('rules')], ['Go to Zones', () => run.page('zones')],
       ['Go to Objects', () => run.page('objects')], ['Go to Change sets', () => run.page('sets')], ['Switch light and dark mode', run.theme], ['Switch language', run.lang]];
-    cmds.filter(([l]) => !ql || t(l).toLowerCase().includes(ql)).slice(0, ql ? 4 : 8).forEach(([l, go]) => out.push({ group: 'Actions', label: t(l), go }));
+    if (mode === 'zone') out.push({ group: 'Actions', label: t('All Zones: show the whole Rule base'), go: run.all });
+    else cmds.filter(([l]) => !ql || t(l).toLowerCase().includes(ql)).slice(0, ql ? 4 : 8).forEach(([l, go]) => out.push({ group: 'Actions', label: t(l), go }));
     if (ql) {
-      const num = /^#?(\d+)$/.exec(ql);
+      const num = mode === 'zone' ? null : /^#?(\d+)$/.exec(ql);
       if (num) { const r = s.rules.filter(x => !s.status.get(x.id)?.deleted)[Number(num[1]) - 1]; if (r) out.push({ group: 'Rules', label: r.name, sub: `${t('No.')} ${num[1]}`, go: () => run.rule(r.id) }); }
-      let n = 0; for (const r of s.rules) { if (n >= 6) break; if (r.name.toLowerCase().includes(ql) || r.id.toLowerCase() === ql) { out.push({ group: 'Rules', label: r.name, sub: `${t('No.')} ${s.numbers.get(r.id)}`, go: () => run.rule(r.id) }); n++; } }
-      n = 0; for (const z of zones) { if (n >= 6) break; if (z.name.includes(ql) || z.prefix.startsWith(ql)) { out.push({ group: 'Zones', label: z.name, sub: `${z.prefix}, ${z.vnet}`, kind: 'zone', go: () => run.zone(z.id) }); n++; } }
+      let n = mode === 'zone' ? 6 : 0; for (const r of s.rules) { if (n >= 6) break; if (r.name.toLowerCase().includes(ql) || r.id.toLowerCase() === ql) { out.push({ group: 'Rules', label: r.name, sub: `${t('No.')} ${s.numbers.get(r.id)}`, go: () => run.rule(r.id) }); n++; } }
+      n = 0; for (const z of zones) { if (n >= (mode === 'zone' ? 10 : 6)) break; if (z.name.includes(ql) || z.prefix.startsWith(ql)) { out.push({ group: 'Zones', label: z.name, sub: `${z.prefix}, ${z.vnet}`, kind: 'zone', go: () => run.zone(z.id) }); n++; } }
     }
+    if (mode === 'zone' && !ql) zones.slice(0, 10).forEach(z => out.push({ group: 'Zones', label: z.name, sub: `${z.prefix}, ${z.vnet}`, kind: 'zone', go: () => run.zone(z.id) }));
     return out;
   }, [q]);
   useEffect(() => setI(0), [q]);
@@ -262,7 +265,7 @@ function Palette({ onClose, run }: { onClose: () => void; run: Run }) {
   return (
     <div className="pal-bg" onMouseDown={onClose}>
       <div className="pal" role="dialog" aria-label={t('Jump to')} onMouseDown={e => e.stopPropagation()}>
-        <input autoFocus value={q} placeholder={t('Rule name, number or ID, Zone, or an action')} onChange={e => setQ(e.target.value)}
+        <input autoFocus value={q} placeholder={t(mode === 'zone' ? 'Zone name or address prefix' : 'Rule name, number or ID, Zone, or an action')} onChange={e => setQ(e.target.value)}
           onKeyDown={e => { if (e.key === 'ArrowDown') { e.preventDefault(); setI(Math.min(items.length - 1, i + 1)); } if (e.key === 'ArrowUp') { e.preventDefault(); setI(Math.max(0, i - 1)); } if (e.key === 'Enter') pick(i); if (e.key === 'Escape') onClose(); }} />
         <div className="pal-l">
           {items.map((it, k) => <div key={k}>{(k === 0 || items[k - 1].group !== it.group) && <div className="pal-g">{t(it.group)}</div>}

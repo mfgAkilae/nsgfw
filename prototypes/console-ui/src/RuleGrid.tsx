@@ -5,10 +5,11 @@ import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, themeQuartz, ColDef, GridApi, RowClassRules, ICellRendererParams } from 'ag-grid-community';
 import { Tooltip } from '@fluentui/react-components';
 import { ShieldError16Filled, Warning16Filled, Info16Regular, Clock16Regular, PeopleSwap16Regular, LayerDiagonal16Regular, ErrorCircle16Filled, LockClosed12Regular,
-  Copy16Regular, Delete16Regular, Eye16Regular, EyeOff16Regular, ArrowRight12Filled, PanelRight16Regular, Checkmark12Filled, Dismiss12Filled } from '@fluentui/react-icons';
+  Copy16Regular, Delete16Regular, Eye16Regular, EyeOff16Regular, ArrowRight12Filled, PanelRight16Regular, Filter16Regular, ArrowUp16Regular, ArrowDown16Regular, ArrowSort16Regular, Add16Regular, Checkmark12Filled, Dismiss12Filled } from '@fluentui/react-icons';
 import { Rule, svcName, ref } from './data';
 import { useStore, alsoChanged, St } from './store';
 import { useT } from './i18n';
+import { useMode } from './theme';
 import { Chip, RefsEditor } from './ObjectPicker';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -57,7 +58,7 @@ export function countFilters(rules: Rule[], status: Map<string, St>) {
 
 export interface RuleGridHandle { selected(): string[]; api(): GridApi | undefined; reveal(id: string): void; clearSelection(): void }
 interface Props { rows: Rule[]; quick?: string; filter?: FilterKey; bands?: { top: SysRow[]; bottom: SysRow[] } | null; dense?: boolean; focusedId?: string | null;
-  onFocus?: (id: string) => void; onOpen?: (id: string) => void; onSelection?: (ids: string[]) => void; onMoveTo?: (ids: string[]) => void; onReady?: (ms: number) => void }
+  onFocus?: (id: string) => void; onOpen?: (id: string) => void; onQuick?: (text: string) => void; onSelection?: (ids: string[]) => void; onMoveTo?: (ids: string[]) => void; onReady?: (ms: number) => void }
 
 export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, refH) {
   const s = useStore();
@@ -79,7 +80,9 @@ export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, r
 
   useEffect(() => { grid.current?.api?.refreshHeader(); grid.current?.api?.redrawRows(); }, [lang]);
   useEffect(() => { grid.current?.api?.onFilterChanged(); }, [p.filter]);
-  useEffect(() => { grid.current?.api?.resetRowHeights(); }, [p.dense]);
+  useEffect(() => { grid.current?.api?.resetRowHeights(); grid.current?.api?.setColumnsVisible(['flags'], !!p.dense); }, [p.dense]);
+  const ruler = useRef<{ rebuild(): void; view(): void }>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; r: Rule; objs: string[] } | null>(null);
 
   const st = (id: string) => sRef.current.status.get(id);
   const isSys = (x: any) => !!x?.system;
@@ -94,7 +97,10 @@ export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, r
     { field: 'name', headerName: t('Name'), flex: 1.5, minWidth: 210, editable, cellClassRules: changedCls('name'), getQuickFilterText: x => `${x.data.name} ${x.data.id} ${x.data.ticket} ${x.data.owner}`,
       cellRenderer: (x: ICellRendererParams) => { const r = x.data as Rule; const m = mark(r.id); return (
         <div className="rname"><div className="rn">{r.name}</div>
-          <div className="rmeta">{m && <em className={`mk ${m[0]}`}>{t(m[1])}</em>}{!r.enabled && <em className="mk off">{t('disabled')}</em>}<span className="mono">{r.id}</span>{r.ticket && <span>{r.ticket}</span>}<span>{r.owner}</span>{r.expiry && <span className="exp">{t('expires')} {r.expiry}</span>}</div></div>); } },
+          <div className="rmeta">{m && <em className={`mk ${m[0]}`}>{t(m[1])}</em>}{!r.enabled && <em className="mk off">{t('disabled')}</em>}
+            {r.policy && <em className="mk del" title={r.policy}>{t('Policy finding')}</em>}{r.importNote && <em className={`mk ${r.importNote === 'blocking' ? 'del' : 'chg'}`} title={`Import note (${r.importNote})`}>{t('Import note')}</em>}
+            {r.layerWarn && <em className="mk chg" title="Security layer">{r.layerWarn}</em>}{alsoChanged.has(r.id) && <em className={`mk ${m ? 'del' : 'off'}`} title={`${t('also changed in')} “${alsoChanged.get(r.id)!.set}” ${t('by')} ${alsoChanged.get(r.id)!.by}`}>{t('in another Change set')}</em>}
+            <span className="mono">{r.id}</span>{r.ticket && <span>{r.ticket}</span>}<span>{r.owner}</span>{r.expiry && <span className="exp">{t('expires')} {r.expiry}</span>}</div></div>); } },
     ...(['src', 'dst'] as const).map((f): ColDef => ({ field: f, headerName: t(f === 'src' ? 'Source' : 'Destination'), flex: f === 'src' ? 1 : 1.1, minWidth: f === 'src' ? 162 : 182, editable, cellDataType: false, cellClassRules: changedCls(f),
       cellEditor: RefsEditor, cellEditorParams: { mode: 'addr' }, cellEditorPopup: true, cellEditorPopupPosition: 'under', sortable: false,
       getQuickFilterText: x => (x.data[f] as string[]).map(id => ref(id).name).join(' '),
@@ -107,7 +113,7 @@ export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, r
     { field: 'hits', headerName: t('Hits'), width: 84, headerTooltip: t('Flow data is about 70 minutes old'), comparator: (a, b) => (a ?? -1) - (b ?? -1),
       cellRenderer: (x: ICellRendererParams) => x.value == null ? <Tooltip content={t('No flow data for this Rule')} relationship="label"><span className="nodata">—</span></Tooltip>
         : <div className={`hitc ${x.value === 0 ? 'zero' : ''}`}><span>{compact(x.value)}</span><i><b style={{ width: `${(Math.log10(x.value + 1) / 6.7) * 100}%` }} /></i></div> },
-    { colId: 'flags', headerName: '', width: 64, sortable: false, resizable: false, cellRenderer: (x: ICellRendererParams) => <Badges r={x.data} /> },
+    { colId: 'flags', headerName: '', width: 64, sortable: false, resizable: false, hide: true, cellRenderer: (x: ICellRendererParams) => <Badges r={x.data} /> },
     { field: 'comment', headerName: t('Comment'), flex: 1, minWidth: 150, editable, cellClass: 'c-comment', cellClassRules: changedCls('comment') },
     { colId: 'acts', headerName: '', width: 120, pinned: 'right', sortable: false, resizable: false, cellClass: 'c-acts', cellRenderer: (x: ICellRendererParams) => <RowActs r={x.data} onOpen={id => pRef.current.onOpen?.(id)} /> },
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -145,19 +151,76 @@ export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, r
     onGridSizeChanged: (e: any) => { e.api.setColumnsVisible(['comment'], e.clientWidth >= 1330); setTimeout(() => e.api.refreshCells({ columns: ['src', 'dst', 'svc'], force: true }), 0); },
     onColumnResized: (e: any) => { if (e.finished) e.api.refreshCells({ columns: ['src', 'dst', 'svc'], force: true }); },
     onFirstDataRendered: () => pRef.current.onReady?.(Math.round(performance.now() - t0.current)),
+    onModelUpdated: () => ruler.current?.rebuild(), onBodyScroll: () => ruler.current?.view(),
+    preventDefaultOnContextMenu: true,
+    onCellContextMenu: (e: any) => { if (!e.data || isSys(e.data)) return; const c = e.column?.getColId(); const ev = e.event as MouseEvent;
+      setMenu({ x: ev.clientX, y: ev.clientY, r: e.data, objs: c === 'src' || c === 'dst' || c === 'svc' ? e.data[c] : [] }); if (e.data.id !== pRef.current.focusedId) pRef.current.onFocus?.(e.data.id); },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
 
+  const live = menu ? s.rules.find(x => x.id === menu.r.id) ?? menu.r : null;
+  const act = (fn: () => void) => () => { fn(); setMenu(null); };
+  const oname = (id: string) => (id.startsWith('svc') ? svcName(id) : ref(id).name);
   return (
     <div className={`gridbox ${p.dense ? 'dense' : ''}`}>
       {/* The focused Rule is marked by a style rule, not a redraw, for the same reason. */}
       {p.focusedId && <style>{`.gridbox .ag-row[row-id="${p.focusedId}"]{background:var(--sel)!important}.gridbox .ag-row[row-id="${p.focusedId}"] .rowacts{opacity:1}`}</style>}
       {sorted && <div className="grid-hint">{t('Drag is off while sorted: use Move to…')}</div>}
-      <AgGridReact ref={grid} theme={gridTheme} rowData={p.rows} columnDefs={cols} {...opts}
+      <AgGridReact ref={grid} theme={gridTheme} containerStyle={{ flex: 1, minWidth: 0, height: '100%' }} rowData={p.rows} columnDefs={cols} {...opts}
         pinnedTopRowData={p.bands?.top} pinnedBottomRowData={p.bands?.bottom} quickFilterText={p.quick} rowClassRules={rowClassRules}
         readOnlyEdit rowDragMultiRow suppressRowDrag={sorted} animateRows={false} tooltipShowDelay={300} />
+      <Ruler ref={ruler} api={() => grid.current?.api} focusedId={p.focusedId} />
+      {menu && live && (
+        <div className="ctx-bg" onMouseDown={() => setMenu(null)} onContextMenu={e => { e.preventDefault(); setMenu(null); }}>
+          <div className="ctx" role="menu" style={{ left: Math.min(menu.x, window.innerWidth - 270), top: Math.min(menu.y, window.innerHeight - 380) }} onMouseDown={e => e.stopPropagation()}>
+            <div className="ctx-h">{s.numbers.get(live.id) ?? ''} {live.name}</div>
+            <button onClick={act(() => p.onOpen?.(live.id))}><PanelRight16Regular />{t('Open details')}</button>
+            <button onClick={act(() => s.setEnabled([live.id], !live.enabled))}>{live.enabled ? <EyeOff16Regular /> : <Eye16Regular />}{t(live.enabled ? 'Disable' : 'Enable')}</button>
+            <button onClick={act(() => s.clone([live.id]))}><Copy16Regular />{t('Clone')}</button>
+            <button onClick={act(() => s.addRule(live.id))}><Add16Regular />{t('New Rule below')}</button>
+            <hr />
+            <button onClick={act(() => s.move([live.id], null, 'before'))}><ArrowUp16Regular />{t('Move to the top')}</button>
+            <button onClick={act(() => s.move([live.id], null, 'after'))}><ArrowDown16Regular />{t('Move to the bottom')}</button>
+            <button onClick={act(() => p.onMoveTo?.([live.id]))}><ArrowSort16Regular />{t('Move to…')}</button>
+            {menu.objs.length > 0 && <><hr />{menu.objs.slice(0, 3).map(id => <button key={id} onClick={act(() => p.onQuick?.(oname(id)))}><Filter16Regular /><span>{t('Rules with')} <b>{oname(id)}</b></span></button>)}</>}
+            <hr />
+            <button className="danger" onClick={act(() => s.remove([live.id]))}><Delete16Regular />{t('Delete')}</button>
+          </div>
+        </div>
+      )}
     </div>
   );
+});
+
+// Overview ruler: where the changed and the flagged Rules sit in the whole list, with the visible window. Click to jump.
+const Ruler = forwardRef<{ rebuild(): void; view(): void }, { api: () => GridApi | undefined; focusedId?: string | null }>(function Ruler(p, r) {
+  const s = useStore(); const { mode } = useMode(); const { t } = useT(); const cv = useRef<HTMLCanvasElement>(null);
+  const marks = useRef({ n: 0, chg: [] as number[], warn: [] as number[], focus: -1 });
+  const sRef = useRef(s); sRef.current = s; const pRef = useRef(p); pRef.current = p;
+  const draw = () => {
+    const c = cv.current, api = pRef.current.api(); if (!c || !api) return;
+    const h = c.clientHeight, w = c.clientWidth, dpr = window.devicePixelRatio || 1; c.width = w * dpr; c.height = h * dpr;
+    const g = c.getContext('2d')!; g.scale(dpr, dpr); g.clearRect(0, 0, w, h);
+    const css = getComputedStyle(document.documentElement); const col = (v: string) => css.getPropertyValue(v).trim();
+    const m = marks.current; if (!m.n) return;
+    const y = (i: number) => Math.round((i / m.n) * (h - 4));
+    const a = api.getFirstDisplayedRowIndex(), b = api.getLastDisplayedRowIndex();
+    if (a >= 0) { g.fillStyle = col('--line'); g.fillRect(0, y(a), w, Math.max(8, y(b + 1) - y(a))); }
+    g.fillStyle = col('--deny'); m.warn.forEach(i => g.fillRect(3, y(i), 4, 2));
+    g.fillStyle = col('--amber'); m.chg.forEach(i => g.fillRect(8, y(i), 5, 3));
+    if (m.focus >= 0) { g.fillStyle = col('--accent'); g.fillRect(0, y(m.focus), w, 3); }
+  };
+  const rebuild = () => {
+    const api = pRef.current.api(); if (!api) return; const m = { n: 0, chg: [] as number[], warn: [] as number[], focus: -1 };
+    api.forEachNodeAfterFilterAndSort(node => { const d = node.data as Rule | undefined; if (!d) return; const i = m.n++;
+      if (sRef.current.status.has(d.id)) m.chg.push(i); if (d.policy || d.importNote === 'blocking' || d.layerWarn) m.warn.push(i); if (d.id === pRef.current.focusedId) m.focus = i; });
+    marks.current = m; draw();
+  };
+  useImperativeHandle(r, () => ({ rebuild, view: draw }));
+  useEffect(() => { rebuild(); }, [s.status, p.focusedId, mode]);
+  useEffect(() => { const ro = new ResizeObserver(draw); if (cv.current) ro.observe(cv.current); return () => ro.disconnect(); }, []);
+  return <canvas ref={cv} className="ruler" title={t('Where changed (amber) and flagged (red) Rules sit. Click to jump.')}
+    onClick={e => { const api = pRef.current.api(); const m = marks.current; if (!api || !m.n) return; const rect = e.currentTarget.getBoundingClientRect(); api.ensureIndexVisible(Math.min(m.n - 1, Math.floor(((e.clientY - rect.top) / rect.height) * m.n)), 'middle'); }} />;
 });
 
 export function Badges({ r }: { r: Rule }) {
