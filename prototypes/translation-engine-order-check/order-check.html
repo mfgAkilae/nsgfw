@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Write Order Check</title>
+<!-- PROTOTYPE, throwaway. Answers one question for "Prototype: Translation engine worked examples" (issue 22). Not production code. -->
+<style>
+  :root { --bg:#fbfbfa; --fg:#1d1d1f; --muted:#6b6b70; --line:#e2e2e0; --card:#fff; --accent:#2457c5; --ok:#1d7a3e; --bad:#b3261e; --warn:#8a5a00; --okbg:#e8f4ec; --badbg:#fbe9e7; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#141416; --fg:#ececee; --muted:#9a9aa2; --line:#2c2c31; --card:#1c1c20; --accent:#7aa2ff; --ok:#6fd08f; --bad:#ff8a80; --warn:#e0b25c; --okbg:#16301f; --badbg:#3a1a18; } }
+  :root[data-theme="dark"] { --bg:#141416; --fg:#ececee; --muted:#9a9aa2; --line:#2c2c31; --card:#1c1c20; --accent:#7aa2ff; --ok:#6fd08f; --bad:#ff8a80; --warn:#e0b25c; --okbg:#16301f; --badbg:#3a1a18; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:24px; margin:0 0 4px; } h2 { font-size:18px; margin:28px 0 8px; } h3 { font-size:15px; margin:16px 0 6px; }
+  p { margin:6px 0; } .muted { color:var(--muted); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin:10px 0; }
+  .tabs { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; }
+  button { font:inherit; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; padding:5px 10px; cursor:pointer; }
+  button.on, button:hover { border-color:var(--accent); color:var(--accent); }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .ok { color:var(--ok); font-weight:600; } .bad { color:var(--bad); font-weight:600; } .warn { color:var(--warn); }
+  .badrow td { background:var(--badbg); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:10px; }
+  code { font:12.5px ui-monospace, Menlo, Consolas, monospace; }
+  .scroll { overflow-x:auto; }
+  .verdict { font-size:16px; padding:10px 14px; border-radius:8px; }
+  .verdict.ok { background:var(--okbg); } .verdict.bad { background:var(--badbg); }
+  .changed { outline:2px solid var(--accent); outline-offset:-2px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Does the order of writes still matter?</h1>
+<p class="muted">Prototype for <em>Prototype: Translation engine worked examples</em>, first check, under ADR 0016 (deny Rules on both sides, Egress posture per Zone).</p>
+
+<div class="card">
+<p><b>Question.</b> A Deployment writes Managed NSGs one after another. While it runs, some Zones hold the old content and some hold the new one. Does any such mix allow only flows that the old or the new Version allows, whatever the order of writes? If so, ADR 0009 (Tighten and Loosen phases, interim contents, holds) can be replaced.</p>
+<p><b>The argument to check (destination dominance).</b> A flow from Zone A to Zone B passes A's outbound and B's inbound NSG rules. Suppose that in <em>every</em> Version, B's inbound NSG rules deny each flow that A's outbound NSG rules deny. Take any mix with A's NSG at Version v and B's at Version w. If the mix allows the flow, B's inbound at w allows it, so A's outbound at w allows it too, and Version w allows the flow. A flow with a non-Zone endpoint passes one Managed NSG, and one PUT changes that NSG as a whole. The argument works for any number of Versions in flight.</p>
+<p><b>What the model contains.</b> Three Zones (A and B in IPv4, C in IPv6 and so outside the default Internal address space), an on-premises host, an Internet host, two ports, an ASG object, the service tags <code>VirtualNetwork</code> and <code>Internet</code>, both Egress postures, Inherited defaults, the Intra-zone default, own-side pruning, and ADR 0016's rule that destination-enforced Zones leave out outbound NSG rules that have no effect.</p>
+</div>
+
+<h2>Result of the automatic check</h2>
+<div id="auto" class="card"><p class="muted">Running…</p></div>
+
+<h2>Worked examples</h2>
+<p class="muted">Each tab shows a Change set. Its steps set which Zones already hold the new content. Rows in red are flows that the current mix allows, but that the old and the new Version both deny.</p>
+<div class="tabs" id="tabs"></div>
+<div id="scenario"></div>
+
+<h2>Free play</h2>
+<p class="muted">Choose for each Zone whether its Managed NSG holds the old or the new content, and whether the ASG members are in their old or new state.</p>
+<div class="tabs" id="free"></div>
+<div id="state"></div>
+</main>
+
+<script id="engine">
+// ---- Pure module: Translation engine (rough, ADR 0004/0016/0011/0017) + mix checker. No DOM. ----
+var Engine = (function () {
+  var POINTS = ['a1','a2','b1','b2','c6','o1','i1'];
+  var PT_LABEL = { a1:'10.1.0.4 (A)', a2:'10.1.0.5 (A)', b1:'10.2.0.4 (B)', b2:'10.2.0.5 (B)', c6:'fd00:3::4 (C)', o1:'172.16.5.5 (on-prem)', i1:'203.0.113.9 (Internet)' };
+  var ZONES = ['A','B','C'];
+  var ZONE_PTS = { A:['a1','a2'], B:['b1','b2'], C:['c6'] };
+  var INTERNAL = ['a1','a2','b1','b2','o1'];             // Internal address space: RFC 1918 (C is IPv6)
+  var TAGS = { VirtualNetwork:['a1','a2','b1','b2','c6','o1'], Internet:['i1'] }; // what Azure resolves; the engine cannot see it
+  var PORTS = ['tcp/22','tcp/443'];
+  var OBJ = {
+    'any': { pts: POINTS.slice(), label:'any' },
+    'zone:A': { zone:'A', label:'Zone A' }, 'zone:B': { zone:'B', label:'Zone B' }, 'zone:C': { zone:'C', label:'Zone C' },
+    'host:a1': { pts:['a1'], label:'10.1.0.4' }, 'host:b1': { pts:['b1'], label:'10.2.0.4' },
+    'host:o1': { pts:['o1'], label:'172.16.5.5 (on-prem)' }, 'host:i1': { pts:['i1'], label:'203.0.113.9' },
+    'cidr:10/8': { pts:['a1','a2','b1','b2'], label:'10.0.0.0/8' },
+    'tag:VirtualNetwork': { tag:'VirtualNetwork', label:'VirtualNetwork (tag)' }, 'tag:Internet': { tag:'Internet', label:'Internet (tag)' },
+    'asg:X': { asg:'X', label:'ASG object web' }
+  };
+  function inter(a, b) { return a.filter(function (x) { return b.indexOf(x) >= 0; }); }
+  function subset(a, b) { return a.every(function (x) { return b.indexOf(x) >= 0; }); }
+  function clone(x) { return JSON.parse(JSON.stringify(x)); }
+  function managed(ver, z) { var s = ver.zones[z]; return !s.retired && !s.legacy; }
+  function activeZonePts(ver) { var r = []; ZONES.forEach(function (z) { if (managed(ver, z)) r = r.concat(ZONE_PTS[z]); }); return r; }
+  // A part of an NSG rule: {pts:[...]} | {tag:name} | {asg:name}
+  function fullPart(o, ver) { var d = OBJ[o]; if (d.tag) return { tag:d.tag }; if (d.asg) return { asg:d.asg }; return { pts: d.zone ? ZONE_PTS[d.zone].slice() : d.pts.slice() }; }
+  function coverage(o, ver) {
+    var d = OBJ[o];
+    if (d.tag) return [];
+    if (d.zone) return managed(ver, d.zone) ? [d.zone] : [];
+    var pts = d.asg ? ver.asg[d.asg] : d.pts;
+    return ZONES.filter(function (z) { return managed(ver, z) && inter(ZONE_PTS[z], pts).length; });
+  }
+  function ownPart(o, z, ver) { var p = fullPart(o, ver); return p.pts ? { pts: inter(p.pts, ZONE_PTS[z]) } : p; }
+  function resolve(part, members) { return part.tag ? TAGS[part.tag] : part.asg ? (members[part.asg] || []) : part.pts; }
+  // What the engine may assume about a part (it cannot see service tag contents).
+  function knownInside(part, ver, space) { return part.tag ? false : subset(resolve(part, ver.asg), space); }
+  function mayOverlap(a, b, ver) { return a.tag || b.tag ? true : inter(resolve(a, ver.asg), resolve(b, ver.asg)).length > 0; }
+  function ruleOverlap(x, y, ver) { return mayOverlap(x.src, y.src, ver) && mayOverlap(x.dst, y.dst, ver) && inter(x.ports, y.ports).length > 0; }
+  var DENY_ALL = { rid:'deny-all', action:'deny', src:{ pts:POINTS }, dst:{ pts:POINTS }, ports:PORTS };
+
+  function translateZone(ver, z) {
+    var s = ver.zones[z];
+    if (s.retired) return { in:[DENY_ALL], out:[DENY_ALL], note:'Retired NSG' };
+    if (s.legacy) return { in:s.legacy.in, out:s.legacy.out, note:'legacy NSG (before onboarding)' };
+    var inR = [], outR = [];
+    ver.rules.forEach(function (r) {
+      if (r.enabled === false) return;
+      var ports = r.svc === 'any' ? PORTS : r.svc;
+      r.src.forEach(function (so) { if (coverage(so, ver).indexOf(z) < 0) return;
+        r.dst.forEach(function (dO) { outR.push({ rid:r.id, action:r.action, src:ownPart(so, z, ver), dst:fullPart(dO, ver), ports:ports }); }); });
+      if (ver.placement === 'adr0004' && r.action === 'deny') {   // ADR 0004: deny on one side, by object type
+        var zoneOnly = function (l) { return l.every(function (o) { return !!OBJ[o].zone; }); };
+        var side = zoneOnly(r.dst) ? 'dst' : zoneOnly(r.src) ? 'src' : 'both';
+        if (side === 'dst') outR = outR.filter(function (n) { return n.rid !== r.id; });
+        if (side === 'src') return;
+      }
+      r.dst.forEach(function (dO) { if (coverage(dO, ver).indexOf(z) < 0) return;
+        r.src.forEach(function (so) { inR.push({ rid:r.id, action:r.action, src:fullPart(so, ver), dst:ownPart(dO, z, ver), ports:ports }); }); });
+    });
+    if (s.posture === 'dest') {           // ADR 0016: leave out outbound NSG rules without effect, bottom-up
+      var kept = [];
+      for (var i = outR.length - 1; i >= 0; i--) {
+        var n = outR[i];
+        if (n.action === 'deny' && knownInside(n.dst, ver, activeZonePts(ver))) continue;
+        if (n.action === 'allow' && knownInside(n.dst, ver, INTERNAL) &&
+            !kept.some(function (k) { return k.action === 'deny' && ruleOverlap(k, n, ver); })) continue;
+        kept.unshift(n);
+      }
+      outR = kept;
+    }
+    var zp = { pts: ZONE_PTS[z] };
+    var intra = { rid:'intra-zone', action:'allow', src:zp, dst:zp, ports:PORTS };
+    inR.push(intra); outR.push(intra);
+    if (s.inherit.inVNet) inR.push({ rid:'inherited in VirtualNetwork', action:'allow', src:{ tag:'VirtualNetwork' }, dst:{ pts:POINTS }, ports:PORTS });
+    if (s.inherit.outVNet) outR.push({ rid:'inherited out VirtualNetwork', action:'allow', src:{ pts:POINTS }, dst:{ tag:'VirtualNetwork' }, ports:PORTS });
+    if (s.inherit.outInternet) outR.push({ rid:'inherited out Internet', action:'allow', src:{ pts:POINTS }, dst:{ tag:'Internet' }, ports:PORTS });
+    if (s.posture === 'dest') outR.push({ rid:'egress Internal', action:'allow', src:{ pts:POINTS }, dst:{ pts:INTERNAL }, ports:PORTS });
+    inR.push(DENY_ALL); outR.push(DENY_ALL);
+    return { in:inR, out:outR };
+  }
+  function translate(ver) { var r = {}; ZONES.forEach(function (z) { r[z] = translateZone(ver, z); }); return r; }
+
+  function firstMatch(list, s, d, p, members) {
+    for (var i = 0; i < list.length; i++) { var n = list[i];
+      if (resolve(n.src, members).indexOf(s) >= 0 && resolve(n.dst, members).indexOf(d) >= 0 && n.ports.indexOf(p) >= 0) return n; }
+    return null;
+  }
+  function zoneOf(pt) { for (var i = 0; i < ZONES.length; i++) if (ZONE_PTS[ZONES[i]].indexOf(pt) >= 0) return ZONES[i]; return null; }
+  // state: { nsg: {A:{in,out},...}, members: {X:[...]} }
+  function evalFlow(state, s, d, p) {
+    var zs = zoneOf(s), zd = zoneOf(d), out = null, inn = null;
+    if (zs) out = firstMatch(state.nsg[zs].out, s, d, p, state.members);
+    if (zd) inn = firstMatch(state.nsg[zd].in, s, d, p, state.members);
+    var allowed = (!out || out.action === 'allow') && (!inn || inn.action === 'allow');
+    return { allowed:allowed, out:out, in:inn };
+  }
+  var FLOWS = [];
+  POINTS.forEach(function (s) { POINTS.forEach(function (d) { if (s !== d && (zoneOf(s) || zoneOf(d))) PORTS.forEach(function (p) { FLOWS.push([s, d, p]); }); }); });
+
+  // mix: { A: versionIndex, B: ..., C: ..., members: versionIndex }
+  function stateFor(versions, mix, compiled) {
+    compiled = compiled || versions.map(translate);
+    var nsg = {}; ZONES.forEach(function (z) { nsg[z] = compiled[mix[z]][z]; });
+    return { nsg:nsg, members: versions[mix.members].asg };
+  }
+  function allMixes(k, withMembers) {
+    var res = [];
+    function rec(i, cur) { var keys = ZONES.concat(withMembers ? ['members'] : []);
+      if (i === keys.length) { if (!withMembers) cur.members = 0; res.push(clone(cur)); return; }
+      for (var v = 0; v < k; v++) { cur[keys[i]] = v; rec(i + 1, cur); } }
+    rec(0, {}); return res;
+  }
+  // Every mix of NSG contents (and ASG membership states). Returns flows that a mix opens although every Version denies them.
+  function checkMixes(versions, opts) {
+    opts = opts || {};
+    var compiled = versions.map(translate);
+    var full = versions.map(function (v, i) { var m = {}; ZONES.forEach(function (z) { m[z] = i; }); m.members = i; return stateFor(versions, m, compiled); });
+    var bad = [];
+    var withMembers = versions.some(function (v) { return JSON.stringify(v.asg) !== JSON.stringify(versions[0].asg); });
+    allMixes(versions.length, withMembers).forEach(function (mix) {
+      var st = stateFor(versions, mix, compiled);
+      FLOWS.forEach(function (f) {
+        if (!evalFlow(st, f[0], f[1], f[2]).allowed) return;
+        if (full.some(function (fs) { return evalFlow(fs, f[0], f[1], f[2]).allowed; })) return;
+        bad.push({ mix:mix, flow:f });
+      });
+    });
+    return bad;
+  }
+  // The lemma's premise in one Version: for flows between two different Zones, inbound at the destination never allows what outbound at the source denies.
+  function dominanceGaps(ver) {
+    var st = { nsg: translate(ver), members: ver.asg }, gaps = [];
+    FLOWS.forEach(function (f) { var zs = zoneOf(f[0]), zd = zoneOf(f[1]);
+      if (!zs || !zd || zs === zd) return;
+      var r = evalFlow(st, f[0], f[1], f[2]);
+      if (r.in.action === 'allow' && r.out.action === 'deny') gaps.push({ flow:f, out:r.out.rid, in:r.in.rid }); });
+    return gaps;
+  }
+
+  // ---- Random Change sets for the automatic check ----
+  function rng(seed) { var x = seed >>> 0 || 1; return function () { x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0; return x / 4294967296; }; }
+  function pick(r, a) { return a[Math.floor(r() * a.length)]; }
+  function some(r, a, max) { var n = 1 + Math.floor(r() * max), out = []; while (out.length < n) { var x = pick(r, a); if (out.indexOf(x) < 0) out.push(x); } return out; }
+  var MEMBER_PTS = ['a1','a2','b1','b2','c6'];
+  function objPool(f) { var p = ['any','zone:A','zone:B','zone:C','host:a1','host:b1','host:o1','host:i1','cidr:10/8','asg:X']; return f.tags ? p.concat(['tag:VirtualNetwork','tag:Internet']) : p; }
+  function genRule(r, f, id) { var pool = objPool(f);
+    return { id:id, src:some(r, pool, 2), dst:some(r, pool, 2), svc: r() < 0.4 ? 'any' : [pick(r, PORTS)], action: r() < 0.5 ? 'allow' : 'deny' }; }
+  function genLegacy(r) {
+    var parts = [{ pts:POINTS }, { pts:['a1','a2'] }, { pts:['b1'] }, { pts:['o1'] }, { tag:'VirtualNetwork' }, { tag:'Internet' }];
+    function list(dir) { var l = [], n = Math.floor(r() * 3);
+      for (var i = 0; i < n; i++) l.push({ rid:'legacy-' + dir + i, action: r() < 0.5 ? 'allow' : 'deny', src:pick(r, parts), dst:pick(r, parts), ports: r() < 0.5 ? PORTS : [pick(r, PORTS)] });
+      if (dir === 'in') l.push({ rid:'AllowVnetInBound', action:'allow', src:{ tag:'VirtualNetwork' }, dst:{ tag:'VirtualNetwork' }, ports:PORTS });
+      else { l.push({ rid:'AllowVnetOutBound', action:'allow', src:{ tag:'VirtualNetwork' }, dst:{ tag:'VirtualNetwork' }, ports:PORTS });
+             l.push({ rid:'AllowInternetOutBound', action:'allow', src:{ pts:POINTS }, dst:{ tag:'Internet' }, ports:PORTS }); }
+      l.push({ rid:'DenyAll', action:'deny', src:{ pts:POINTS }, dst:{ pts:POINTS }, ports:PORTS }); return l; }
+    return { in:list('in'), out:list('out') };
+  }
+  function genVersion(r, f) {
+    var zones = {}; ZONES.forEach(function (z) { zones[z] = { posture: r() < 0.5 ? 'dest' : 'strict',
+      inherit: { inVNet: f.inheritIn ? r() < 0.5 : false, outVNet: r() < 0.3, outInternet: r() < 0.3 } }; });
+    var rules = [], n = Math.floor(r() * 5); for (var i = 0; i < n; i++) rules.push(genRule(r, f, i + 1));
+    if (f.adr0004) ZONES.forEach(function (z) { zones[z].posture = 'strict'; });
+    var v = { placement: f.adr0004 ? 'adr0004' : 'adr0016', zones:zones, rules:rules, asg:{ X: MEMBER_PTS.filter(function () { return r() < 0.35; }) }, nextId:n + 1 };
+    if (f.legacy) zones[pick(r, ZONES)].legacy = genLegacy(r);
+    return v;
+  }
+  function dropZoneRefs(v, z) {
+    v.rules.forEach(function (rl) { rl.src = rl.src.filter(function (o) { return o !== 'zone:' + z; }); rl.dst = rl.dst.filter(function (o) { return o !== 'zone:' + z; }); });
+    v.rules = v.rules.filter(function (rl) { return rl.src.length && rl.dst.length; });
+  }
+  function mutate(r, v, f) {
+    var w = clone(v), edits = 1 + Math.floor(r() * 3);
+    ZONES.forEach(function (z) { if (w.zones[z].legacy) delete w.zones[z].legacy; });        // onboarding finishes in w
+    for (var e = 0; e < edits; e++) {
+      var k = Math.floor(r() * 7), rl = w.rules.length ? pick(r, w.rules) : null;
+      if (k === 0 || !rl) w.rules.splice(Math.floor(r() * (w.rules.length + 1)), 0, genRule(r, f, w.nextId++));
+      else if (k === 1) w.rules.splice(w.rules.indexOf(rl), 1);
+      else if (k === 2) rl.action = rl.action === 'allow' ? 'deny' : 'allow';
+      else if (k === 3) rl.src = some(r, objPool(f), 2);
+      else if (k === 4) rl.dst = some(r, objPool(f), 2);
+      else if (k === 5) { var i = w.rules.indexOf(rl); w.rules.splice(i, 1); w.rules.splice(Math.floor(r() * (w.rules.length + 1)), 0, rl); }
+      else rl.svc = r() < 0.4 ? 'any' : [pick(r, PORTS)];
+    }
+    if (f.postureChange && r() < 0.5) { var z = pick(r, ZONES); w.zones[z].posture = w.zones[z].posture === 'dest' ? 'strict' : 'dest'; }
+    if (f.inheritIn && r() < 0.5) { var z2 = pick(r, ZONES); w.zones[z2].inherit.inVNet = !w.zones[z2].inherit.inVNet; }
+    if (f.asgChange && r() < 0.7) w.asg.X = MEMBER_PTS.filter(function () { return r() < 0.35; });
+    if (f.retire && r() < 0.5) { var z3 = pick(r, ZONES); if (!w.zones[z3].retired) { w.zones[z3].retired = true; dropZoneRefs(w, z3); } }
+    return w;
+  }
+  // Runs `trials` random Change sets (chains of `chain` Versions) with the given features.
+  function randomCheck(f, trials, seed, chain) {
+    var r = rng(seed), hits = 0, gapVersions = 0, example = null; chain = chain || 2;
+    for (var t = 0; t < trials; t++) {
+      var vs = [genVersion(r, f)]; for (var c = 1; c < chain; c++) vs.push(mutate(r, vs[c - 1], f));
+      vs.forEach(function (v) { if (!v.zones.A.legacy && !v.zones.B.legacy && !v.zones.C.legacy && dominanceGaps(v).length) gapVersions++; });
+      var bad = checkMixes(vs);
+      if (bad.length) { hits++; if (!example || JSON.stringify(vs).length < JSON.stringify(example.versions).length) example = { versions:vs, bad:bad[0] }; }
+    }
+    return { trials:trials, changeSetsThatOpen:hits, versionsWithGaps:gapVersions, example:example };
+  }
+  return { POINTS:POINTS, PT_LABEL:PT_LABEL, ZONES:ZONES, PORTS:PORTS, OBJ:OBJ, FLOWS:FLOWS, translate:translate, evalFlow:evalFlow,
+           stateFor:stateFor, checkMixes:checkMixes, dominanceGaps:dominanceGaps, randomCheck:randomCheck, allMixes:allMixes, clone:clone };
+})();
+if (typeof module !== 'undefined') module.exports = Engine;
+</script>
+
+<script id="scenarios">
+// ---- Worked examples as data ----
+var SCENARIOS = (function () {
+  function zone(posture, inh) { inh = inh || {}; return { posture:posture, inherit:{ inVNet:!!inh.inVNet, outVNet:!!inh.outVNet, outInternet:!!inh.outInternet } }; }
+  function zs(a, b, c) { return { A:a, B:b, C:c || zone('dest') }; }
+  function R(id, name, src, dst, svc, action) { return { id:id, name:name, src:src, dst:dst, svc:svc, action:action }; }
+  var D = 'dest', S = 'strict';
+  return [
+    { key:'flip', title:'1 · ADR 0009 deny flip', safe:true, focus:['a1','b1','tcp/22'],
+      text:'ADR 0009\'s own example. "deny Zone A → Zone B tcp/22" sits above "allow Zone A → any". The Change set adds 203.0.113.9 to the destination. Under ADR 0004 the deny moved from B to A, and writing B first opened tcp/22. Under ADR 0016 the deny lands inbound on B in both Versions, so no order opens it.',
+      versions:[
+        { label:'old', zones:zs(zone(S), zone(D)), asg:{ X:[] }, rules:[ R(1,'block ssh to B',['zone:A'],['zone:B'],['tcp/22'],'deny'), R(2,'A out',['zone:A'],['any'],'any','allow') ] },
+        { label:'new', zones:zs(zone(S), zone(D)), asg:{ X:[] }, rules:[ R(1,'block ssh to B',['zone:A'],['zone:B','host:i1'],['tcp/22'],'deny'), R(2,'A out',['zone:A'],['any'],'any','allow') ] } ] },
+    { key:'posture', title:'2 · Posture change + reorder', safe:true, focus:['a1','b1','tcp/443'],
+      text:'Zone A switches from destination-enforced to strict, and the same Change set moves an allow above a deny and narrows another Rule. Both postures keep destination dominance, so the switch on its own is safe in any order.',
+      versions:[
+        { label:'old', zones:zs(zone(D), zone(S)), asg:{ X:[] }, rules:[ R(1,'no https from A',['zone:A'],['zone:B'],['tcp/443'],'deny'), R(2,'web',['cidr:10/8'],['zone:B'],'any','allow') ] },
+        { label:'new', zones:zs(zone(S), zone(S)), asg:{ X:[] }, rules:[ R(2,'web',['cidr:10/8'],['zone:B'],['tcp/22'],'allow'), R(1,'no https from A',['zone:A'],['zone:B'],['tcp/443'],'deny'), R(3,'A https',['host:a1'],['zone:B'],['tcp/443'],'allow') ] } ] },
+    { key:'inherit', title:'3 · Inherited defaults + strict source', safe:false, focus:['a1','b1','tcp/22'],
+      text:'Zone B has the Inherited default "inbound from VirtualNetwork" from its Import. Old: A is destination-enforced, and "deny Zone A → Zone B" closes A → B (only on B, because A leaves the deny out). New: the deny is gone, and A becomes strict, so A\'s Deny-all closes it. Both Versions deny A → B. Write B first: A still lets everything internal out, and B\'s inherited allow lets it in.',
+      versions:[
+        { label:'old', zones:zs(zone(D), zone(S, { inVNet:true })), asg:{ X:[] }, rules:[ R(1,'A may not reach B',['zone:A'],['zone:B'],'any','deny') ] },
+        { label:'new', zones:zs(zone(S), zone(S, { inVNet:true })), asg:{ X:[] }, rules:[] } ] },
+    { key:'srctag', title:'4 · Source tag on one side', safe:false, focus:['a1','b1','tcp/22'],
+      text:'An imported Rule "allow VirtualNetwork → Zone B tcp/22" has a service tag as its source, so it lands only inbound on B (tags cover no Zone). A is strict. Old: "allow Zone A → VirtualNetwork" opens A\'s outbound, but nothing opens B. New: that Rule is replaced by the imported one, so B opens but A\'s outbound is closed. Both Versions deny; B written first opens it.',
+      versions:[
+        { label:'old', zones:zs(zone(S), zone(S)), asg:{ X:[] }, rules:[ R(1,'A to vnet',['zone:A'],['tag:VirtualNetwork'],['tcp/22'],'allow') ] },
+        { label:'new', zones:zs(zone(S), zone(S)), asg:{ X:[] }, rules:[ R(2,'vnet ssh to B',['tag:VirtualNetwork'],['zone:B'],['tcp/22'],'allow') ] } ] },
+    { key:'dsttag', title:'5 · Destination tag deny', safe:false, focus:['a1','b1','tcp/22'],
+      text:'"deny Zone A → VirtualNetwork" has a tag as destination, so it lands only outbound on A, even on a destination-enforced Zone (the engine cannot tell that the tag lies inside Zones). Below it, "allow Zone A → Zone B" lands inbound on B. Old: "deny Zone A → Zone B" (only on B). New: the tag deny plus the allow. Both deny A → B; B written first opens it, because old A lets internal traffic out.',
+      versions:[
+        { label:'old', zones:zs(zone(D), zone(D)), asg:{ X:[] }, rules:[ R(1,'A not to B',['zone:A'],['zone:B'],'any','deny') ] },
+        { label:'new', zones:zs(zone(D), zone(D)), asg:{ X:[] }, rules:[ R(2,'A not into vnet',['zone:A'],['tag:VirtualNetwork'],'any','deny'), R(3,'A to B',['zone:A'],['zone:B'],'any','allow') ] } ] },
+    { key:'retire', title:'6 · Zone removal', safe:false, focus:['a1','b1','tcp/22'],
+      text:'Zone A is removed, so its NSG becomes a Retired NSG (Deny-all only), and "deny Zone A → Zone B" has to go because it names A. "allow 10.0.0.0/8 → Zone B" stays on B. Old: B denies A. New: A\'s Retired NSG denies. B written before A retires: old A lets internal traffic out, new B lets 10.0.0.0/8 in.',
+      versions:[
+        { label:'old', zones:zs(zone(D), zone(D)), asg:{ X:[] }, rules:[ R(1,'A not to B',['zone:A'],['zone:B'],'any','deny'), R(2,'internal to B',['cidr:10/8'],['zone:B'],'any','allow') ] },
+        { label:'new', zones:{ A:{ posture:'dest', inherit:{ inVNet:false, outVNet:false, outInternet:false }, retired:true }, B:zone(D), C:zone(D) }, asg:{ X:[] }, rules:[ R(2,'internal to B',['cidr:10/8'],['zone:B'],'any','allow') ] } ] },
+    { key:'asg', title:'7 · ASG membership vs. NSG write', safe:false, focus:['a1','b1','tcp/22'],
+      text:'ASG membership is a separate write on the network interface, not part of an NSG. Old: 10.1.0.4 is in ASG object web, and "deny web → Zone B tcp/22" closes it. New: the member is removed, and "deny Zone A → Zone B tcp/22" closes all of A. If the member is removed before B\'s NSG is written, B still holds the old deny on the ASG, which no longer matches, and "allow Zone A → Zone B" opens it.',
+      versions:[
+        { label:'old', zones:zs(zone(D), zone(D)), asg:{ X:['a1'] }, rules:[ R(1,'web no ssh',['asg:X'],['zone:B'],['tcp/22'],'deny'), R(2,'A to B',['zone:A'],['zone:B'],'any','allow') ] },
+        { label:'new', zones:zs(zone(D), zone(D)), asg:{ X:[] }, rules:[ R(3,'A no ssh',['zone:A'],['zone:B'],['tcp/22'],'deny'), R(2,'A to B',['zone:A'],['zone:B'],'any','allow') ] } ] },
+    { key:'legacy', title:'8 · Onboarding a legacy NSG', safe:false, focus:['a1','b1','tcp/22'],
+      text:'Zone B is onboarded in place. Its legacy NSG still has the Azure default AllowVnetInBound, and B opts out of Inherited defaults. In the same Change set A switches from strict to destination-enforced. Old: A\'s strict outbound closes A → B. New: B\'s managed inbound closes it. Write A first: new A lets it out, legacy B lets it in. The old Azure state did not satisfy destination dominance.',
+      versions:[
+        { label:'old', zones:{ A:zone(S), B:{ posture:'dest', inherit:{ inVNet:false, outVNet:false, outInternet:false }, legacy:{
+            in:[ { rid:'AllowVnetInBound', action:'allow', src:{ tag:'VirtualNetwork' }, dst:{ tag:'VirtualNetwork' }, ports:['tcp/22','tcp/443'] }, { rid:'DenyAllInBound', action:'deny', src:{ pts:Engine.POINTS }, dst:{ pts:Engine.POINTS }, ports:['tcp/22','tcp/443'] } ],
+            out:[ { rid:'AllowVnetOutBound', action:'allow', src:{ tag:'VirtualNetwork' }, dst:{ tag:'VirtualNetwork' }, ports:['tcp/22','tcp/443'] }, { rid:'DenyAllOutBound', action:'deny', src:{ pts:Engine.POINTS }, dst:{ pts:Engine.POINTS }, ports:['tcp/22','tcp/443'] } ] } }, C:zone(D) }, asg:{ X:[] }, rules:[] },
+        { label:'new', zones:zs(zone(D), zone(D)), asg:{ X:[] }, rules:[] } ] }
+  ];
+})();
+</script>
+
+<script>
+// ---- Throwaway page shell ----
+var E = Engine;
+function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&':'&amp;', '<':'&lt;', '>':'&gt;' }[c]; }); }
+function partLabel(p) { if (p.tag) return p.tag + ' (tag)'; if (p.asg) return 'ASG web'; if (p.pts.length === E.POINTS.length) return 'any';
+  return p.pts.map(function (x) { return E.PT_LABEL[x].split(' ')[0]; }).join(', '); }
+function objList(l) { return l.map(function (o) { return E.OBJ[o].label; }).join(', '); }
+function ruleTable(v) {
+  if (!v.rules.length) return '<p class="muted">No Rules.</p>';
+  return '<table><tr><th>#</th><th>Rule</th><th>Source</th><th>Destination</th><th>Service</th><th>Action</th></tr>' + v.rules.map(function (r, i) {
+    return '<tr><td>' + (i + 1) + '</td><td>' + esc(r.name || ('Rule ' + r.id)) + '</td><td>' + esc(objList(r.src)) + '</td><td>' + esc(objList(r.dst)) + '</td><td>' + (r.svc === 'any' ? 'any' : r.svc.join(', ')) + '</td><td class="' + (r.action === 'allow' ? 'ok' : 'bad') + '">' + r.action + '</td></tr>'; }).join('') + '</table>';
+}
+function zoneLine(v) { return E.ZONES.map(function (z) { var s = v.zones[z]; var t = s.retired ? 'retired' : s.legacy ? 'legacy NSG' : (s.posture === 'dest' ? 'destination-enforced' : 'strict');
+  var inh = s.inherit && !s.retired && !s.legacy ? Object.keys(s.inherit).filter(function (k) { return s.inherit[k]; }) : [];
+  return '<b>' + z + '</b>: ' + t + (inh.length ? ' · inherited ' + inh.join(', ') : ''); }).join(' &nbsp; ') + ' &nbsp; <b>ASG web</b>: ' + (v.asg.X.length ? v.asg.X.map(function (x) { return E.PT_LABEL[x]; }).join(', ') : 'empty'); }
+function nsgTable(c) { return ['in','out'].map(function (dir) { return '<h3>' + dir + 'bound</h3><table><tr><th>from</th><th>Source</th><th>Destination</th><th>Ports</th><th>Action</th></tr>' + c[dir].map(function (n) {
+  return '<tr><td>' + esc(typeof n.rid === 'number' ? 'Rule ' + n.rid : n.rid) + '</td><td>' + esc(partLabel(n.src)) + '</td><td>' + esc(partLabel(n.dst)) + '</td><td>' + n.ports.join(', ') + '</td><td class="' + (n.action === 'allow' ? 'ok' : 'bad') + '">' + n.action + '</td></tr>'; }).join('') + '</table>'; }).join(''); }
+
+function renderMix(target, sc, mix, changed) {
+  var vs = sc.versions, compiled = vs.map(E.translate), st = E.stateFor(vs, mix, compiled);
+  var full = vs.map(function (v, i) { return E.stateFor(vs, { A:i, B:i, C:i, members:i }, compiled); });
+  var rows = '', opens = 0;
+  E.FLOWS.forEach(function (f) {
+    var r = E.evalFlow(st, f[0], f[1], f[2]);
+    var each = full.map(function (fs) { return E.evalFlow(fs, f[0], f[1], f[2]).allowed; });
+    var bad = r.allowed && !each.some(Boolean); if (bad) opens++;
+    var isFocus = sc.focus && f[0] === sc.focus[0] && f[1] === sc.focus[1] && f[2] === sc.focus[2];
+    if (!bad && !isFocus && !window.showAll) return;
+    rows += '<tr class="' + (bad ? 'badrow' : '') + '"><td>' + E.PT_LABEL[f[0]] + '</td><td>' + E.PT_LABEL[f[1]] + '</td><td>' + f[2] + '</td>' +
+      each.map(function (a) { return '<td class="' + (a ? 'ok' : 'bad') + '">' + (a ? 'allow' : 'deny') + '</td>'; }).join('') +
+      '<td class="' + (r.allowed ? 'ok' : 'bad') + '">' + (r.allowed ? 'allow' : 'deny') + '</td><td class="muted">' + (r.out ? 'out: ' + esc(r.out.rid) : '') + (r.out && r.in ? ' · ' : '') + (r.in ? 'in: ' + esc(r.in.rid) : '') + '</td></tr>';
+  });
+  var mixTxt = E.ZONES.map(function (z) { return 'Zone ' + z + ' = ' + vs[mix[z]].label; }).join(', ') + ', ASG members = ' + vs[mix.members].label;
+  var html = '<div class="verdict ' + (opens ? 'bad' : 'ok') + '">' + (opens ? opens + ' flow(s) open that both Versions deny.' : 'Nothing opens that both Versions deny.') + ' <span class="muted">(' + mixTxt + ')</span></div>';
+  html += '<div class="scroll"><table><tr><th>Source</th><th>Destination</th><th>Port</th>' + vs.map(function (v) { return '<th>' + v.label + ' Version</th>'; }).join('') + '<th>this mix</th><th>deciding NSG rules</th></tr>' + rows + '</table></div>';
+  html += '<p><label><input type="checkbox" ' + (window.showAll ? 'checked' : '') + ' onchange="window.showAll=this.checked; rerender()"> show every flow</label></p>';
+  html += '<div class="grid">' + vs.map(function (v) { return '<div class="card"><h3>' + v.label + ' Version</h3><p class="muted">' + zoneLine(v) + '</p>' + ruleTable(v) + '</div>'; }).join('') + '</div>';
+  html += '<h3>Managed NSGs in this mix</h3><div class="grid">' + E.ZONES.map(function (z) { var c = compiled[mix[z]][z];
+    return '<div class="card' + (changed === z ? ' changed' : '') + '"><b>Zone ' + z + '</b> <span class="muted">holds ' + vs[mix[z]].label + ' content' + (c.note ? ', ' + c.note : '') + '</span>' + nsgTable(c) + '</div>'; }).join('') + '</div>';
+  target.innerHTML = html;
+}
+
+var cur = { sc:0, mix:{ A:0, B:0, C:0, members:0 }, step:0, changed:null, mode:'guided' };
+function steps(sc) {
+  var hasMembers = JSON.stringify(sc.versions[0].asg) !== JSON.stringify(sc.versions[1].asg);
+  var l = [ { label:'Old Version fully deployed', mix:{ A:0, B:0, C:0, members:0 } },
+            { label:'Write Zone B first', mix:{ A:0, B:1, C:0, members:0 }, changed:'B' },
+            { label:'… then Zone A', mix:{ A:1, B:1, C:1, members:0 }, changed:'A' },
+            { label:'Instead: write Zone A first', mix:{ A:1, B:0, C:0, members:0 }, changed:'A' } ];
+  if (hasMembers) l.push({ label:'Change ASG members first, NSGs still old', mix:{ A:0, B:0, C:0, members:1 } });
+  l.push({ label:'New Version fully deployed', mix:{ A:1, B:1, C:1, members:1 } });
+  return l;
+}
+function rerender() { if (cur.mode === 'guided') renderGuided(); else renderFree(); }
+function renderTabs() {
+  document.getElementById('tabs').innerHTML = SCENARIOS.map(function (s, i) { return '<button class="' + (cur.mode === 'guided' && i === cur.sc ? 'on' : '') + '" onclick="cur.mode=\'guided\';cur.sc=' + i + ';cur.step=0;go(0)">' + esc(s.title) + (s.safe ? ' ✓' : ' ✗') + '</button>'; }).join('');
+}
+function go(i) { var st = steps(SCENARIOS[cur.sc])[i]; cur.step = i; cur.mix = E.clone(st.mix); cur.changed = st.changed; renderGuided(); }
+function renderGuided() {
+  renderTabs(); var sc = SCENARIOS[cur.sc], el = document.getElementById('scenario');
+  var bs = steps(sc).map(function (s, i) { return '<button class="' + (i === cur.step ? 'primary' : '') + '" onclick="go(' + i + ')">' + (i + 1) + '. ' + esc(s.label) + '</button>'; }).join(' ');
+  el.innerHTML = '<div class="card"><p>' + esc(sc.text) + '</p><p class="' + (sc.safe ? 'ok' : 'bad') + '">' + (sc.safe ? 'Expected: safe in every order.' : 'Expected: an order exists that opens traffic both Versions deny.') + '</p><div class="tabs">' + bs + '</div><div id="g"></div></div>';
+  renderMix(document.getElementById('g'), sc, cur.mix, cur.changed);
+  document.getElementById('state').innerHTML = '';
+}
+function renderFree() {
+  renderTabs(); var sc = SCENARIOS[cur.sc];
+  document.getElementById('free').innerHTML = '<span class="muted">Change set: ' + esc(sc.title) + ' &nbsp;</span>' + E.ZONES.concat(['members']).map(function (k) {
+    return '<button onclick="cur.mix.' + k + '=1-cur.mix.' + k + ';cur.changed=\'' + k + '\';renderFree()">' + (k === 'members' ? 'ASG members' : 'Zone ' + k) + ': ' + sc.versions[cur.mix[k]].label + '</button>'; }).join('');
+  renderMix(document.getElementById('state'), sc, cur.mix, cur.changed);
+}
+document.getElementById('free').innerHTML = '<button onclick="cur.mode=\'free\';renderFree()">Start free play with the selected Change set</button>';
+go(0);
+
+// automatic check
+setTimeout(function () {
+  var sets = [
+    ['Baseline: Zone-to-Zone, CIDR, host, any, ASG objects with fixed members, both postures, IPv6 Zone, outbound Inherited defaults', {}],
+    ['+ Egress posture changes in the Change set', { postureChange:true }],
+    ['+ service tags in Rules', { tags:true }],
+    ['+ Inherited default "inbound from VirtualNetwork"', { inheritIn:true }],
+    ['+ Inherited inbound default and posture changes', { inheritIn:true, postureChange:true }],
+    ['+ Zone removal (Retired NSG)', { retire:true }],
+    ['+ ASG membership changes', { asgChange:true }],
+    ['+ onboarding a legacy NSG', { legacy:true }],
+    ['Control: baseline under ADR 0004 (one-sided deny, every Zone strict)', { adr0004:true }] ];
+  var html = '<table><tr><th>Random Change sets</th><th>tried</th><th>open traffic both Versions deny</th><th>Versions without destination dominance</th></tr>';
+  sets.forEach(function (s, i) { var r = E.randomCheck(s[1], 1500, 1000 + i);
+    html += '<tr><td>' + esc(s[0]) + '</td><td>' + r.trials + '</td><td class="' + (r.changeSetsThatOpen ? 'bad' : 'ok') + '">' + r.changeSetsThatOpen + '</td><td>' + r.versionsWithGaps + '</td></tr>'; });
+  var r3 = E.randomCheck({ postureChange:true }, 500, 77, 3);
+  html += '<tr><td>Baseline with posture changes, three Versions in flight (superseded Deployments)</td><td>' + r3.trials + '</td><td class="' + (r3.changeSetsThatOpen ? 'bad' : 'ok') + '">' + r3.changeSetsThatOpen + '</td><td>' + r3.versionsWithGaps + '</td></tr></table>';
+  html += '<p class="muted">Each Change set is checked against every mix of old and new NSG contents per Zone (and ASG membership where it changes), for every flow. Seeded, so the numbers are stable. The node script <code>check.mjs</code> runs the same check with more trials.</p>';
+  document.getElementById('auto').innerHTML = html;
+}, 30);
+</script>
+</body>
+</html>
