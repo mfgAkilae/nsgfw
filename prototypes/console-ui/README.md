@@ -104,7 +104,7 @@ Built on top, for review:
 - Admin > Environments > a Terraform Environment lists its Data contract files and flags a hand edit.
 - To give the Deployment views a failed and a running Deployment, Versions 1289 (failed in Production, changed by Azure Policy on write) and 1290 (running) were added in front of issue 36's history. Issue 36's numbers moved up by two: kim's conflicting Commit is now 1291.
 
-Prototype assumption: "Preserve behaviour" off means that no Inherited defaults are set, so traffic that only the Azure default rules allowed stops at onboarding; the imported Rules are still placed by the constraint merge.
+Decided after the first pass, 2026-11-10: the map owner kept every layout as built (status strip and history, the three columns of the Deployment view, the Drift list, the onboarding screen) and confirmed the German terms below. "Preserve behaviour" off means that no Inherited defaults are set, so traffic that only the Azure default rules allowed stops at onboarding; the imported Rules are still placed by the constraint merge (ADR 0011 as amended).
 
 How to try it (the dashed flask holds the switches under "Issue 37"):
 
@@ -130,7 +130,7 @@ What to judge:
 4. Terraform: the pull request cards per step and their states.
 5. Drift: one list with severity, actor and state; Overwrite and Adopt per item; the Terraform Overwrite that lists every Drift in the root module.
 6. Onboarding: three columns, "Same for all", the result with notes and merge proposals. Too much on one screen?
-7. German term proposals: Übernehmen (Adopt), Überschreiben (Overwrite), Import-Hinweis, Schritt, ersetzt (superseded), Deployter Stand, Datenvertrag (Data contract), Übergabe (Handover), nicht automatisch übernehmbar, Import-Snapshot, Neu importieren, Snapshot behalten, leer beginnen, Verhalten erhalten. Deployment, Drift, Pull Request and Apply stay English.
+7. German terms (confirmed): Übernehmen (Adopt), Überschreiben (Overwrite), Import-Hinweis, Schritt, ersetzt (superseded), Deployter Stand, Datenvertrag (Data contract), Übergabe (Handover), nicht automatisch übernehmbar, Import-Snapshot, Neu importieren, Snapshot behalten, leer beginnen, Verhalten erhalten. Deployment, Drift, Pull Request and Apply stay English.
 
 Code: `Deployments.tsx`, `DeployView.tsx`, `deploydata.ts` (Deployments); `Drift.tsx`, `driftdata.ts` (Drift); `Onboarding.tsx`, `ImportNote.tsx`, `importdata.ts` (onboarding and Import); `ops37.ts` (flask switches, navigation); `deploy.css`, `drift.css`, `import.css`; `i18n-deploy.ts`, `i18n-drift.ts`, `i18n-import.ts`. The shared files (`Console.tsx`, `Commit.tsx`, `Review.tsx`, `Editor.tsx`, `Inbox.tsx`, `RuleGrid.tsx`, `ZoneGrid.tsx` candidates tab, `SettingsPages.tsx`, `Proto.tsx`) carry small changes marked "issue 37".
 
