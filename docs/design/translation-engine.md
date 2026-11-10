@@ -728,7 +728,7 @@ Prototype key `rebase`: a Change set on Version 5 inserts Rule 9 "app10 → Zone
 
 ## Engine version
 
-Every output carries the engine version, and every Version stores the one that produced its NSG rules ([Grilling: Review round on placement, egress posture and MVP shape][t27], point 20). When a new engine version translates an unchanged Rule base differently, the tool prepares a Change set "re-translation" with the usual Preview, instead of changing NSGs with the next Commit. Prototype key `engine-version`: an engine that writes IPv4 and IPv6 in one NSG rule changes the NSGs of dual and dual2 and nothing in the Rule base. What the next unrelated Commit does while that Change set is open is with [Grilling: Operations: restore, exit, upgrades and exposure][t29].
+Every output carries the engine version, and every Version stores the one that produced its NSG rules ([Grilling: Review round on placement, egress posture and MVP shape][t27], point 20). When a new engine version translates an unchanged Rule base differently, the tool prepares a Change set "re-translation" with the usual Preview, instead of changing NSGs with the next Commit. Prototype key `engine-version`: an engine that writes IPv4 and IPv6 in one NSG rule changes the NSGs of dual and dual2 and nothing in the Rule base. While it is open, other Commits wait in the Environments where it changes something, and an Emergency Commit, a disabled expired Rule and an automatic Adopt take it along ([Grilling: Operations: restore, exit, upgrades and exposure][t29]; [architecture](architecture.md#engine-upgrades)).
 
 The hash function of Step 7, the fill threshold of Step 8 and the address-family split of Step 3 change output, so a change to any of them is a new engine version.
 
@@ -747,7 +747,6 @@ The prototype is a reference for behaviour, with these known shortcuts:
 
 - What a waiting write waits for, and how membership writes are cut: [Grilling: Write order under data-plane lag and split ASG membership writes][t32].
 - How the engine finds Crossing flows at the design target, where the Preview runs, where the Azure inventory is stored, and the package placement of the Import mapping and the Data contract generator: [Grilling: Server internals at the design target][t30].
-- An engine upgrade with an open re-translation Change set: [Grilling: Operations: restore, exit, upgrades and exposure][t29].
 - Deferred checks that can change engine output, each with a nightly integration test and the conservative default described here ([Task: Empirical checks of undocumented Azure behaviour][t24]): IPv4 and IPv6 prefixes in one NSG rule, a service tag inside a prefix list, an ASG on one side with prefixes on the other, the count of prefixes per NSG rule or per NSG, whether the Azure default rules count against 2,000, an outbound deny on an Application Gateway v2 subnet, and ASG membership on IPv6 IP configurations.
 - The field names of the Data contract and the data contract version 1: with the Terraform stage of the increment plan.
 

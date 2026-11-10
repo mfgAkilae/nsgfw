@@ -1,6 +1,6 @@
 # Architecture proposal
 
-Status: draft from [Prototype: Architecture proposal][t26], 2026-11-10. It puts the decisions of the closed tickets and the ADRs into one picture. It decides only what the review round left to it: the tool's own subnets are not onboardable, and the minimum azurerm version is 3.39.0. Every other hole is listed under [Gaps for the map](#gaps-for-the-map) with the ticket that now holds it. The design-package review covers this document. Terms follow [GLOSSARY.md](../../GLOSSARY.md).
+Status: draft from [Prototype: Architecture proposal][t26], 2026-11-10. It puts the decisions of the closed tickets and the ADRs into one picture. It decides only what the review round left to it: the tool's own subnets are not onboardable, and the minimum azurerm version is 3.39.0. Every other hole is listed under [Gaps for the map](#gaps-for-the-map) with the ticket that now holds it. On 2026-11-10 [Grilling: Operations: restore, exit, upgrades and exposure][t29] decided gaps 2 to 7, 11 and 12. The design-package review covers this document. Terms follow [GLOSSARY.md](../../GLOSSARY.md).
 
 ## What nsgfw is
 
@@ -70,13 +70,13 @@ Jobs go through a durable queue in PostgreSQL (pg-boss behind the tool's own job
 | Deployment | after a Commit, at a scheduled time, on Retry, as an Emergency Commit, as a catch-up after a re-home. Holds a lease with a heartbeat; another worker takes over when it expires | [Grilling: Deployment execution and failure handling][t16] |
 | Terraform stage watch | polls the pull request state, then reads Azure until it matches the target or the apply timeout ends (default 2 hours) | [Grilling: Terraform mode workflow][t17] |
 | Drift poll | every 5 minutes per Environment (a setting): Resource Graph `resourcechanges` for watched resources, each hit confirmed with a GET. Also refreshes Security layers and compares Data contract files on the base branch | [Grilling: Import and drift handling][t18], [Grilling: Policy and security-layer visibility][t21] |
-| Full reconcile | every 24 hours, all tool resources | [Grilling: Import and drift handling][t18] |
+| Full reconcile | every 24 hours, all tool resources; also the Recovery check, which runs at startup too ([Backup and recovery](#backup-and-recovery)) | [Grilling: Import and drift handling][t18], [Grilling: Operations: restore, exit, upgrades and exposure][t29] |
 | Permission check | at Environment onboarding, at Zone onboarding, daily, before the first write of every Deployment | [ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) |
-| Rule expiry | notice to the owner 14 days ahead; at expiry the tool's own Commit disables the allow Rule | [Grilling: Change sets, concurrency and approval][t15] |
+| Rule expiry | notice to the owner 14 days ahead; at expiry the tool's own Commit disables the allow Rule, also while a Re-translation is open ([Engine upgrades](#engine-upgrades)) | [Grilling: Change sets, concurrency and approval][t15] |
 | Prepared Change sets | regenerated when Azure changes: Coverage changes, stale member IPs, External ASG object members, expired deny Rules | [Grilling: Change sets, concurrency and approval][t15] |
-| Member IP adoption | removes a deleted ASG member from its object, deny Rules included, and adopts a changed member IP, on IP-fallback NSGs and without Approval | [Grilling: Review round on placement, egress posture and MVP shape][t27], [Prototype: Translation engine worked examples][t22] |
+| Member IP adoption | removes a deleted ASG member from its object, deny Rules included, and adopts a changed member IP, on IP-fallback NSGs and without Approval, also while a Re-translation is open | [Grilling: Review round on placement, egress posture and MVP shape][t27], [Prototype: Translation engine worked examples][t22] |
 | Lost-update check | after membership writes, Resource Graph `resourcechanges` for another writer between GET and PUT, unless `If-Match` works | [Grilling: Deployment execution and failure handling][t16] |
-| Audit chain verify | reports a broken hash chain | [Grilling: Access, roles and audit][t19] |
+| Audit chain verify | reports a broken hash chain; accepts a fork only at a recovery entry | [Grilling: Access, roles and audit][t19], [ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md) |
 | Flow data | aggregated, cached queries against the Environment's workspace for the Flow view and hits | [Research: Traffic Analytics access for the Flow view and hits][t28] |
 | Certificate expiry | warns 30 days ahead in the admin view and the health endpoint | [Grilling: Hosting, identity and least-privilege role][t20] |
 
@@ -171,7 +171,7 @@ The operator grants, the tool verifies. The tool never holds `Microsoft.Authoriz
 | `Microsoft.Network/networkWatchers/flowLogs/read` | flow log targets, filters and workspace |
 | `Microsoft.OperationalInsights/workspaces/read` | the Environment's flow-data workspace |
 | `Microsoft.OperationalInsights/workspaces/query/read` | query the workspace |
-| `Microsoft.OperationalInsights/workspaces/query/NTANetAnalytics/read`, or the data action `Microsoft.OperationalInsights/workspaces/tables/data/read` with a table-name condition | read `NTANetAnalytics` (which of the two is open, see [gap 7](#gaps-for-the-map)) |
+| data action `Microsoft.OperationalInsights/workspaces/tables/data/read`, limited to `NTANetAnalytics` by a condition on every Reader assignment | read `NTANetAnalytics`. The legacy table action `workspaces/query/NTANetAnalytics/read` stays out: Microsoft calls it no longer recommended, and `DataActionsOnly` workspaces ignore it ([ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) as amended by [Grilling: Operations: restore, exit, upgrades and exposure][t29]) |
 
 The first 23 rows come from [Grilling: Hosting, identity and least-privilege role][t20], the four policy reads from [Grilling: Policy and security-layer visibility][t21], the flow-data reads from [Research: Traffic Analytics access for the Flow view and hits][t28].
 
@@ -214,7 +214,7 @@ The tool polls the providers. It needs no inbound webhook, so it also works on-p
 
 ### Key Vault
 
-One vault per instance, Azure RBAC model. The Tool identity is Key Vault Secrets User. The tool never writes secrets: a setting names the secret, and the operator or Terraform stores the value. The vault is needed only when a configured feature needs a secret: the GitHub App private key, the SMTP password, the on-premises runtime database password.
+One vault per instance, Azure RBAC model. The Tool identity is Key Vault Secrets User. The tool never writes secrets: a setting names the secret, and the operator or Terraform stores the value. The vault is needed only when a configured feature needs a secret: the GitHub App private key, the SMTP password, an alert webhook URL, the on-premises runtime database password.
 
 ### Database principals
 
@@ -242,7 +242,7 @@ The runtime role owns no table. It has DML on domain tables and only INSERT and 
 | the SMTP server | e-mail, if configured |
 | the alert webhook host | alert channel, if a webhook is configured |
 
-The image registry the platform pulls from is not on this list yet ([gap 11](#gaps-for-the-map)).
+The platform, not the app, pulls the image: from `ghcr.io` and `pkg-containers.githubusercontent.com`, or from a registry the operator owns ([Image source](#image-source)).
 
 ## Hosting
 
@@ -272,10 +272,16 @@ The default is private: internal ingress, PostgreSQL and Key Vault only through 
 
 Two Terraform modules live in `infra/`:
 
-- **`instance`** creates the Container Apps environment, the app and the migrate job, both user-assigned identities, PostgreSQL, Key Vault, Log Analytics for the audit JSON lines, the app registration with `InstanceAdmin`, delegated scope, Azure CLI pre-authorization and federated credential, the Graph grants when allowed, and the custom role definitions.
-- **`environment-access`** creates the Reader, Writer and optional ASG Writer assignments of one Environment. That Environment's owner runs it, so the `instance` runner needs no owner rights on every Environment.
+- **`instance`** creates the Container Apps environment, the app and the migrate job, both user-assigned identities, PostgreSQL, Key Vault, Log Analytics for the audit JSON lines, the app registration with `InstanceAdmin`, delegated scope, Azure CLI pre-authorization and federated credential, the Graph grants when allowed, and the custom role definitions. It passes the tool's own subnets and Tool paths to the app as configuration ([No self-lockout](#no-self-lockout)), sets the PostgreSQL backups ([Backup and recovery](#backup-and-recovery)) and takes the image reference ([Image source](#image-source)).
+- **`environment-access`** creates the Reader, Writer and optional ASG Writer assignments of one Environment. Every Reader assignment carries the condition that limits log reads to `NTANetAnalytics`. When the Environment's flow-data workspace lies outside the Environment, the module takes its resource ID and adds a Reader assignment on that workspace alone ([ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) as amended by [Grilling: Operations: restore, exit, upgrades and exposure][t29]). That Environment's owner runs it, so the `instance` runner needs no owner rights on every Environment.
 
 Upgrade order: Terraform starts the migrate job on every image change before the new revision rolls out. A Container Apps Job can carry a user-assigned identity; init containers cannot in the environments the tool uses.
+
+### Image source
+
+Releases are published to GHCR. The `instance` module takes the full image reference, pinned by digest, because a tag can move at the registry and a digest cannot. Its default is the GHCR image of the module's own release. Optionally the module creates an Azure Container Registry with an artifact cache rule for the nsgfw repository on `ghcr.io`, and the Container App pulls from it with a user-assigned managed identity that holds AcrPull. A private endpoint on that registry needs the Premium SKU and is created only on request. Without the registry, the egress must allow `ghcr.io` and `pkg-containers.githubusercontent.com`. The Compose example on-premises takes the same image reference ([Grilling: Operations: restore, exit, upgrades and exposure][t29]).
+
+Sources, retrieved 2026-11-10: the [artifact cache](https://learn.microsoft.com/en-us/azure/container-registry/artifact-cache-overview) supports GitHub Container Registry with and without credentials on every SKU (page date 2026-06-12); [private endpoints need Premium](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-private-link) (2026-06-12); Container Apps [pulls with a managed identity](https://learn.microsoft.com/en-us/azure/container-apps/managed-identity-image-pull) (2026-10-08); GitHub lists the [hosts for packages](https://docs.github.com/en/actions/reference/runners/self-hosted-runners). The Container Apps [firewall page](https://learn.microsoft.com/en-us/azure/container-apps/use-azure-firewall) (2026-05-19) lists no GHCR host.
 
 ### On-premises
 
@@ -295,6 +301,7 @@ The first stage that ships ([Grilling: Review round on placement, egress posture
 - role definitions that can sit on a subscription;
 - a guided installation: a script that runs the `instance` and `environment-access` modules;
 - an alert channel as part of the setup, and the proposal to switch on automatic Overwrite of association Drift.
+- the `nsgfw-version` tag and Recovery mode, because recovery detection sees only resources that carry the tag ([ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md)).
 
 Terraform mode, the read filter by Coverage, Pre-check waivers, Rule warnings from Security layers, dual-stack and ASG objects with tool-written membership follow as later MVP stages. Until the last of these ships, the small profile needs no `nsgfw ASG Writer`.
 
@@ -410,17 +417,19 @@ Both modes collect evidence before an NSG or ASG is adopted in place or a subnet
 
 If the other IaC keeps writing, it shows up as Drift with its actor.
 
+An NSG or ASG tagged by another Instance goes through the same Handover. The checklist item is that the other Instance is shut down or no longer writes there, and the tool then rewrites the marker tag ([ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md)).
+
 ### Drift
 
 The Drift poll reads `resourcechanges` every 5 minutes and confirms each hit with a GET, because Resource Graph is eventually consistent. A full reconcile runs every 24 hours. Drift is measured against the Deployed state. A person decides every Drift through Adopt or Overwrite; Overwrite needs no Approval. One exception: per Environment, an admin can let the tool Overwrite a removed or changed subnet association and removed marker tags on its own. It stops and reports the writer when the same Drift comes back ([Grilling: Import and drift handling][t18], [Grilling: Review round on placement, egress posture and MVP shape][t27], point 15). In Terraform mode, every apply reverts Drift in its root module anyway.
 
 ### Flow view and hits
 
-The operator enables VNet flow logs and Traffic Analytics; the tool only reads. The workspace is an Environment setting. The worker queries `NTANetAnalytics` at workspace scope and caches hits per Rule with the time of the newest flow data, mapped through the Rule ID in `AclRule`. Data is about 1 to 2 hours old. The query limits (200 requests per 30 seconds, 5 concurrent) apply to the whole instance, because one Tool identity runs every query, so the tool aggregates and caches. A query that returns no rows is not "0 hits" until the permission check (`Prefer: include-permissions=true`) has passed. Without flow data the hits column shows "—". NSG flow logs retire on 2027-09-30, so only VNet flow logs are supported ([Research: Traffic Analytics access for the Flow view and hits][t28]).
+The operator enables VNet flow logs and Traffic Analytics; the tool only reads. The workspace is an Environment setting. The worker queries `NTANetAnalytics` at workspace scope and caches hits per Rule with the time of the newest flow data, mapped through the Rule ID in `AclRule`. Data is about 1 to 2 hours old. The query limits (200 requests per 30 seconds, 5 concurrent) apply to the whole instance, because one Tool identity runs every query, so the tool aggregates and caches. A query that returns no rows is not "0 hits" until the permission check (`Prefer: include-permissions=true`) has passed. Without flow data the hits column shows "—". The workspace may lie outside every Environment, with a Reader assignment on the workspace alone ([ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) as amended by [Grilling: Operations: restore, exit, upgrades and exposure][t29]). NSG flow logs retire on 2027-09-30, so only VNet flow logs are supported ([Research: Traffic Analytics access for the Flow view and hits][t28]).
 
 ### Notifications and the alert channel
 
-The in-app inbox reaches the people the tickets name: committer, Change set owner, admins, approvers of Affected Zones and the Rule owner, by severity. The alert channel, e-mail or a webhook such as Teams, is part of the setup, and the health view warns while none is configured.
+The in-app inbox reaches the people the tickets name: committer, Change set owner, admins, approvers of Affected Zones and the Rule owner, by severity. The alert channel, e-mail or a webhook, is part of the setup, and the health view warns while none is configured. Webhooks come in two formats: Teams Workflows, an Adaptive Card in `attachments` for the trigger "When a Teams webhook request is received", and generic JSON. Every webhook URL is a secret in Key Vault, and the setting names the secret ([Grilling: Operations: restore, exit, upgrades and exposure][t29]). A Workflows URL carries its signature (`sig`), and with the trigger open to "Anyone", whoever has the URL can post. The Office 365 connectors behind the old Teams incoming webhooks were retired in May 2026. A workflow belongs to one user and is orphaned when that user leaves, so the setup guide advises a co-owner. Sources, retrieved 2026-11-10: [incoming webhooks](https://learn.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/add-incoming-webhook) (page date 2026-10-28), [Teams connector](https://learn.microsoft.com/en-us/connectors/teams/) (2026-11-05), [regenerate the SAS key](https://learn.microsoft.com/en-us/power-automate/regenerate-sas-key) (2026-10-29).
 
 ### Audit log and export
 
@@ -428,7 +437,11 @@ The audit table is append-only for the runtime role, and every entry carries the
 
 ### Health endpoint
 
-It reports missing Azure permissions per Environment and Zone, missing Graph permissions, certificate expiry, a schema older than the app expects, and a missing alert channel. The admin view shows the same ([Grilling: Hosting, identity and least-privilege role][t20], point 29). Who may read this detail is open ([gap 6](#gaps-for-the-map)).
+Two anonymous probes answer on a health port of their own, which the ingress does not expose. `/livez` answers while the process runs and checks no dependency. `/readyz` answers when the database is reachable and the schema matches. Both return only a status code.
+
+The detail reports missing Azure permissions per Environment and Zone, missing Graph permissions, certificate expiry, a schema older than the app expects, and a missing alert channel ([Grilling: Hosting, identity and least-privilege role][t20], point 29). It is in the admin view and in the API for every Role in the instance Scope, viewer and up, so a monitoring service principal needs no admin rights. On-premises the Compose health check calls the health port inside the container ([Grilling: Operations: restore, exit, upgrades and exposure][t29]).
+
+Microsoft documents probes on more than one port in one container (the example uses 8080 and 8081), custom probe headers, and that port 36985 is reserved. It does not say whether probes pass through ingress, IP restrictions or built-in authentication ([health probes](https://learn.microsoft.com/en-us/azure/container-apps/health-probes), page date 2026-03-25; [ingress](https://learn.microsoft.com/en-us/azure/container-apps/ingress-overview), 2026-10-22; both retrieved 2026-11-10). A nightly integration test checks the health port under internal ingress and under public ingress with an IP filter. The fallback is the same two probes, status only, on the app port.
 
 ## Operations
 
@@ -438,19 +451,27 @@ It reports missing Azure permissions per Environment and Zone, missing Graph per
 
 - These subnets join the subnets the tool shows read-only and never onboards, next to SQL Managed Instance, Databricks, forwarding subnets and service-maintained NSGs. They can be used as subnet Address objects. Their NSGs stay with the operator, for example in the `instance` module.
 - No new engine behaviour. Rejected: a fixed exception, where the tool's subnets can be Zones and the engine puts fixed NSG rules for the tool's own paths above every Rule. Nothing else in the design puts unchangeable rules into a Zone.
-- The Preview still warns when a Commit closes the tool's path to Azure or to its database. That path can run through other Zones, for example a custom DNS server's subnet or a shared private-endpoint subnet. To refuse onboarding and to warn, the tool must know its own subnets and the addresses it depends on. How it learns them is open in [Grilling: Operations: restore, exit, upgrades and exposure][t29].
+- A Commit can still close a Tool path: a flow from the tool's source prefixes to one of its dependencies. That flow can run through other Zones, for example to a custom DNS server's subnet or a shared private-endpoint subnet. The tool evaluates every Tool path before and after the Change set with the Rule base evaluation function. If one closes, the Preview flags it, and Submit and Commit, an Emergency Commit included, need the committer's explicit confirmation with a reason, which goes into the audit log. It is no validation error, because an admin may move the tool on purpose.
+- The tool learns its own subnets and Tool paths from two sources. The `instance` module passes what it knows as configuration: the Container Apps environment's subnet and prefix, the private-endpoint subnets and IPs of PostgreSQL and Key Vault, and the DNS servers of the tool's VNet. The UI shows these read-only, marked as coming from the deployment. Instance admins add further dependencies with address, protocol and port, such as a proxy, an on-premises egress or another DNS server. These edits are audited and need no Change set, because they change no NSG. On-premises the operator fills the configuration by hand ([Grilling: Operations: restore, exit, upgrades and exposure][t29]).
 
 ### Engine upgrades
 
-Every Version stores its engine version. When an upgrade changes the engine's output for an unchanged Rule base, the tool prepares a Change set "re-translation" instead of changing NSGs with the next Commit and without Approval. What the next unrelated Commit does while that Change set is still open is not decided ([gap 3](#gaps-for-the-map)).
+Every Version stores its engine version, and one image holds one engine version. When an upgrade changes the engine's output for an unchanged Rule base, the tool prepares a Re-translation: a Change set without edits, whose Affected Zones are the Zones whose resources it changes. Admins and the approvers of those Zones get an alert. While it is open ([Grilling: Operations: restore, exit, upgrades and exposure][t29]):
 
-### Backup and restore
+- Other Change sets can be edited, submitted and approved. Their Commit waits until the Re-translation commits, but only when they change something in an Environment where the Re-translation changes something.
+- Their Preview compares with the base Version as the new engine translates it, so it shows only their own changes and stays the same at the Rebase after the Re-translation commits.
+- An Emergency Commit, the tool's own Commit that disables an expired allow Rule, and an automatic Adopt (a deleted ASG member, a changed member IP) do not wait. They take the Re-translation along in the Environments they touch, and its Affected Zones there need Approval afterwards, as for an Emergency Commit.
 
-PostgreSQL holds all state: the Rule base, Versions, Change sets, the Deployed state, Deployments, the audit log, settings, Role assignments and sessions. Key Vault holds secrets the operator stored. The Terraform state of the tool's own infrastructure is the operator's. The instance ID in the `nsgfw-managed-by` marker tag ties the tool's Managed NSGs to this instance ([Grilling: Zone onboarding and NSG lifecycle][t11], point 20).
+Rejected: the next Commit carrying the Re-translation with its Approvals, because an unrelated change would suddenly need many approvers; committing a Re-translation that keeps every decision without Approval, because it needs an equivalence check over all flows; and blocking every Commit of the Instance, Emergency Commits included.
 
-- **Azure:** the backups of Azure Database for PostgreSQL flexible server with point-in-time restore. Retention and geo-redundancy are server settings in the `instance` module. Their values and limits still need a check against Microsoft documentation.
+### Backup and recovery
+
+PostgreSQL holds all state: the Rule base, Versions, Change sets, the Deployed state, Deployments, the audit log, settings, Role assignments and sessions. Key Vault holds secrets the operator stored. The Terraform state of the tool's own infrastructure is the operator's. The Instance ID in the `nsgfw-managed-by` marker tag ties the tool's Managed NSGs and Managed ASGs to this Instance ([Grilling: Zone onboarding and NSG lifecycle][t11], point 20). It lives in the database and travels with every backup ([ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md)).
+
+- **Azure:** the backups of Azure Database for PostgreSQL flexible server. The `instance` module sets 35 days of retention, the maximum, and geo-redundant backup storage. Retention ranges from 7 to 35 days and can change later. Geo-redundancy can be chosen only when the server is created, so it is on by default and a variable turns it off. A point-in-time restore always creates a new server with a new name and copies neither private endpoints, firewall rules nor server parameters; geo-restore goes to the paired region. Recovery is therefore a runbook through the module: the restore source and time as variables, then a new server with its private endpoint, Entra admin and parameters, then the migrate job. Microsoft does not document whether the Entra admin carries over, so the module sets it again. There is no long-term retention through Azure Backup; the audit export is the long-term store. Sources, retrieved 2026-11-10: [backup and restore concepts](https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore) (page date 2026-07-16); `azurerm_postgresql_flexible_server` with `backup_retention_days`, `geo_redundant_backup_enabled` (a change forces a new server) and `create_mode = "PointInTimeRestore"` ([provider docs](https://github.com/hashicorp/terraform-provider-azurerm/blob/main/website/docs/r/postgresql_flexible_server.html.markdown)).
 - **On-premises:** the operator's PostgreSQL backups.
-- **After a restore** the database is older than Azure. Versions and audit entries after the restore point are gone from the database; the SIEM export still holds the audit tail. Every resource written since then differs from the restored Deployed state and shows as Drift. How the tool behaves on its first start after a restore is not decided ([gap 4](#gaps-for-the-map)).
+- **After a recovery** the database is older than Azure. Versions and audit entries after the restore point are gone from the database; the SIEM export still holds the audit tail. Every Managed NSG and Managed ASG carries `nsgfw-version`, the Version whose Deployment last changed its content. At startup and in the daily reconcile the tool compares the highest value under its Instance ID with its newest Version. Above it, the Instance enters Recovery mode. So does an Instance whose Tool identity or app registration differs from the one its database recorded; an admin then chooses Move or Copy.
+- **In Recovery mode** every session ends and only holders of `InstanceAdmin` sign in. Nothing reaches Azure except single Overwrites by an admin. The tool sorts the differences into Drift, Managed resources of this Instance that the database does not know, and known resources missing in Azure. The admin resolves them through Overwrite, Adopt and a new onboarding, and ends the mode with a reason at any time. ID sequences jump past the highest values in Azure plus 10,000, and the audit chain continues with a recovery entry, which the export shows as a fork ([ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md)).
 
 ### Exit
 
@@ -458,7 +479,8 @@ Managed NSGs are plain NSGs and keep working without the tool. Stopping it chang
 
 - ARM Environments keep their Managed NSGs, Retired NSGs, Managed ASGs and memberships. What is left of the tool: the marker tags, the NSG rule names with Rule IDs, and the role assignments and definitions, which `environment-access` and `instance` remove.
 - Terraform Environments keep the HCL and the last Data contract in their repositories. The team can keep applying them as they are.
-- A new instance gets a new instance ID. It treats NSGs tagged by the old instance as foreign and blocks onboarding of their subnets. A move to a new instance therefore needs a step that is not designed yet ([gap 5](#gaps-for-the-map)).
+- A new installation with a recovered or moved database is the same Instance. One with an empty database is a new Instance, and it takes over the old Instance's NSGs and ASGs through a Handover when their subnets are onboarded. There is no release step ([ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md)).
+- Every Version can be exported as one documented, versioned JSON document: Rules, Objects, Zones, Instance settings and the generated NSG rules, as a download in the UI and through the API. The MVP has no import ([Grilling: Operations: restore, exit, upgrades and exposure][t29]).
 
 ### What NSGs do not do
 
@@ -473,20 +495,20 @@ A team that needs these keeps a firewall in the path. nsgfw does not show Azure 
 
 ## Gaps for the map
 
-Questions this draft found. Two were settled in [Prototype: Architecture proposal][t26]; the rest went to [Grilling: Operations: restore, exit, upgrades and exposure][t29] (gaps 2 to 7, 11, 12) and [Grilling: Server internals at the design target][t30] (gaps 8, 9, 10, 13, 15).
+Questions this draft found. Two were settled in [Prototype: Architecture proposal][t26]. The rest went to [Grilling: Operations: restore, exit, upgrades and exposure][t29] (gaps 2 to 7, 11, 12), which decided them on 2026-11-10, and [Grilling: Server internals at the design target][t30] (gaps 8, 9, 10, 13, 15).
 
 1. **Self-lockout.** Decided: the tool's own subnets are not onboardable ([No self-lockout](#no-self-lockout)).
-2. **The tool's own addresses.** Where the tool learns its own source prefixes and the addresses it depends on (PostgreSQL, Key Vault, DNS servers, on-premises egress) for the self-lockout warning in the Preview. An instance setting that the `instance` module fills?
-3. **Engine upgrade with an open re-translation Change set.** Does the next unrelated Commit block until re-translation commits, carry the re-translation and need its Approvals, or does something else happen? One image holds one engine version.
-4. **First start after a database restore.** A Drift flood on every resource written since the restore point, lost Versions and a shorter audit chain. Should the tool start in a restricted mode until an admin confirms? Backup retention facts need a check against Microsoft documentation.
-5. **Exit and reinstall.** The instance ID decides which NSGs belong to an instance. Is it carried over (a Terraform variable, part of the backup), or is there a release step that removes the marker tags? Is there a documented export of the Rule base for exit?
-6. **Health endpoint exposure.** Container Apps probes call it without sign-in, and with public ingress the internet can too. Does it report the permission and certificate detail to everyone, or is there an anonymous liveness and readiness check plus an authenticated detail view?
-7. **Flow-data workspace outside Environments.** A central Log Analytics workspace often sits in a management subscription. "Reads stay inside Environments" ([ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md)) then means that subscription joins an Environment without Zones. Is that the rule, and does `environment-access` take the workspace as input? Which table permission does the Reader use: the legacy `query/NTANetAnalytics/read` action or the data action with a condition?
+2. **The tool's own addresses.** Decided: the `instance` module passes the tool's subnets and Tool paths as configuration, admins add more, and closing a Tool path needs a confirmation with a reason ([No self-lockout](#no-self-lockout)).
+3. **Engine upgrade with an open re-translation Change set.** Decided: other Commits wait in the Environments where it changes something; Emergency Commits, expiry and automatic Adopt take it along ([Engine upgrades](#engine-upgrades)).
+4. **First start after a database restore.** Decided: a version tag shows that the database is older than Azure, and the Instance enters Recovery mode ([Backup and recovery](#backup-and-recovery), [ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md)).
+5. **Exit and reinstall.** Decided: the Instance ID lives in the database, another Instance's NSGs go through a Handover, and every Version exports as JSON ([Exit](#exit)).
+6. **Health endpoint exposure.** Decided: anonymous probes with a status code only on a health port of their own, the detail for every Role in the instance Scope ([Health endpoint](#health-endpoint)).
+7. **Flow-data workspace outside Environments.** Decided: a Reader assignment on the workspace alone, and the data action with a condition on `NTANetAnalytics` ([ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) as amended).
 8. **Package placement** of the database layer, the Data contract generator, the Git provider interface, the Import mapping and constraint merge, and the notification channels. [Grilling: Tech stack and repository architecture][t10] left the first two to later tickets, which did not place them.
 9. **Throttling across workers.** The token bucket per subscription and region and the per-resource limits live in one process today. With separate `worker` containers, do they move into PostgreSQL? And does ARM mode serialize subnet writes per VNet, as `locks` does in the default HCL?
 10. **Cadences** not set yet: the audit chain verify, the flow-data queries for hits, and the refresh of service-tag prefixes.
-11. **Image source.** Images are published to GHCR. Does a private Azure setup pull from `ghcr.io` through its egress, or does the `instance` module mirror into a registry the operator owns?
-12. **Webhook URL as a secret.** A Teams webhook URL carries its own credential. Following the Key Vault rule, it goes into Key Vault. Confirm.
+11. **Image source.** Decided: an image reference pinned by digest, optionally through a registry with an artifact cache ([Image source](#image-source)).
+12. **Webhook URL as a secret.** Decided: every webhook URL goes into Key Vault ([Notifications and the alert channel](#notifications-and-the-alert-channel)).
 13. **Preview cost at the design target.** Where the Preview runs (in `api` on the request, or as a worker job) and how long it may take for 10,000 Rules and 20,000 Zones, together with the open question of finding Crossing flows at that size.
 14. **Reason text for `serviceTagDetails/read`.** Corrected in the Reader table: the prefixes serve the Security layer overlap warnings and the later packet tracer, because service tags have no Coverage.
 15. **Azure inventory store.** The engine reads an inventory snapshot (VNets, peerings, subnets, prefixes, network interfaces, ASG members). The data-model fog on the map does not list where that inventory is stored and refreshed.
