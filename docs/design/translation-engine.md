@@ -507,7 +507,7 @@ A later Change set that sets app to strict affects only app, although two outbou
 
 A Deployment plans from the Deployed state to the target ([ADR 0018](../adr/0018-write-order-from-dominance-gaps.md)). The plan is a set of writes and a set of edges "this write before that write".
 
-**Writes.** One whole-NSG write for every Managed NSG or Retired NSG whose content differs, one write per new or deleted Managed ASG, one subnet write per new association or swap, and one write per network interface or private endpoint whose membership changes. A deleted network interface needs no write.
+**Writes.** One whole-NSG write for every Managed NSG or Retired NSG whose content differs, one write per new or deleted Managed ASG, one subnet write per new association or swap, and one or two writes per network interface or private endpoint whose membership changes, one per member step. A deleted network interface needs no write.
 
 **Edges.**
 
@@ -521,15 +521,15 @@ A Deployment plans from the Deployed state to the target ([ADR 0018](../adr/0018
    | any other combination | | | | none |
 
    Each side is evaluated with the function above. Where a tag decides, the engine evaluates both cases per NSG and takes the edges of all cases together.
-3. **Member steps.** A member change that only closes traffic under the Deployed NSG contents goes before every NSG write. A member change that only opens traffic under the target NSG contents goes after every NSG write. A change that fits neither as one write is split into two writes on the same network interface: it leaves ASGs first and joins ASGs last. The Crossing flows of point 2 are computed against the members as they are after the first step.
+3. **Member steps.** The engine plans membership as atoms: one IP configuration, or one private endpoint, joining or leaving one Managed ASG. Azure may apply the atoms of a step in any combination, inside one write and across parallel writes ([Task: Empirical checks of undocumented Azure behaviour][t24], T5). An atom that, applied alone to the Deployed members, only closes traffic under the Deployed NSG contents goes before every NSG write. Every other atom goes after every NSG write. A step is valid only if every combination of its atoms passes: before the NSG writes no combination allows a flow that the Deployed state denies, and after them no combination allows a flow that the target denies. For a flow, only the atoms of its two endpoints count. The atoms of one network interface in one step go into one write. The Crossing flows of point 2 are computed against the members as they are after the first step.
 
-**Not orderable.** A cycle among the Crossing-flow edges, or a member change that fits no step even when split, fails validation. The Preview names the flows, and the fix is to split the Change set into two Commits.
+**Not orderable.** A cycle among the Crossing-flow edges, or a member step that fails in some combination of its atoms, fails validation. The Preview names the flows, and the fix is to split the Change set into two Commits.
 
-**Order.** Writes without an edge between them run in any order, in parallel where the write budget allows. A failed write is retried on its own. Only the writes with an edge from it wait, in later Deployments too, because every Deployment plans its edges from the Deployed state.
+**Order.** Writes without an edge between them run in any order, in parallel where the write budget allows. A write behind a Crossing-flow edge or behind a member-step boundary waits until the write before it has reported `Succeeded` and the Settle time (instance setting, 10 s by default) has passed. `Succeeded` alone is not enough: traffic that a write closed still passed up to 0.22 s after an NSG PUT and 0.75 s after a network interface write reported it (T4). Dependency edges wait for `Succeeded` only. A failed write is retried on its own. Only the writes with an edge from it wait, in later Deployments too, because every Deployment plans its edges from the Deployed state.
 
-Two assumptions of this plan are open again. [Task: Empirical checks of undocumented Azure behaviour][t24] measured that `Succeeded` is not a data-plane barrier (T4) and that one network interface write that swaps ASGs is not applied as a whole (T5). What a waiting write waits for, and how membership writes are cut, is open in [Grilling: Write order under data-plane lag and split ASG membership writes][t32]. One whole-NSG PUT took effect as a whole (T2), and a rejected PUT applied nothing (T3).
+The plan assumes that one whole-NSG PUT takes effect as a whole (T2) and that a rejected PUT applies nothing (T3), as measured, and that one subnet write that swaps the NSG takes effect as a whole, which [Task: Empirical check of subnet NSG swaps and private endpoint ASG writes][t33] measures.
 
-How the engine finds Crossing flows at the design target is open in [Grilling: Server internals at the design target][t30]. The prototype tests one address per range segment and one port per port segment, for pairs of changed Zones only.
+How the engine finds Crossing flows and runs the combination test at the design target is open in [Grilling: Server internals at the design target][t30]. The prototype tests one address per range segment and one port per port segment, for pairs of changed Zones only. When no deny NSG rule references the ASGs of a flow's atoms, the states before and after a step suffice.
 
 #### Example 11: A Crossing flow, and a cycle
 
@@ -576,9 +576,11 @@ Prototype key `members`. Shows [ADR 0018](../adr/0018-write-order-from-dominance
 | 3 | vm-app1-nic joins asg-batch-spoke1 | only opens under the target: mssql from 10.1.2.4 into db |
 | 3 | delete Managed ASG asg-admins-spoke1 | its last member has left, and no NSG rule references it |
 
-Rule 1 now has no effect, because admins is empty. Affected Zones: db (Rules 1, 2 and 3), web and app (their ASG members).
+Rule 1 now has no effect, because admins is empty. Affected Zones: db (Rules 1, 2 and 3), web and app (their ASG members). Step 2 starts a Settle time after step 1 reports `Succeeded`, and step 3 a Settle time after step 2, so this Deployment waits 20 s by default.
 
-Another Change set moves vm-web2 from batch to admins. As one write it closes mssql and opens rdp, so it fits neither step. The engine splits it: vm-web2-nic leaves asg-batch-spoke1 in the first step and joins asg-admins-spoke1 in the last. In between the network interface is in neither ASG, which only closes.
+Another Change set moves vm-web2 from batch to admins: two atoms. Leaving asg-batch-spoke1 alone only closes mssql, so it goes into the first step. Joining asg-admins-spoke1 opens rdp, so it goes into the last. In between the network interface is in neither ASG, which only closes. One write that held both atoms would have passed through "in both" or "in neither" in an order Azure picks.
+
+If admins and batch were both denied into db above "Zone web → Zone db any allow", leaving batch first would open db to vm-web2 through that allow. Leaving opens and joining only closes, so the order turns around: vm-web2-nic joins asg-admins-spoke1 in the first step and leaves asg-batch-spoke1 in the last, and in between it is in both ASGs, which stays denied.
 
 #### Example 14: The first Commit of an NSG adopted in place, and a failed write
 
@@ -740,13 +742,13 @@ The prototype is a reference for behaviour, with these known shortcuts:
 - It puts the deletion of a Managed ASG into the first pull request step. The decided rule is the last pull request ([ADR 0010](../adr/0010-terraform-mode-data-contract-and-azure-observation.md)).
 - It models network interfaces only, no private endpoints.
 - Its Data contract field names, NSG names and resource groups are placeholders.
-- It checks the member steps with one ASG object per network interface. A network interface in several ASG objects changes several memberships in one write ([ADR 0018](../adr/0018-write-order-from-dominance-gaps.md), consequences).
+- It checks the member steps with one ASG object per network interface, classifies each network interface's change as a whole with the other network interfaces at their Deployed or target members, and splits a change only as leave first, join last. The decided rule plans single atoms by their own effect and tests every combination of a step's atoms ([ADR 0018](../adr/0018-write-order-from-dominance-gaps.md)). The difference matters only with deny Rules on ASG objects or with several ASG objects per network interface.
 - Its `engine.js` carries three of the four decisions from the status line, since the commit that came with this document: the name hash of 8 characters, the stricter test for a deny that is left out, and `AzureLoadBalancer` as the documented address. The fourth, the HCL rule, has no counterpart in the prototype.
 
 ## Open points
 
-- What a waiting write waits for, and how membership writes are cut: [Grilling: Write order under data-plane lag and split ASG membership writes][t32].
-- How the engine finds Crossing flows at the design target, where the Preview runs, where the Azure inventory is stored, and the package placement of the Import mapping and the Data contract generator: [Grilling: Server internals at the design target][t30].
+- Whether one subnet write that swaps the NSG takes effect as a whole, and the lag and ASG swaps of private endpoint writes: [Task: Empirical check of subnet NSG swaps and private endpoint ASG writes][t33]. The write order and the member steps themselves were decided in [Grilling: Write order under data-plane lag and split ASG membership writes][t32].
+- How the engine finds Crossing flows and runs the combination test of the member steps at the design target, where the Preview runs, where the Azure inventory is stored, and the package placement of the Import mapping and the Data contract generator: [Grilling: Server internals at the design target][t30].
 - An engine upgrade with an open re-translation Change set: [Grilling: Operations: restore, exit, upgrades and exposure][t29].
 - Deferred checks that can change engine output, each with a nightly integration test and the conservative default described here ([Task: Empirical checks of undocumented Azure behaviour][t24]): IPv4 and IPv6 prefixes in one NSG rule, a service tag inside a prefix list, an ASG on one side with prefixes on the other, the count of prefixes per NSG rule or per NSG, whether the Azure default rules count against 2,000, an outbound deny on an Application Gateway v2 subnet, and ASG membership on IPv6 IP configurations.
 - The field names of the Data contract and the data contract version 1: with the Terraform stage of the increment plan.
@@ -763,4 +765,5 @@ The prototype is a reference for behaviour, with these known shortcuts:
 [t30]: https://github.com/mfgAkilae/nsgfw/issues/30
 [t31]: https://github.com/mfgAkilae/nsgfw/issues/31
 [t32]: https://github.com/mfgAkilae/nsgfw/issues/32
+[t33]: https://github.com/mfgAkilae/nsgfw/issues/33
 [proto]: https://github.com/mfgAkilae/nsgfw/tree/prototype/translation-engine-worked-examples/prototypes/translation-engine-worked-examples

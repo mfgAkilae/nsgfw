@@ -187,8 +187,12 @@ The delivery of one Version to one Environment through that Environment's Deploy
 _Avoid_: rollout, push
 
 **Crossing flow**:
-A flow between two Zones that a Deployment closes on one of the two Managed NSGs and opens on the other. The NSG that closes it is written first; without Crossing flows the order of writes does not matter.
+A flow between two Zones that a Deployment closes on one of the two Managed NSGs and opens on the other. The NSG that closes it is written first, and the other one a Settle time later; without Crossing flows the order of writes does not matter.
 _Avoid_: Dominance gap (the first, coarser rule), Tighten phase, Loosen phase (the superseded phases of ADR 0009)
+
+**Settle time**:
+The wait between a write and the write that the order puts after it, counted from the moment Azure reports the first one done. Azure can report a write done before the network enforces it, so the wait keeps a closing change ahead of the opening one. Only writes ordered by a Crossing flow or by the ASG member steps wait; one setting for the whole instance.
+_Avoid_: propagation delay, cool-down
 
 **Deployed state**:
 For each Azure resource the tool writes, the content the tool last wrote to it successfully. In a Terraform Environment, it is the content of the tool's merged Data contract that the tool has seen in Azure.

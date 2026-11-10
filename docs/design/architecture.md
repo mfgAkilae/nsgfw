@@ -321,6 +321,7 @@ sequenceDiagram
     loop each step of the write order
       W->>AZ: GET, compare with Deployed state, PUT the whole resource
       W->>W: store the new Deployed state
+      W->>W: wait the Settle time before an ordered step
     end
   else Terraform Environment
     loop one pull request per step
@@ -328,6 +329,7 @@ sequenceDiagram
       G-->>W: merged (polled)
       W->>AZ: GET every resource, compare with the target
       W->>W: store the new Deployed state
+      W->>W: wait the Settle time before the next step
     end
   end
 ```
@@ -336,7 +338,7 @@ Common to both modes:
 
 - **Plan from the Deployed state.** A newer Version supersedes a running or failed Deployment to the same Environment; the new one plans from each resource's Deployed state to the latest Version ([Grilling: Deployment execution and failure handling][t16]).
 - **Pre-checks before the first write.** Drift (a fresh GET from the resource provider), Policy and live limits block the whole Commit. The permission check blocks the affected Zones.
-- **Write order without phases** ([ADR 0018](../adr/0018-write-order-from-dominance-gaps.md)). Dependency order (create before reference, association after its NSG), plus one edge per Crossing flow: the NSG that closes the flow before the NSG that opens it. A service tag is evaluated both ways. ASG membership goes in three steps. A cycle or a member change that fits neither step fails validation, and the Change set is split. A failed write delays only the writes with an edge from it, in later Deployments too.
+- **Write order without phases** ([ADR 0018](../adr/0018-write-order-from-dominance-gaps.md)). Dependency order (create before reference, association after its NSG), plus one edge per Crossing flow: the NSG that closes the flow before the NSG that opens it. A service tag is evaluated both ways. ASG membership goes in three steps, planned as single joins and leaves that Azure may apply in any combination. A write behind a Crossing-flow edge or a member-step boundary starts a Settle time (instance setting, 10 s by default) after the write before it reports `Succeeded`, because `Succeeded` comes up to 0.75 s before the data plane follows. Dependency edges wait for `Succeeded` only. A cycle or a member step that fails in some combination of its atoms fails validation, and the Change set is split. A failed write delays only the writes with an edge from it, in later Deployments too.
 - **Retry unit** is one resource write. Transient errors retry with backoff for up to 30 minutes. Permanent errors (`RequestDisallowedByPolicy`, `LinkedAuthorizationFailed`, `SecurityRuleConflict`, 404, Drift) fail at once. A policy that modifies a tool-owned field fails the write ([Grilling: Policy and security-layer visibility][t21], point 9).
 
 ARM mode:
@@ -344,15 +346,15 @@ ARM mode:
 - one whole-NSG PUT per NSG, tags and other properties from a fresh GET; one subnet PUT for an association or swap;
 - a client-side token bucket of 500 Microsoft.Network writes per 5 minutes per subscription and region (adjustable per Environment), at most one write in flight per resource and ten per subscription and region, 429 with Retry-After honoured;
 - `flushConnection` is an Environment setting, off by default;
-- resume after a crash: the new lease holder GETs each write in flight; target means done, Deployed state means PUT again, neither means Drift;
+- resume after a crash: the new lease holder GETs each write in flight; target means done, Deployed state means PUT again, neither means Drift; a write that waited for a Settle time waits the full Settle time again once the earlier write shows as done;
 - membership writes read right before the PUT and send `If-Match` if the empirical check shows Azure honours it.
 
-The guarantee assumes that one NSG PUT and one network interface write each take effect as a whole. [Task: Empirical checks of undocumented Azure behaviour][t24] checks the NSG PUT.
+The guarantee assumes that one NSG PUT takes effect as a whole and a rejected PUT applies nothing ([Task: Empirical checks of undocumented Azure behaviour][t24], T2 and T3), that a single ASG join or leave takes effect as a whole, that one subnet write that swaps the NSG takes effect as a whole ([Task: Empirical check of subnet NSG swaps and private endpoint ASG writes][t33]), and that the data plane follows a write within the Settle time. The nightly integration test re-measures these and fails when a lag exceeds half the Settle time.
 
 Terraform mode ([ADR 0010](../adr/0010-terraform-mode-data-contract-and-azure-observation.md), amended by ADR 0018):
 
 - The tool writes one deterministic JSON Data contract per root module, placed by a path pattern per Environment. The repository owns the HCL; the tool ships a default HCL once, in a bootstrap pull request, and never touches HCL again.
-- A Deployment is one pull request, or one per step when the plan has edges or member steps. The next step's pull request opens after Azure shows the previous target. An Environment has at most one open nsgfw pull request; a newer Deployment closes it as superseded.
+- A Deployment is one pull request, or one per step when the plan has edges or member steps. The next step's pull request opens once Azure shows the previous target and the Settle time has passed. An Environment has at most one open nsgfw pull request; a newer Deployment closes it as superseded.
 - The tool requests auto-merge bound to the expected head commit. Branch protection decides whether a person reviews.
 - Azure observation decides success. After the merge the tool reads every resource; a match updates the Deployed state. No match within the apply timeout means "merged, not applied".
 - The tool never reads Terraform state, never runs Terraform and writes nothing to Azure.
@@ -508,3 +510,4 @@ Questions this draft found. Two were settled in [Prototype: Architecture proposa
 [t28]: https://github.com/mfgAkilae/nsgfw/issues/28
 [t29]: https://github.com/mfgAkilae/nsgfw/issues/29
 [t30]: https://github.com/mfgAkilae/nsgfw/issues/30
+[t33]: https://github.com/mfgAkilae/nsgfw/issues/33
