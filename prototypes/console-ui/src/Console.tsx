@@ -1,7 +1,7 @@
 // PROTOTYPE, throwaway. The console shell: rail, Rule base with filter chips and Zone lens, right dock (Rule inspector, Change set),
 // commit bar and jump palette. One design, light and dark.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Input, Switch, Tooltip } from '@fluentui/react-components';
+import { Button, Input, Switch, Tooltip, Popover, PopoverTrigger, PopoverSurface } from '@fluentui/react-components';
 import { Add16Regular, Search16Regular, Dismiss16Regular, PanelRight20Regular, TextBulletListSquare20Regular, Grid20Regular, Box20Regular, BranchFork20Regular,
   WeatherMoon20Regular, WeatherSunny20Regular, Copy16Regular, Delete16Regular, Eye16Regular, EyeOff16Regular, ArrowSort16Regular, Send16Regular, ArrowRight12Filled,
   Checkmark12Filled, Dismiss12Filled, Flash16Regular, ChevronDown12Regular, TextLineSpacing20Regular, Folder16Regular, FolderAdd16Regular, FolderArrowRight16Regular, ArrowMaximizeVertical20Regular, ArrowMinimizeVertical20Regular, LockClosed16Regular, Warning16Filled, ShieldError16Filled, PeopleSwap16Regular, LayerDiagonal16Regular } from '@fluentui/react-icons';
@@ -12,6 +12,7 @@ import { ChangesList, PreviewView, WriteOrderView, ApprovalView, PolicyView, Inb
 import { Brand, useDebounced, reportReady } from './bits';
 import { ProtoButton } from './Proto';
 import { RuleEditor } from './Editor';
+import { Review } from './Review';
 import { ObjectLibrary, ChangeSetsPage, Track } from './Pages';
 import { useStore, placement, cost, alsoChanged } from './store';
 import { zones, zoneById, envs, ref, svcById } from './data';
@@ -33,7 +34,7 @@ export default function Console() {
   const [palette, setPalette] = useState<false | 'all' | 'zone'>(false); const [moveIds, setMoveIds] = useState<string[] | null>(null);
   // Collapsing is a view setting of the person, not an edit to the Rule base.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(s.folders.slice(2).map(f => f.id)));
-  const [folderFor, setFolderFor] = useState<string[] | null>(null); const [fresh, setFresh] = useState<string | null>(null);
+  const [folderFor, setFolderFor] = useState<string[] | null>(null); const [fresh, setFresh] = useState<string | null>(null); const [review, setReview] = useState(false);
   const toggleFolder = (id: string) => setCollapsed(c => { const n = new Set(c); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const allCollapsed = s.folders.length > 0 && s.folders.every(f => collapsed.has(f.id));
   const unfold = (ruleId: string) => { const f = s.rules.find(r => r.id === ruleId)?.folder; if (f) setCollapsed(c => { if (!c.has(f)) return c; const n = new Set(c); n.delete(f); return n; }); };
@@ -92,6 +93,10 @@ export default function Console() {
         <InboxButton />
         <Tooltip content={t(mode === 'dark' ? 'Light mode' : 'Dark mode')} relationship="label" positioning="after"><button className="rail-i" onClick={toggle}>{mode === 'dark' ? <WeatherSunny20Regular /> : <WeatherMoon20Regular />}</button></Tooltip>
         <Tooltip content={lang === 'en' ? 'Deutsch' : 'English'} relationship="label" positioning="after"><button className="rail-i rail-lang" onClick={() => setLang(lang === 'en' ? 'de' : 'en')}>{lang.toUpperCase()}</button></Tooltip>
+        <Popover positioning="after-bottom"><PopoverTrigger disableButtonEnhancement><button className="rail-i rail-lang" title={t('Keyboard shortcuts')}>?</button></PopoverTrigger>
+          <PopoverSurface style={{ width: 300, padding: '14px 18px' }}><div className="panel-h">{t('Keyboard shortcuts')}</div>
+            <dl className="keys">{([['Ctrl K', 'Jump to a Rule, Zone or action'], ['/', 'Filter the Rules'], ['N', 'New Rule'], ['I', 'Rule editor'], ['P', 'Change set panel'], ['Esc', 'Close'], ['Double click', 'Edit a cell'], ['Right click', 'Everything for one Rule']] as const).map(([k, d]) => <div key={k}><dt><kbd>{k}</kbd></dt><dd>{t(d)}</dd></div>)}</dl>
+            <p className="muted" style={{ margin: '8px 0 0', lineHeight: 1.45 }}>{t('The single-letter keys work while the table does not have the focus.')}</p></PopoverSurface></Popover>
         <span className="avatar" title="You, signed in with Entra ID: editor and approver">YO</span>
       </nav>
 
@@ -100,7 +105,7 @@ export default function Console() {
           <section className="content">
             {page === 'rules' && <>
               <header className="phead">
-                <h1>{t('Rule base')}</h1>
+                <h1>{t('Rule base')}</h1><span className="ver" title={t('The committed Version your Change set is based on')}>{t('Version')} {s.version}</span>
                 <button className={`lensbtn ${z ? 'on' : ''}`} onClick={() => setPalette('zone')} title={t('Show only the Rules that land on one Zone')}><Glyph kind="zone" />{z ? z.name : t('All Zones')}<ChevronDown12Regular /></button>
                 <span className="sp" />
                 <Input ref={search} className="search" contentBefore={<Search16Regular />} contentAfter={<kbd>/</kbd>} placeholder={t('Filter Rules by name, object, ID or ticket')} value={q} onChange={(_, d) => setQ(d.value)} />
@@ -171,10 +176,11 @@ export default function Console() {
           )}
         </div>
 
-        {showBar && <CommitBar onOpen={cs => openDock('cs', cs)} />}
+        {review && <Review onClose={() => setReview(false)} onRule={jumpToRule} />}
+        {showBar && <CommitBar onOpen={cs => openDock('cs', cs)} onReview={() => setReview(true)} />}
       </div>
 
-      {palette && <Palette mode={palette} onClose={() => setPalette(false)} run={{ all: () => { setPage('rules'); setLens(null); }, rule: jumpToRule, zone: openZone, page: setPage, newRule, review: () => openDock('cs', 'preview'), theme: toggle, lang: () => setLang(lang === 'en' ? 'de' : 'en') }} />}
+      {palette && <Palette mode={palette} onClose={() => setPalette(false)} run={{ all: () => { setPage('rules'); setLens(null); }, rule: jumpToRule, zone: openZone, page: setPage, newRule, review: () => setReview(true), theme: toggle, lang: () => setLang(lang === 'en' ? 'de' : 'en') }} />}
       <MoveDialog ids={moveIds} onClose={() => setMoveIds(null)} />
       {folderFor && <FolderPicker ids={folderFor} onClose={() => setFolderFor(null)} onDone={fid => { setCollapsed(c => { const n = new Set(c); n.delete(fid); return n; }); grid.current?.clearSelection(); }} />}
     </div>
@@ -182,7 +188,7 @@ export default function Console() {
 }
 
 // ---------- Commit bar: what the pending edits mean, always visible, one click to submit.
-function CommitBar({ onOpen }: { onOpen: (tab: CsTab) => void }) {
+function CommitBar({ onOpen, onReview }: { onOpen: (tab: CsTab) => void; onReview: () => void }) {
   const s = useStore(); const { t } = useT(); const pv = usePreview(); const ap = useApproval(pv); const [em, setEm] = useState(false);
   const need = ap.byEnv.filter(x => x.env.level !== 'none'); const got = need.filter(x => s.approvedBy[x.env.id]).length;
   const deny = pv.policy.filter(p => p.effect === 'deny').length;
@@ -201,7 +207,7 @@ function CommitBar({ onOpen }: { onOpen: (tab: CsTab) => void }) {
       <span className="sp" />
       <Button size="small" appearance="subtle" icon={<Flash16Regular />} disabled={pv.unorderable} onClick={() => setEm(true)}>{t('Emergency Commit')}</Button>
       <Button size="small" appearance="subtle" onClick={s.discard}>{t('Discard')}</Button>
-      <Button size="small" onClick={() => onOpen('preview')}>{t('Review')}</Button>
+      <Button size="small" onClick={onReview}>{t('Review')}</Button>
       {s.state === 'Open' && <Button size="small" appearance="primary" icon={<Send16Regular />} disabled={pv.unorderable || deny > 0} onClick={s.submit}>{t('Submit for Approval')}</Button>}
       {s.state === 'Submitted' && !ap.done && <Button size="small" className="proto" onClick={() => s.approveAs('kim', ap.byEnv.map(x => x.env.id))}>{t('Approve as kim (prototype)')}</Button>}
       {s.state !== 'Open' && <Button size="small" appearance="primary" disabled={!ap.done || pv.unorderable} onClick={() => s.commit()}>{t('Commit')}</Button>}

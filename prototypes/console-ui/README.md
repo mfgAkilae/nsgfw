@@ -21,7 +21,25 @@ pnpm dev          # http://localhost:5199/  (?theme=dark|light, ?lang=de)
 4. Fourth pass: overview and reach in the Rule base. An overview ruler beside the table marks where changed and flagged Rules sit among the 10,000 and jumps there on a click. A right click opens an own context menu. Flags are words in the meta line, not icons. A Zone picker in the head opens the lens, and the commit bar shows the workflow as a track. Commit `9d11e1b`.
 5. Fifth pass: the other pages at the same level. Zones filter by chips with counts (flagged, near a limit, Drift, strict egress). Objects are a library with "used in N Rules", unused objects, members, Coverage and one click to the Rules that use an object. Change sets show what waits for you first, then every Change set on the workflow track. The write order is a diagram of the Crossing flows, and the side panel draws on which side a Rule lands in Azure.
 
-The map owner called the third pass clearly better and asked for two more. The brief for the third pass: much better design, dark and light mode, clear and very pleasant to look at, functional, and as few clicks as possible to the main functions.
+6. Folders, at the map owner's request (see below). Commit `83f4fbe`.
+7. Sixth design pass: the side panel becomes a Rule editor. Every field in one place, an inline object picker, where the Rule lands in Azure updating live, and "Before you submit" with what to fix. New Rule opens the editor with the name selected. Commit `21402d6`.
+8. Seventh design pass: Review, the whole Change set on one wide screen before Submit (what was edited, one Rule before and after with what it writes in Azure, write order, Approval, Policy findings, the action). Also a keyboard help in the rail and the Version in the head.
+
+The map owner called the third pass clearly better and asked for two more, then for Folders and two further passes. The brief for the third pass: much better design, dark and light mode, clear and very pleasant to look at, functional, and as few clicks as possible to the main functions.
+
+## Folders (new, not in the brief)
+
+The map owner asked for Folders in the Rule base, to sort Rules into and to collapse. The prototype assumes:
+
+- A Folder is a named, contiguous run of Rules. It has to be contiguous, because the order of Rules decides (first match wins).
+- One level, no nesting. Rules may stand outside Folders, between them.
+- A Folder only organises. The Translation engine never sees it, and renaming one changes nothing in Azure.
+- Creating, renaming, removing a Folder and moving Rules in or out are edits in the Change set. Moving a Rule changes its position, so it can change NSG priorities like any move.
+- Collapsing is a view setting of the person, not an edit.
+
+In the table a Folder row shows its Rules, the allow and deny mix, and how many are changed or flagged. It renames in place (double click), moves with its Rules by the grip, and takes Rules by drop, from the selection bar ("Move to Folder…") or the context menu. A filter shows the matching Rules under their Folders ("44 of 801 Rules"); a sorted table has no Folders. With the Folders closed, 10,000 Rules fit on one screen.
+
+Open, to decide before the data model: nesting or one level; whether a Folder carries more than a name (comment, owner, enable or disable all); whether Folder edits that change no NSG need Approval; where imported Rules land; how a Rebase treats two people who move the same Folder.
 
 ## The design
 
@@ -54,6 +72,10 @@ The map owner called the third pass clearly better and asked for two more. The b
 | See the Rules that use an object | Right click the cell, "Rules with …"; or "Show these Rules" in the object library | 2 |
 | Jump to the changed or flagged Rules far down the list | Click the mark in the overview ruler | 1 |
 | See what waits for me | Change sets page, "Waiting for you" | 1 |
+| See the whole Rule base at a glance | Close all Folders | 1 |
+| Put Rules into a Folder | Drop them on it, or tick them and "Move to Folder…" | 1 to 2 |
+| Create a Rule completely | New Rule, then the editor: name, objects, action, ticket | 1 |
+| Check everything before Submit | "Review" in the commit bar | 1 |
 | Switch light and dark, English and German | Rail | 1 |
 
 Editing never asks to start a Change set first: an edit lands in the current Change set.

@@ -244,6 +244,23 @@ h3, h4 { font-size: 12.5px; font-weight: 600; color: var(--ink3); margin: 22px 0
 .tag { font-size: 11.5px; font-weight: 650; padding: 1px 7px; border-radius: 5px; } .tag.amber { color: var(--amber); background: var(--amber-tint); } .tag.red { color: var(--deny); background: var(--deny-tint); }
 .proto { border-style: dashed !important; }
 
+/* ---------- review: the whole Change set on one screen */
+.main { position: relative; }
+.review { position: absolute; inset: 0 0 52px 0; z-index: 40; background: var(--canvas); display: flex; flex-direction: column; padding: 0 20px 16px; animation: pop .14s ease-out; }
+.rv-h { display: flex; align-items: center; gap: 18px; padding: 16px 0 14px; } .rv-h h1 { font-size: 22px; font-weight: 700; letter-spacing: -.015em; margin: 0; } .rv-h p { margin: 4px 0 0; color: var(--ink2); font-size: 13.5px; }
+.rv-b { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(320px, 400px); gap: 12px; }
+.rv-c { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 4px 18px 18px; overflow: auto; min-width: 0; } .rv-c > h3:first-child { margin-top: 16px; }
+.rv-all { display: flex; justify-content: space-between; align-items: center; width: calc(100% + 16px); margin: 0 -8px 4px; padding: 10px 8px; border: 0; background: none; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; text-align: left; }
+.rv-all span { color: var(--ink3); font-weight: 400; font-size: 12.5px; } .rv-all:hover { background: var(--hover); } .rv-all.on, .li.clickable.sel { background: var(--sel); }
+.rv-rule { display: flex; align-items: center; gap: 12px; padding-top: 16px; } .rv-rule h2 { font-size: 19px; font-weight: 700; margin: 0; letter-spacing: -.01em; }
+.rv-flow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--sunken); border-radius: 10px; padding: 10px 12px; margin-top: 12px; } .rv-flow .chips { width: auto; flex-wrap: wrap; overflow: visible; } .rv-flow .flow { margin: 0; }
+.rv-flow .chips:last-child { margin-left: auto; }
+table.diff td:first-child { width: 120px; color: var(--ink2); } table.diff s { color: var(--ink3); } table.diff td { line-height: 1.45; }
+.rv-act { position: sticky; bottom: -18px; background: var(--surface); padding: 14px 0 0; margin-top: 18px; border-top: 1px solid var(--line); }
+.ver { color: var(--ink3); font-size: 12.5px; white-space: nowrap; margin-right: 4px; }
+.keys { margin: 8px 0 0; display: grid; gap: 7px; font-size: 13px; } .keys > div { display: grid; grid-template-columns: 96px 1fr; align-items: center; } .keys dt, .keys dd { margin: 0; }
+@media (max-width: 1180px) { .rv-b { grid-template-columns: 280px minmax(0, 1fr); } .rv-r { grid-column: 1 / -1; } }
+
 /* ---------- jump palette */
 .pal-bg { position: fixed; inset: 0; z-index: 1000; background: color-mix(in srgb, var(--rail) 45%, transparent); display: flex; justify-content: center; align-items: flex-start; padding-top: 14vh; }
 .pal { width: min(620px, 92vw); background: var(--raised); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
@@ -374,7 +391,7 @@ table.mini th { font-weight: 500; color: var(--ink3); font-size: 12px; }
 /* prototype controls: deliberately not part of the design */
 .proto-b { border: 1.5px dashed color-mix(in srgb, var(--rail-ink) 60%, transparent); }
 /* narrow content (side panel open on a small screen): keep every control, drop words first, then the view options */
-@container (max-width: 1080px) { .chipbar .hint { display: none; } .jump { font-size: 0; gap: 0; padding: 0 6px; } .phead .lbl { display: none; } .phead .fui-Button:has(.lbl) { min-width: 0; padding: 0 8px; } }
+@container (max-width: 1080px) { .chipbar .hint, .ver { display: none; } .jump { font-size: 0; gap: 0; padding: 0 6px; } .phead .lbl { display: none; } .phead .fui-Button:has(.lbl) { min-width: 0; padding: 0 8px; } }
 @container (max-width: 900px) { .ib.opt { display: none; } .lens-facts .bar > span { width: 36px; } }
 @container (max-width: 760px) { .vgroup { display: none; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

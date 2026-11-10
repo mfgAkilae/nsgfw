@@ -18,7 +18,7 @@ export function useApproval(pv: Preview) {
 }
 
 const editLabel: Record<string, string> = { add: 'Added', delete: 'Deleted', move: 'Moved', enable: 'Turned on', disable: 'Turned off', edit: 'Edited' };
-export function ChangesList({ onFocus }: { onFocus?: (id: string) => void }) {
+export function ChangesList({ onFocus, selected }: { onFocus?: (id: string) => void; selected?: string | null }) {
   const s = useStore(); const { t } = useT();
   const groups = useMemo(() => { const m = new Map<string, typeof s.edits>(); s.edits.forEach(e => m.set(e.ruleId, [...(m.get(e.ruleId) ?? []), e])); return [...m]; }, [s.edits]);
   if (!groups.length) return <p className="muted">{t('No edits yet. Edit a cell, drag a Rule or use the toolbar.')}</p>;
@@ -29,7 +29,7 @@ export function ChangesList({ onFocus }: { onFocus?: (id: string) => void }) {
         const r = s.rules.find(x => x.id === id) ?? baseRules.find(x => x.id === id); const also = alsoChanged.get(id);
         if (es[0].kind === 'folder') return <div key={id} className="li">{es.map(e => <div key={e.seq} className="edit" style={{ marginTop: 0 }}><span className="ek move">{t('Folder')}</span><span>{e.after}</span></div>)}</div>;
         return (
-          <div key={id} className="li clickable" onClick={() => onFocus?.(id)}>
+          <div key={id} className={`li clickable ${selected === id ? 'sel' : ''}`} onClick={() => onFocus?.(id)}>
             <div className="li-h"><span className="muted">{s.numbers.get(id) ?? '—'}</span><b>{r?.name}</b><span className="mono">{id}</span></div>
             {es.map(e => <div key={e.seq} className="edit"><span className={`ek ${e.kind}`}>{t(editLabel[e.kind])}</span>
               {e.kind === 'edit' ? <span>{e.field}: <s>{e.before || '∅'}</s> to {e.after}</span> : e.kind === 'move' ? <span>from {e.before} to {e.after}</span> : null}</div>)}
