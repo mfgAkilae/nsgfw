@@ -143,7 +143,7 @@ Fallback in Azure if MSAL Node cannot redeem an authorization code with the mana
 
 ### Sign-in and API access
 
-The server runs a backend-for-frontend with MSAL Node: authorization code flow with PKCE as a confidential client, a server-side session in PostgreSQL behind an httpOnly cookie, no tokens in the browser and no user access tokens kept on the server. Sessions last 8 hours, or 60 minutes idle. Approval, Emergency Commit and changes to Role assignments need a sign-in at most 15 minutes old (OIDC `max_age`).
+The server runs a backend-for-frontend with MSAL Node: authorization code flow with PKCE as a confidential client, a server-side session in PostgreSQL behind an httpOnly cookie, no tokens in the browser and no user access tokens kept on the server. Sessions last 8 hours, or 60 minutes idle. Approval, Emergency Commit, changes to Role assignments and changes of an Approval level need a sign-in at most 15 minutes old (OIDC `max_age`).
 
 The API also accepts client-credential tokens of service principals and managed identities and delegated user tokens through the one exposed scope. Rights come from the same Roles. Step-up actions stay UI-only. "Assignment required" stays off on the enterprise application; the tool's Role assignments decide, and a denied action is audited ([Grilling: Hosting, identity and least-privilege role][t20], [Grilling: Access, roles and audit][t19]).
 
