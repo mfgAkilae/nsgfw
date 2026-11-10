@@ -191,7 +191,7 @@ Turning an approved Change set into the next Version and starting a Deployment t
 _Avoid_: push, apply, publish
 
 **Deployment**:
-The delivery of one Version to one Environment through that Environment's Deployment mode. A Commit starts one Deployment per affected Environment, and each Deployment has its own result. A Deployment starts from the Deployed state, so a newer Version's Deployment supersedes an unfinished Deployment to the same Environment and also delivers what that one did not. Its writes follow their dependencies and its Crossing flows, in any order otherwise. In a Terraform Environment a Deployment arrives as one pull request, or as one pull request per step of its write order. It is deployed only when Azure shows its target, not when a pull request merges.
+The delivery of one Version to one Environment through that Environment's Deployment mode. A Commit starts one Deployment per affected Environment, and each Deployment has its own result. A Deployment starts from the Deployed state, so a newer Version's Deployment supersedes an unfinished Deployment to the same Environment and also delivers what that one did not. Its writes follow their dependencies and its Crossing flows, in any order otherwise, and a write may wait for a write of another Environment's Deployment. A Deployment that waits only for other Environments is waiting, not failed. In a Terraform Environment a Deployment arrives as one pull request, or as one pull request per step of its write order. It is deployed only when Azure shows its target, not when a pull request merges.
 _Avoid_: rollout, push
 
 **Deployment history**:
@@ -199,7 +199,7 @@ The record of every Deployment per Environment, also an Overwrite or a catch-up 
 _Avoid_: deployment log, job history
 
 **Crossing flow**:
-A flow between two Zones that a Deployment closes on one of the two Managed NSGs and opens on the other. The NSG that closes it is written first, and the other one a Settle time later; without Crossing flows the order of writes does not matter.
+A flow between two Zones, in one Environment or in two, that closes on one of the two Managed NSGs and opens on the other between the Deployed state and the latest Version. The NSG that closes it is written first, and the other one a Settle time later, also when the two belong to Deployments of different Environments; without Crossing flows the order of writes does not matter.
 _Avoid_: Dominance gap (the first, coarser rule), Tighten phase, Loosen phase (the superseded phases of ADR 0009)
 
 **Settle time**:
