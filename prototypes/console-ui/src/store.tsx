@@ -3,7 +3,9 @@ import { createContext, useContext, useMemo, useRef, useState, ReactNode } from 
 import { rules as initialRules, entries as initialEntries, Rule, Entry, FolderRow, isFolder, ref, zoneById, envs, Level, me, versions } from './data';
 
 export type CsState = 'Open' | 'Submitted' | 'Approved' | 'Committed';
-export interface Edit { seq: number; kind: 'add' | 'edit' | 'move' | 'delete' | 'enable' | 'disable' | 'folder'; ruleId: string; field?: string; before?: string; after?: string; by: string }
+export interface Edit { seq: number; kind: 'add' | 'edit' | 'move' | 'delete' | 'enable' | 'disable' | 'folder' | 'zone' | 'object'; ruleId: string; field?: string; before?: string; after?: string; by: string;
+  // Zone and Object edits (issue 35): the Zones whose Managed NSGs they change, and the NSG rule they write there.
+  covers?: string[]; write?: { name: string; dir: 'in' | 'out'; priority: number } }
 export interface St { added?: boolean; deleted?: boolean; moved?: boolean; changed?: Set<string> }
 export interface ChangeSet { id: string; name: string; owner: string; state: CsState; base: number; authors: string[]; edits: number; affected: number; rebase?: boolean; emergency?: boolean; scheduled?: string; mine?: boolean }
 export type Scenario = 'auto' | 'crossing' | 'unorderable';
@@ -22,6 +24,9 @@ export const alsoChanged = new Map<string, { set: string; by: string }>([
 ]);
 
 let nextId = 95000;
+// Zone and Object edits keep their state outside the Rule base; Discard resets it through these hooks (issue 35).
+const discardHooks: (() => void)[] = [];
+export const onDiscard = (f: () => void) => { discardHooks.push(f); };
 const fmt = (v: unknown) => (Array.isArray(v) ? v.map(x => (String(x).startsWith('svc') ? x : ref(String(x)).name)).join(', ') : String(v ?? ''));
 const blockEnd = (es: Entry[], head: number) => { const fid = es[head].id; let end = head + 1; while (end < es.length && !isFolder(es[end]) && (es[end] as Rule).folder === fid) end++; return end; };
 
@@ -44,7 +49,7 @@ function useStoreValue() {
   const status = useMemo(() => {
     const m = new Map<string, St>();
     for (const e of edits) {
-      if (e.kind === 'folder') continue;
+      if (e.kind === 'folder' || e.kind === 'zone' || e.kind === 'object') continue;
       const s = m.get(e.ruleId) ?? {};
       if (e.kind === 'add') s.added = true;
       else if (e.kind === 'delete') s.deleted = true;
@@ -137,8 +142,8 @@ function useStoreValue() {
       setEntries(es => { const out: Entry[] = []; for (const e of es) { out.push(e); if (!isFolder(e) && ids.includes(e.id)) { const c = { ...e, id: `R${++nextId}`, name: `${e.name} (copy)`, hits: null }; out.push(c); added.push({ kind: 'add', ruleId: c.id, after: c.name }); } } return out; });
       setTimeout(() => log(added), 0);
     },
-    addRule(afterId?: string, folderId?: string) {
-      const r: Rule = { id: `R${++nextId}`, name: 'New Rule', src: ['any'], dst: ['any'], svc: ['svc-any'], action: 'deny', enabled: false, comment: '', ticket: '', owner: me, hits: null };
+    addRule(afterId?: string, folderId?: string, init?: Partial<Rule>) {
+      const r: Rule = { id: `R${++nextId}`, name: 'New Rule', src: ['any'], dst: ['any'], svc: ['svc-any'], action: 'deny', enabled: false, comment: '', ticket: '', owner: me, hits: null, ...init };
       setEntries(es => {
         const anchor = folderId ? es.findIndex(e => e.id === folderId) : afterId ? es.findIndex(e => e.id === afterId) : -1; const a = es[anchor];
         return [...es.slice(0, anchor + 1), { ...r, folder: a ? (isFolder(a) ? a.id : a.folder) : undefined }, ...es.slice(anchor + 1)];
@@ -151,7 +156,13 @@ function useStoreValue() {
       if (addedNow.length) { setEntries(es => es.filter(e => !addedNow.includes(e.id))); setEdits(es => es.filter(e => !addedNow.includes(e.ruleId))); }
       log(ids.filter(id => !addedNow.includes(id)).map(id => ({ kind: 'delete' as const, ruleId: id })));
     },
-    discard() { setEntries(initialEntries); setEdits([]); setState('Open'); setApprovedBy({}); setEmergency(null); },
+    // A Zone or Object edit. Repeated edits of one field fold into one, and an edit back to the start disappears.
+    note(e: Omit<Edit, 'seq' | 'by'>) {
+      setEdits(x => { const i = x.findIndex(y => y.kind === e.kind && y.ruleId === e.ruleId && y.field === e.field); if (i < 0) return [...x, { ...e, seq: ++seq.current, by: me }];
+        return x[i].before === e.after ? x.filter((_, k) => k !== i) : x.map((y, k) => (k === i ? { ...y, ...e, before: y.before } : y)); });
+      if (state !== 'Open') setState('Open');
+    },
+    discard() { discardHooks.forEach(f => f()); setEntries(initialEntries); setEdits([]); setState('Open'); setApprovedBy({}); setEmergency(null); },
     submit() { setState('Submitted'); },
     approveAs(who: string, envIds: string[]) { setApprovedBy(a => ({ ...a, ...Object.fromEntries(envIds.map(e => [e, who])) })); },
     commit(reason?: string) { setState('Committed'); setVersion(v => v + 1); if (reason) setEmergency(reason); },
@@ -214,6 +225,8 @@ export function buildPreview(s: Store): Preview {
     if (r.policy || (r.src.some(x => x === 'any' || x === 'tag:Internet') && r.svc.some(x => x === 'svc-rdp' || x === 'svc-ssh')))
       policy.push({ assignment: 'Deny management ports from the Internet (landing zone)', effect: 'deny', reason: 'RDP or SSH open from the Internet', rule: id });
   }
+  // Zone and Object edits (issue 35) change the Managed NSGs of the Zones they cover.
+  for (const e of s.edits) if ((e.kind === 'zone' || e.kind === 'object') && e.covers) e.covers.slice(0, 40).forEach(zid => touch(zid).ops.push({ op: 'change', name: e.write?.name ?? `nsgfw-${e.field}`, dir: e.write?.dir ?? 'in', priority: e.write?.priority ?? 0, rule: e.ruleId, detail: e.after ?? '' }));
   if (nsgs.size && !policy.length) policy.push({ assignment: 'Audit NSG flow logging', effect: 'audit', reason: 'No VNet flow log on 2 VNets', rule: '' });
   let unorderable = s.scenario === 'unorderable';
   if (unorderable && crossing.length < 2 && crossing[0]) crossing.push({ ...crossing[0], from: crossing[0].to, to: crossing[0].from, flow: `${crossing[0].to} → ${crossing[0].from} tcp/1433`, closes: crossing[0].opens, opens: crossing[0].closes });

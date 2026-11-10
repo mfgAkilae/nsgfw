@@ -4,7 +4,8 @@ import { AgGridReact } from 'ag-grid-react';
 import { ColDef, ICellRendererParams } from 'ag-grid-community';
 import { Input } from '@fluentui/react-components';
 import { Search16Regular } from '@fluentui/react-icons';
-import { zones, candidates, envs, Zone, Flag } from './data';
+import { zones, candidates, envs, Zone, Flag, type Candidate } from './data';
+import { avnmCount, nicNsgCount, onboarded } from './zonedata';
 import { gridTheme } from './RuleGrid';
 import { useT } from './i18n';
 
@@ -18,17 +19,18 @@ const flagText: Record<Flag, [string, string]> = {
   drift: ['Drift', 'red'], policy: ['Policy finding', 'red'], limit: ['Near a limit', 'amber'], perm: ['Missing permission', 'red'],
   import: ['Import notes', 'amber'], avnm: ['AVNM admin rules', ''], nicnsg: ['NIC-level NSGs', ''],
 };
-export const Flags = ({ z }: { z: Zone }) => <span className="badges">{z.flags.map(f => <span key={f} className={`zflag ${flagText[f][1]}`}>{flagText[f][0]}</span>)}{z.inherited && <span className="zflag">Inherited defaults</span>}</span>;
+// Security layers show as counts (issue 35): "AVNM: n rules", "NIC NSGs: n".
+export const Flags = ({ z }: { z: Zone }) => <span className="badges">{z.flags.filter(f => f !== 'avnm' && f !== 'nicnsg').map(f => <span key={f} className={`zflag ${flagText[f][1]}`}>{flagText[f][0]}</span>)}{avnmCount(z) > 0 && <span className="zflag">AVNM: {avnmCount(z)} rules</span>}{nicNsgCount(z) > 0 && <span className="zflag">NIC NSGs: {nicNsgCount(z)}</span>}{z.inherited && <span className="zflag">Inherited defaults</span>}</span>;
 export const EgressBadge = ({ e }: { e: Zone['egress'] }) => { const { t } = useT(); return <span className={`egress ${e === 'strict' ? 'strict' : ''}`}>{e === 'strict' ? t('strict') : t('destination decides')}</span>; };
 
-export function ZoneGrid({ onOpen }: { onOpen?: (z: Zone) => void }) {
+export function ZoneGrid({ onOpen, onCandidate }: { onOpen?: (z: Zone) => void; onCandidate?: (c: Candidate) => void }) {
   const { t, lang } = useT();
   const [tab, setTab] = useState<'zones' | 'cand'>('zones');
   const [q, setQ] = useState(''); const [zf, setZf] = useState('all');
   const zfilters = useMemo(() => { const f: [string, string, string, (z: Zone) => boolean][] = [
     ['all', 'All', '', () => true], ['flagged', 'Flagged', 'c-deny', z => z.flags.length > 0], ['limit', 'Near a limit', 'c-expiring', z => z.flags.includes('limit')], ['drift', 'Drift', 'c-deny', z => z.flags.includes('drift')],
     ['policy', 'Policy finding', 'c-findings', z => z.flags.includes('policy')], ['perm', 'Missing permission', 'c-findings', z => z.flags.includes('perm')], ['import', 'Import notes', 'c-expiring', z => z.flags.includes('import')],
-    ['strict', 'Strict egress', 'c-disabled', z => z.egress === 'strict'], ['inherited', 'Inherited defaults', 'c-disabled', z => z.inherited]];
+    ['strict', 'Strict egress', 'c-disabled', z => z.egress === 'strict'], ['layers', 'Security layers', 'c-findings', z => avnmCount(z) > 0 || nicNsgCount(z) > 0], ['inherited', 'Inherited defaults', 'c-disabled', z => z.inherited]];
     return f.map(([k, label, cls, fn]) => ({ k, label, cls, fn, n: zones.filter(fn).length })); }, []);
   const shown = useMemo(() => (zf === 'all' ? zones : zones.filter(zfilters.find(x => x.k === zf)!.fn)), [zf, zfilters]);
   const subUse = useMemo(() => { const m = new Map<string, number>(); zones.forEach(z => m.set(`${z.sub} · ${z.region}`, (m.get(`${z.sub} · ${z.region}`) ?? 0) + 1)); return [...m].sort((a, b) => b[1] - a[1])[0]; }, []);
@@ -50,7 +52,7 @@ export function ZoneGrid({ onOpen }: { onOpen?: (z: Zone) => void }) {
     { field: 'subnet', headerName: 'Subnet', width: 180 }, { field: 'vnet', headerName: t('VNet'), width: 180 }, { field: 'prefix', headerName: t('Prefixes'), width: 150 },
     { field: 'env', headerName: t('Environment'), width: 130, valueFormatter: x => envs.find(e => e.id === x.value)?.name ?? '' },
     { field: 'nsg', headerName: t('Existing NSG'), width: 200, valueFormatter: x => x.value ? `${x.value}${x.data.shared ? ' (shared: swap)' : ' (adopt in place)'}` : '—' },
-    { colId: 'state', headerName: '', flex: 1, cellRenderer: (x: ICellRendererParams) => x.data.reason ? <span className="zflag">{t('Not onboardable')}: {reasons[x.data.reason]}</span> : <a className="link">{t('Onboard')}</a> },
+    { colId: 'state', headerName: '', flex: 1, cellRenderer: (x: ICellRendererParams) => x.data.reason ? <a className="zflag clickable" onClick={() => onCandidate?.(x.data)}>{t('Not onboardable')}: {t(reasons[x.data.reason])}</a> : <a className="link" onClick={() => onCandidate?.(x.data)}>{onboarded.has(x.data.id) ? t('In your Change set') : t('Onboard')}</a> },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [lang]);
   return (
@@ -73,4 +75,4 @@ export function ZoneGrid({ onOpen }: { onOpen?: (z: Zone) => void }) {
     </>
   );
 }
-const reasons: Record<string, string> = { reasonSpecial: 'Azure forbids an NSG on this subnet', reasonService: 'a service maintains its NSG rules (SQL MI)', reasonForward: 'forwards traffic for other subnets (NVA)' };
+const reasons: Record<string, string> = { reasonSpecial: 'Azure forbids an NSG on this subnet', reasonService: 'a service maintains its NSG rules (SQL MI)', reasonForward: 'forwards traffic for other subnets (NVA)', reasonAks: 'AKS maintains its NSG', reasonTool: 'holds nsgfw itself' };

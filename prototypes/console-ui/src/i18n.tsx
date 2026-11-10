@@ -1,5 +1,6 @@
 // PROTOTYPE, throwaway. English is the key; German terms are proposals for review (see README).
 import { createContext, useContext, useState, ReactNode } from 'react';
+import { deZone } from './i18n-zone';
 
 const de: Record<string, string> = {
   'Rule base': 'Regelwerk', 'Rule': 'Regel', 'Zones': 'Zonen', 'Zone': 'Zone', 'Objects': 'Objekte', 'Change sets': 'Änderungspakete',
@@ -78,6 +79,8 @@ const de: Record<string, string> = {
   'drag to reorder': 'zum Umsortieren ziehen', 'Drag is off while sorted or filtered: use Move to…': 'Ziehen ist bei Sortierung oder Filter aus: „Verschieben nach…“ nutzen',
 };
 
+// Issue 35: Zone detail, Flow view, object editors and onboarding.
+Object.assign(de, deZone);
 type T = (key: string) => string;
 const Ctx = createContext<{ lang: 'en' | 'de'; setLang: (l: 'en' | 'de') => void; t: T }>({ lang: 'en', setLang: () => {}, t: k => k });
 export function LangProvider({ children }: { children: ReactNode }) {

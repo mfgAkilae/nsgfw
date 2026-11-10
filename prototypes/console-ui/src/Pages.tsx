@@ -6,6 +6,7 @@ import { objects, zones, services, zoneById, ref, ObjKind } from './data';
 import { useStore, otherSets, CsState } from './store';
 import { usePreview, useApproval } from './ChangeViews';
 import { kindLabel } from './ObjectPicker';
+import { ObjectEditor } from './ObjectEditor';
 import { Glyph } from './Glyph';
 import { useT } from './i18n';
 import type { FilterKey } from './RuleGrid';
@@ -24,7 +25,7 @@ const groups: [string, string, (k: string) => boolean][] = [
 // ---------- Object library: every object with where it is used. One click shows the Rules that use it.
 export function ObjectLibrary({ onZone, onShowRules }: { onZone: (zid: string) => void; onShowRules: (name: string) => void }) {
   const s = useStore(); const { t } = useT();
-  const [g, setG] = useState('all'); const [q, setQ] = useState(''); const [unused, setUnused] = useState(false); const [sel, setSel] = useState<string>('g7');
+  const [g, setG] = useState('all'); const [q, setQ] = useState(''); const [unused, setUnused] = useState(false); const [sel, setSel] = useState<string>('a1');
   const usage = useMemo(() => { const m = new Map<string, number>(); for (const r of s.rules) for (const id of [...r.src, ...r.dst, ...r.svc]) m.set(id, (m.get(id) ?? 0) + 1); return m; }, [s.rules]);
   const counts = useMemo(() => Object.fromEntries(groups.map(([k, , f]) => [k, all.filter(i => f(i.kind)).length])), []);
   const unusedCount = useMemo(() => all.filter(i => i.kind !== 'zone' && i.kind !== 'any' && !usage.get(i.id)).length, [usage]);
@@ -53,7 +54,7 @@ export function ObjectLibrary({ onZone, onShowRules }: { onZone: (zid: string) =
           {!list.length && <div className="empty"><b>{t('Nothing matches')}</b><p>{t('Try another name, an address prefix or a port.')}</p></div>}
         </div>
         <aside className="lib-d">
-          {cur ? <>
+          {cur && cur.kind !== 'svc' && cur.kind !== 'zone' ? <ObjectEditor key={cur.id} id={cur.id} onZone={onZone} onShowRules={onShowRules} /> : cur ? <>
             <div className={`lib-k t-${cur.kind}`}><Glyph kind={cur.kind} />{kindLabel[cur.kind]}</div>
             <h2>{cur.name}</h2><div className="mono lib-v">{cur.value}</div>
             <div className="usebox"><b>{(usage.get(cur.id) ?? 0).toLocaleString()}</b><span>{t('Rules use this object')}</span>
