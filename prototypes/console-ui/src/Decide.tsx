@@ -48,10 +48,20 @@ function specFor(id: string, f: Flow, t: (k: string) => string): Spec {
   if (c.kind === 'revert') return { id, name: `Revert Version ${v.n}`, owner: c.author, authors: [c.author], kind: tool ? 'approval' : 'revert', decide: tool, base: f.latest,
     steps: [...(v.conflict ? [] : v.revert ?? []), ...(tool ? [(s: Store) => s.submit()] : [])],
     banner: <div className={`bn ${v.conflict ? 'red' : 'info'}`}>{tool ? <Bot16Regular /> : <ArrowUndo16Regular />} <span>{tool ? t('The tool prepared this after the Emergency Commit was rejected. The tool is its Author, so any approver satisfies four-eyes. ') : ''}
-      {t('Undoes the edits of Version')} {v.n} (“{v.name}”, {v.by}) {t('on top of Version')} {f.latest}{t(', Folder edits included.')}{v.conflict ? <><br /><b>{t('Conflict')}:</b> {t(v.conflict)}</> : null}</span></div> };
+      {t('Undoes the edits of Version')} {v.n} (“{v.name}”, {v.by}) {t('on top of Version')} {f.latest}{t(', Folder edits included.')}{v.conflict ? <><br /><b>{t('Conflict')}:</b> {t(v.conflict)}<RevertChoice step={v.revert![0]} /></> : null}</span></div> };
   return { id, name: `Restore to Version ${v.n}`, owner: c.author, authors: [c.author], kind: 'restore', decide: false, base: f.latest, steps: restoreSteps(v.n),
     banner: <div className="bn info"><History16Regular /> <span>{t('Returns the Rule base to Version')} {v.n}: {t('Rules, Objects, Zones, Folders and ASG members. Azure facts adopted since then stay. Folders created since then are removed; their Rules stay in place.')}
       {restoreFolders(v.n).length > 0 && <ul className="cd-l">{restoreFolders(v.n).map(x => <li key={x}>{x}</li>)}</ul>}</span></div> };
+}
+
+// Decided 2026-11-10: when a removed Folder cannot come back as it was, the Author chooses. Neither choice moves a Rule.
+function RevertChoice({ step }: { step: Step }) {
+  const s = useCsStore(); const { t } = useT(); const [c, setC] = useState<'' | 'back' | 'keep'>('');
+  const pick = (v: 'back' | 'keep') => { if (v === c) return; if (v === 'back') step(s); else if (c === 'back') s.discard(); setC(v); };
+  return (<div className="rvc">
+    <label><input type="radio" checked={c === 'back'} onChange={() => pick('back')} /> <b>{t('Bring the Folder back around the 12 Rules that still stand together')}</b> <span className="muted">{t('They are in no other Folder. No Rule moves.')}</span></label>
+    <label><input type="radio" checked={c === 'keep'} onChange={() => pick('keep')} /> <b>{t('Leave the Folder removed')}</b> <span className="muted">{t('The Revert then changes nothing else here.')}</span></label>
+  </div>);
 }
 
 // What jo saw: the Preview stored with jo's Approval, against the fresh one after the clean Rebase onto Version 1288.

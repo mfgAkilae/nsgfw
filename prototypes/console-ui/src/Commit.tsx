@@ -25,6 +25,8 @@ export function useToolPaths() {
   }, [s.status, s.rules, f.toolPath]);
 }
 // An open Re-translation holds back Commits in the Environments where it changes something (here: Production). Folder-only Commits never wait.
+// Decided 2026-11-10: a Commit behind an open Re-translation queues and runs right after it, like a scheduled Commit.
+export const QUEUED = 'after the Re-translation';
 export function useRetransWait(pv: Preview) { const f = useFlow(); return f.retrans && pv.nsgs.some(n => n.env === 'prod') ? ['Production'] : []; }
 
 function ToolPathList({ paths }: { paths: typeof TOOL_PATHS }) {
@@ -40,9 +42,11 @@ export function CommitDialog({ pv, open, onClose, name }: { pv: Preview; open: b
   const since = cs === CUR && snap && f.done?.kept ? f.done.since : [];
   const byEnv = envs.map(e => ({ e, n: pv.nsgs.filter(x => x.env === e.id).length })).filter(x => x.n);
   const waived = fx.all.filter(x => fx.waivers[x.key]);
-  const blocked = (tps.length > 0 && why.trim().length < 5) || (wait.length > 0 && !folderOnly);
+  const queue = wait.length > 0 && !folderOnly;
+  const blocked = tps.length > 0 && why.trim().length < 5;
   const go = () => {
     if (when === 'at') f.setSchedule(cs, `${date} ${time}`);
+    else if (queue) f.setSchedule(cs, QUEUED);
     else { const n = s.version + 1; s.commit(); f.bumpLatest({ n, name, by: 'you', at: nowLabel(), kind: folderOnly ? 'folders' : 'normal', nsgs: pv.nsgs.length, edits: s.edits.length }); }
     onClose();
   };
@@ -55,10 +59,10 @@ export function CommitDialog({ pv, open, onClose, name }: { pv: Preview; open: b
               : <ul className="cd-l">{byEnv.map(({ e, n }) => <li key={e.id}><b>{e.name}</b> <span className="muted">({e.mode})</span>: {n} {t(n === 1 ? 'Managed NSG' : 'Managed NSGs')}, {e.mode === 'ARM' ? t('written directly in the write order') : `${t('through pull requests, one per write step')} (${Math.max(1, pv.steps.length)})`}</li>)}</ul>}
           </section>
           {wait.length > 0 && !folderOnly && <MessageBar intent="warning" layout="multiline"><MessageBarBody><MessageBarTitle>{t('Waits for the Re-translation')}</MessageBarTitle>
-            {t('A Re-translation for engine 1.6.0 is open in Production. Commits that change Production wait until it is committed. You can still submit and approve.')} <a className="link" onClick={() => { onClose(); f.openCs('rt-1'); }}>{t('Open the Re-translation')}</a></MessageBarBody></MessageBar>}
+            {t('A Re-translation for engine 1.6.0 is open in Production. This Commit waits in line and runs right after the Re-translation is committed, with a Rebase, validation and the pre-check, like a scheduled Commit. If one of them fails, the Change set stays Approved.')} <a className="link" onClick={() => { onClose(); f.openCs('rt-1'); }}>{t('Open the Re-translation')}</a></MessageBarBody></MessageBar>}
           <section><h4>{t('When')}</h4>
             <RadioGroup value={when} onChange={(_, d) => setWhen(d.value as 'now' | 'at')} layout="horizontal">
-              <Radio value="now" label={t('Now')} /><Radio value="at" label={t('At a time I choose')} /></RadioGroup>
+              <Radio value="now" label={t(queue ? 'Right after the Re-translation' : 'Now')} /><Radio value="at" label={t('At a time I choose')} /></RadioGroup>
             {when === 'at' && <div className="cd-when"><Input type="date" value={date} onChange={(_, d) => setDate(d.value)} /><Input type="time" value={time} onChange={(_, d) => setTime(d.value)} /><span className="muted">{t('Instance time zone')}: Europe/Vienna</span>
               <p className="cd-p">{t('At that time the tool rebases, validates and runs the pre-check again. If one of them fails, the Change set stays Approved without a schedule, and you and the Change set owner are notified. Any edit that reopens the Change set clears the schedule.')}</p></div>}
           </section>
@@ -76,7 +80,7 @@ export function CommitDialog({ pv, open, onClose, name }: { pv: Preview; open: b
             <Field label={t('Reason (required)')} required><Textarea value={why} onChange={(_, d) => setWhy(d.value)} /></Field></section>}
         </DialogContent>
         <DialogActions><Button onClick={onClose}>{t('Cancel')}</Button>
-          <Button appearance="primary" icon={when === 'at' ? <CalendarClock16Regular /> : undefined} disabled={blocked} onClick={go}>{when === 'at' ? `${t('Schedule for')} ${time}` : t('Commit now')}</Button></DialogActions>
+          <Button appearance="primary" icon={when === 'at' ? <CalendarClock16Regular /> : undefined} disabled={blocked} onClick={go}>{when === 'at' ? `${t('Schedule for')} ${time}` : queue ? t('Commit after the Re-translation') : t('Commit now')}</Button></DialogActions>
       </DialogBody></DialogSurface>
     </Dialog>
   );
@@ -136,7 +140,7 @@ export function CsButtons({ pv, name = CUR_NAME, onReview, onPolicy, emergency =
   const need = a.byEnv.some(x => x.env.level !== 'none'); const rb = cs === CUR && !!f.pending; const sched = f.schedule[cs];
   const deny = fx.ran ? fx.blocking.length : 0; const stop = pv.unorderable || rb;
   const submit = () => { f.runCheck(cs, 'Submit', s.edits.length); if (fx.blocking.length) { onPolicy?.(); return; } if (tps.length) setDlg('submit'); else s.submit(); };
-  const commitReady = s.edits.length > 0 && a.done && !stop && !deny && !(wait.length && pv.nsgs.length);
+  const commitReady = s.edits.length > 0 && a.done && !stop && !deny;
   return (
     <>
       {emergency && need && <Button size="small" appearance="subtle" icon={<Flash16Regular />} disabled={!s.edits.length || pv.unorderable} onClick={() => setDlg('emergency')}>{t('Emergency Commit')}</Button>}
@@ -145,10 +149,10 @@ export function CsButtons({ pv, name = CUR_NAME, onReview, onPolicy, emergency =
       {s.state === 'Open' && need && <Button size="small" appearance="primary" icon={<Send16Regular />} disabled={!s.edits.length || stop || deny > 0} onClick={submit} title={rb ? t('Resolve the conflicts of the Rebase first') : undefined}>{t('Submit for Approval')}</Button>}
       {s.state === 'Submitted' && !a.done && cs === CUR && <Button size="small" className="proto" onClick={() => s.approveAs('kim', a.byEnv.map(x => x.env.id))}>{t('Approve as kim (prototype)')}</Button>}
       {(s.state !== 'Open' || !need) && (sched
-        ? <><span className="sched"><CalendarClock16Regular />{t('Scheduled for')} {sched}</span><Button size="small" appearance="subtle" onClick={() => setDlg('commit')}>{t('Move')}</Button>
+        ? <><span className="sched"><CalendarClock16Regular />{sched === QUEUED ? t('Waits for the Re-translation') : `${t('Scheduled for')} ${sched}`}</span><Button size="small" appearance="subtle" onClick={() => setDlg('commit')}>{t('Move')}</Button>
             <Button size="small" appearance="subtle" onClick={() => f.setSchedule(cs, undefined)}>{t('Cancel schedule')}</Button>
-            <Button size="small" className="proto" onClick={() => { f.setSchedule(cs, undefined); const n = s.version + 1; s.commit(); f.bumpLatest({ n, name, by: 'you', at: sched, kind: 'scheduled', nsgs: pv.nsgs.length, edits: s.edits.length }); }}>{t('Run it now (prototype)')}</Button></>
-        : <Button size="small" appearance="primary" disabled={!commitReady} onClick={() => setDlg('commit')} title={wait.length && pv.nsgs.length ? t('Waits for the Re-translation') : undefined}>{t('Commit…')}</Button>)}
+            {sched !== QUEUED && <Button size="small" className="proto" onClick={() => { f.setSchedule(cs, undefined); const n = s.version + 1; s.commit(); f.bumpLatest({ n, name, by: 'you', at: sched, kind: 'scheduled', nsgs: pv.nsgs.length, edits: s.edits.length }); }}>{t('Run it now (prototype)')}</Button>}</>
+        : <Button size="small" appearance="primary" disabled={!commitReady} onClick={() => setDlg('commit')} title={wait.length && pv.nsgs.length ? t('Commits after the Re-translation') : undefined}>{t('Commit…')}</Button>)}
       <CommitDialog pv={pv} name={name} open={dlg === 'commit'} onClose={() => setDlg(null)} />
       <EmergencyDialog name={name} open={dlg === 'emergency'} onClose={() => setDlg(null)} />
       <SubmitConfirm open={dlg === 'submit'} onClose={() => setDlg(null)} onSubmit={s.submit} />

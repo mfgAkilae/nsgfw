@@ -100,5 +100,7 @@ export function FlowWatch() {
     if (!approved && f.snaps[cs]) f.setSnap(cs, undefined);
   }, [approved]);
   useEffect(() => { if (s.state === 'Open' && f.schedule[cs]) f.setSchedule(cs, undefined); }, [s.state]);
+  // A Commit that waited in line for the Re-translation runs as soon as the Re-translation is committed.
+  useEffect(() => { if (f.rtDone && f.schedule[cs] === 'after the Re-translation') { f.setSchedule(cs, undefined); const n = f.latest + 1; s.rebaseOnto(f.latest, es => es, e => e, true); s.commit(); f.bumpLatest({ n, name: CUR_NAME, by: 'you', at: nowLabel(), kind: 'normal', nsgs: s.status.size, edits: s.edits.length }); } }, [f.rtDone]);
   return null;
 }

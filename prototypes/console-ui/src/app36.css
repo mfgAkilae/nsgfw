@@ -106,3 +106,4 @@ details.li.fmove .edit .mono { color: var(--ink3); font-size: 11.5px; }
 
 /* The Review screen leaves room for the commit bar only when the bar is there. */
 .main:not(:has(> .cbar)) > .review { bottom: 0; }
+.rvc { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; } .rvc label { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; cursor: pointer; }
