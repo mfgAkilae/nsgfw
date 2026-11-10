@@ -1,6 +1,6 @@
 # Terraform mode: the tool owns only a Data contract, and Azure decides success
 
-Status: accepted (2026-11-09, [Grilling: Terraform mode workflow](https://github.com/mfgAkilae/nsgfw/issues/17))
+Status: accepted (2026-11-09, [Grilling: Terraform mode workflow](https://github.com/mfgAkilae/nsgfw/issues/17)). Amended on 2026-11-10 by [ADR 0018](0018-write-order-from-dominance-gaps.md): Tighten and Loosen phases are gone. A Deployment is one pull request, or one pull request per step when its write order has edges or ASG member steps. Read "Tighten" and "Loosen" below as those steps, and "held Loosen writes" as writes that wait for an earlier step.
 
 In a Terraform Environment the tool must not write the resources it manages; the repository's pipeline does. Customer repositories differ: their own modules, one root module (own state, own pipeline) per subscription or landing zone, and different CI systems. Rendering HCL from templates would need a template engine, escaping, a sandbox and HCL validation, and the tool would own code that the Terraform team wants to review and lint in Git. A merged pull request or a green pipeline also does not say what reached Azure, so neither can release Loosen writes that [ADR 0009](0009-tighten-then-loosen-deployments.md) holds back.
 
