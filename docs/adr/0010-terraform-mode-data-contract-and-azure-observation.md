@@ -26,5 +26,5 @@ We decided:
 
 - The tool does not parse the repository's HCL. Azure observation catches wrong content, but not wrong order. A repository HCL that breaks the two rules above can break the guarantee of ADR 0009 without anyone noticing, so the documentation states them.
 - Every apply of a root module reverts Drift on all tool resources in it. The Drift pre-check therefore covers every tool resource in the touched root modules, and overwrite and Retry use pull requests that change only the revision value.
-- Minimum versions: Terraform 1.7 (`import` with `for_each`), azurerm 5.x, azapi 2.x.
+- Minimum versions: Terraform 1.7 (`import` with `for_each`), azurerm 3.39.0, azapi 2.x. The default HCL uses azurerm only for the ASG resources, and the newest of them, `azurerm_private_endpoint_application_security_group_association`, arrived in 3.39.0 (provider changelog, retrieved 2026-11-10). Amended on 2026-11-10 by [Prototype: Architecture proposal](https://github.com/mfgAkilae/nsgfw/issues/26); the first form said azurerm 5.x without a reason.
 - The Environment setting "Terraform templates" from [Grilling: Environment and tenancy model](https://github.com/mfgAkilae/nsgfw/issues/9) becomes: Git repository and base branch, path pattern, data contract version, auto-merge switch and apply timeout.
