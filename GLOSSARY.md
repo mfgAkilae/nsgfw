@@ -183,12 +183,12 @@ Turning an approved Change set into the next Version and starting a Deployment t
 _Avoid_: push, apply, publish
 
 **Deployment**:
-The delivery of one Version to one Environment through that Environment's Deployment mode. A Commit starts one Deployment per affected Environment, and each Deployment has its own result. A Deployment starts from the Deployed state, so a newer Version's Deployment supersedes an unfinished Deployment to the same Environment and also delivers what that one did not. Its writes follow their dependencies and the Dominance gaps, in any order otherwise. In a Terraform Environment a Deployment arrives as one pull request, or as one pull request per step of its write order. It is deployed only when Azure shows its target, not when a pull request merges.
+The delivery of one Version to one Environment through that Environment's Deployment mode. A Commit starts one Deployment per affected Environment, and each Deployment has its own result. A Deployment starts from the Deployed state, so a newer Version's Deployment supersedes an unfinished Deployment to the same Environment and also delivers what that one did not. Its writes follow their dependencies and its Crossing flows, in any order otherwise. In a Terraform Environment a Deployment arrives as one pull request, or as one pull request per step of its write order. It is deployed only when Azure shows its target, not when a pull request merges.
 _Avoid_: rollout, push
 
-**Dominance gap**:
-A flow between two Zones that the destination Zone's inbound NSG rules allow and the source Zone's outbound NSG rules deny, in the Deployed state or in the target of a Deployment. Without gaps the order of writes does not matter; a gap in only one of the two states decides which of the two NSGs is written first.
-_Avoid_: Tighten phase, Loosen phase (the superseded phases of ADR 0009)
+**Crossing flow**:
+A flow between two Zones that a Deployment closes on one of the two Managed NSGs and opens on the other. The NSG that closes it is written first; without Crossing flows the order of writes does not matter.
+_Avoid_: Dominance gap (the first, coarser rule), Tighten phase, Loosen phase (the superseded phases of ADR 0009)
 
 **Deployed state**:
 For each Azure resource the tool writes, the content the tool last wrote to it successfully. In a Terraform Environment, it is the content of the tool's merged Data contract that the tool has seen in Azure.
