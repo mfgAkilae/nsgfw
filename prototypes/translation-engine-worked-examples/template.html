@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Translation Engine Examples</title>
+<!-- PROTOTYPE, throwaway. Built by build.mjs from engine.js, examples.js and page.js. For "Prototype: Translation engine worked examples" (issue 22). Not production code. -->
+<style>
+  :root { --bg:#fbfbfa; --fg:#1d1d1f; --muted:#6b6b70; --line:#e2e2e0; --card:#fff; --accent:#2457c5; --ok:#1d7a3e; --bad:#b3261e; --warn:#8a5a00; --okbg:#e8f4ec; --badbg:#fbe9e7; --warnbg:#fdf3e1; --mk-add:#e3f0ff; --mk-chg:#fff1d6; --mk-ren:#f0f0ee; --posture:#8a8a90; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#141416; --fg:#ececee; --muted:#9a9aa2; --line:#2c2c31; --card:#1c1c20; --accent:#7aa2ff; --ok:#6fd08f; --bad:#ff8a80; --warn:#e0b25c; --okbg:#16301f; --badbg:#3a1a18; --warnbg:#33280f; --mk-add:#1a2a44; --mk-chg:#3a2e12; --mk-ren:#26262b; --posture:#8f8f97; } }
+  :root[data-theme="dark"] { --bg:#141416; --fg:#ececee; --muted:#9a9aa2; --line:#2c2c31; --card:#1c1c20; --accent:#7aa2ff; --ok:#6fd08f; --bad:#ff8a80; --warn:#e0b25c; --okbg:#16301f; --badbg:#3a1a18; --warnbg:#33280f; --mk-add:#1a2a44; --mk-chg:#3a2e12; --mk-ren:#26262b; --posture:#8f8f97; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:1180px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:24px; margin:0 0 4px; } h2 { font-size:18px; margin:24px 0 8px; } h3 { font-size:15px; margin:4px 0 8px; } h4 { font-size:13px; margin:12px 0 4px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+  p { margin:6px 0; } ul, ol { margin:6px 0; padding-left:22px; } .muted { color:var(--muted); } .small { font-size:13px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin:10px 0; }
+  .tabs { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; } .tabs.sub button { font-size:13px; }
+  .steps { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0 6px; }
+  button { font:inherit; font-size:13px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; padding:4px 9px; cursor:pointer; }
+  button.on, button:hover { border-color:var(--accent); color:var(--accent); }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); } button.done { color:var(--muted); }
+  td button { padding:1px 6px; margin-right:2px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; margin:4px 0; }
+  th, td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  tr.posture td { color:var(--posture); } tr.off td { opacity:.55; }
+  tr.mk-added td, .mk-added { background:var(--mk-add); } tr.mk-changed td, .mk-changed { background:var(--mk-chg); } tr.mk-renumbered td, .mk-renumbered { background:var(--mk-ren); }
+  span.mk-added, span.mk-changed, span.mk-renumbered { padding:0 4px; border-radius:3px; }
+  .ok { color:var(--ok); font-weight:600; } .bad { color:var(--bad); font-weight:600; } .warn { color:var(--warn); }
+  .checks { list-style:none; padding-left:0; } .checks li { font-size:13px; }
+  .verdict { padding:8px 12px; border-radius:8px; margin:6px 0; font-size:14px; } .verdict.bad { background:var(--badbg); } .verdict.warnbg { background:var(--warnbg); }
+  .pill { display:inline-block; font-size:12px; padding:1px 8px; border-radius:10px; border:1px solid var(--line); color:var(--muted); } .pill.ok { color:var(--ok); }
+  .note { background:var(--warnbg); padding:6px 10px; border-radius:6px; font-size:13px; }
+  .tag { font-style:italic; } .asg { font-family:ui-monospace, Menlo, Consolas, monospace; font-size:12px; }
+  code, pre { font:12px ui-monospace, Menlo, Consolas, monospace; } pre { overflow-x:auto; background:var(--bg); padding:10px; border-radius:6px; max-height:520px; }
+  .scroll { overflow-x:auto; } .nowrap { white-space:nowrap; }
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:10px; } .grid2 .card { margin:0; }
+  ol.plain li { margin:4px 0; } details summary { cursor:pointer; font-weight:600; }
+</style>
+</head>
+<body>
+<main>
+<h1>Translation engine worked examples</h1>
+<p class="muted">Prototype for <em>Prototype: Translation engine worked examples</em> (issue 22). Throwaway. Rule base in, NSG rules per Managed NSG out, with priorities, names, the Preview, Affected Zones and the write order.</p>
+<div class="card">
+<p><b>Question.</b> Does the Translation engine behave the way administrators expect? Each tab is a worked example that follows the decisions so far (ADR 0004 to 0018 and the ticket resolutions). Click the numbered steps in order; each step is a Version that is committed, or a Change set on top of the last Version. The ticks say where the output matches a decision. Use the buttons in the tables to move or disable Rules, switch Egress postures, commit, or fail a write, and watch the output change.</p>
+<p class="muted small">The engine (engine.js) is a pure module; this page only renders it. <code>node run.mjs</code> runs every example and its checks in the terminal.</p>
+<details><summary>What to react to (open questions this prototype raises)</summary><div id="questions"></div></details>
+</div>
+<div id="app"></div>
+</main>
+<script>/*@inline engine.js*/</script>
+<script>/*@inline examples.js*/</script>
+<script>/*@inline page.js*/</script>
+<script>Page.start();</script>
+</body>
+</html>

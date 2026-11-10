@@ -1,0 +1,1541 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Translation Engine Examples</title>
+<!-- PROTOTYPE, throwaway. Built by build.mjs from engine.js, examples.js and page.js. For "Prototype: Translation engine worked examples" (issue 22). Not production code. -->
+<style>
+  :root { --bg:#fbfbfa; --fg:#1d1d1f; --muted:#6b6b70; --line:#e2e2e0; --card:#fff; --accent:#2457c5; --ok:#1d7a3e; --bad:#b3261e; --warn:#8a5a00; --okbg:#e8f4ec; --badbg:#fbe9e7; --warnbg:#fdf3e1; --mk-add:#e3f0ff; --mk-chg:#fff1d6; --mk-ren:#f0f0ee; --posture:#8a8a90; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#141416; --fg:#ececee; --muted:#9a9aa2; --line:#2c2c31; --card:#1c1c20; --accent:#7aa2ff; --ok:#6fd08f; --bad:#ff8a80; --warn:#e0b25c; --okbg:#16301f; --badbg:#3a1a18; --warnbg:#33280f; --mk-add:#1a2a44; --mk-chg:#3a2e12; --mk-ren:#26262b; --posture:#8f8f97; } }
+  :root[data-theme="dark"] { --bg:#141416; --fg:#ececee; --muted:#9a9aa2; --line:#2c2c31; --card:#1c1c20; --accent:#7aa2ff; --ok:#6fd08f; --bad:#ff8a80; --warn:#e0b25c; --okbg:#16301f; --badbg:#3a1a18; --warnbg:#33280f; --mk-add:#1a2a44; --mk-chg:#3a2e12; --mk-ren:#26262b; --posture:#8f8f97; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:1180px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:24px; margin:0 0 4px; } h2 { font-size:18px; margin:24px 0 8px; } h3 { font-size:15px; margin:4px 0 8px; } h4 { font-size:13px; margin:12px 0 4px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+  p { margin:6px 0; } ul, ol { margin:6px 0; padding-left:22px; } .muted { color:var(--muted); } .small { font-size:13px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin:10px 0; }
+  .tabs { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; } .tabs.sub button { font-size:13px; }
+  .steps { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0 6px; }
+  button { font:inherit; font-size:13px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; padding:4px 9px; cursor:pointer; }
+  button.on, button:hover { border-color:var(--accent); color:var(--accent); }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); } button.done { color:var(--muted); }
+  td button { padding:1px 6px; margin-right:2px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; margin:4px 0; }
+  th, td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  tr.posture td { color:var(--posture); } tr.off td { opacity:.55; }
+  tr.mk-added td, .mk-added { background:var(--mk-add); } tr.mk-changed td, .mk-changed { background:var(--mk-chg); } tr.mk-renumbered td, .mk-renumbered { background:var(--mk-ren); }
+  span.mk-added, span.mk-changed, span.mk-renumbered { padding:0 4px; border-radius:3px; }
+  .ok { color:var(--ok); font-weight:600; } .bad { color:var(--bad); font-weight:600; } .warn { color:var(--warn); }
+  .checks { list-style:none; padding-left:0; } .checks li { font-size:13px; }
+  .verdict { padding:8px 12px; border-radius:8px; margin:6px 0; font-size:14px; } .verdict.bad { background:var(--badbg); } .verdict.warnbg { background:var(--warnbg); }
+  .pill { display:inline-block; font-size:12px; padding:1px 8px; border-radius:10px; border:1px solid var(--line); color:var(--muted); } .pill.ok { color:var(--ok); }
+  .note { background:var(--warnbg); padding:6px 10px; border-radius:6px; font-size:13px; }
+  .tag { font-style:italic; } .asg { font-family:ui-monospace, Menlo, Consolas, monospace; font-size:12px; }
+  code, pre { font:12px ui-monospace, Menlo, Consolas, monospace; } pre { overflow-x:auto; background:var(--bg); padding:10px; border-radius:6px; max-height:520px; }
+  .scroll { overflow-x:auto; } .nowrap { white-space:nowrap; }
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:10px; } .grid2 .card { margin:0; }
+  ol.plain li { margin:4px 0; } details summary { cursor:pointer; font-weight:600; }
+</style>
+</head>
+<body>
+<main>
+<h1>Translation engine worked examples</h1>
+<p class="muted">Prototype for <em>Prototype: Translation engine worked examples</em> (issue 22). Throwaway. Rule base in, NSG rules per Managed NSG out, with priorities, names, the Preview, Affected Zones and the write order.</p>
+<div class="card">
+<p><b>Question.</b> Does the Translation engine behave the way administrators expect? Each tab is a worked example that follows the decisions so far (ADR 0004 to 0018 and the ticket resolutions). Click the numbered steps in order; each step is a Version that is committed, or a Change set on top of the last Version. The ticks say where the output matches a decision. Use the buttons in the tables to move or disable Rules, switch Egress postures, commit, or fail a write, and watch the output change.</p>
+<p class="muted small">The engine (engine.js) is a pure module; this page only renders it. <code>node run.mjs</code> runs every example and its checks in the terminal.</p>
+<details><summary>What to react to (open questions this prototype raises)</summary><div id="questions"></div></details>
+</div>
+<div id="app"></div>
+</main>
+<script>// PROTOTYPE, throwaway. Translation engine for "Prototype: Translation engine worked examples" (issue 22).
+// Pure module: no DOM. Loaded as a classic script (global `Engine`) by the page, and by run.mjs in node.
+// Follows ADR 0004/0016 (placement), 0005 and issue 13 (priorities, split, names), 0006 (ASGs),
+// 0017 (Extra prefixes, VNet bindings), 0011 (Import), 0018 (write order), 0010 (Data contract).
+(function (root) {
+  'use strict';
+
+  const ENGINE_VERSION = '0.1.0-prototype';
+  const RULES_LO = 120, RULES_HI = 4079;
+  const LIMITS = { rules: 1994, prefixesPerSide: 6000, asgsPerNsg: 100, warnAt: 0.9,
+    source: 'https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/azure-subscription-service-limits (retrieved 2026-11-09), counted conservatively as in issue 13' };
+  const DEFAULT_OPT = { splitFamilies: true, windowFill: 0.5, engineVersion: ENGINE_VERSION };
+
+  // ---------- small helpers ----------
+  const uniq = a => [...new Set(a)];
+  const clone = x => JSON.parse(JSON.stringify(x));
+  const cmpBig = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  function h6(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16).padStart(8, '0').slice(0, 6); }
+
+  // ---------- addresses ----------
+  const pc = new Map();
+  function ip4(s) { return s.split('.').reduce((a, o) => a * 256n + BigInt(+o), 0n); }
+  function ip6(s) {
+    const [h, t] = s.split('::'); const head = h ? h.split(':') : [], tail = t ? t.split(':') : [];
+    const g = s.includes('::') ? head.concat(Array(8 - head.length - tail.length).fill('0'), tail) : head;
+    return g.reduce((a, x) => a * 65536n + BigInt(parseInt(x || '0', 16)), 0n);
+  }
+  function P(s) {
+    if (pc.has(s)) return pc.get(s);
+    let r;
+    if (s === '*') r = { any: true, text: '*' };
+    else {
+      const [ip, l] = s.split('/'); const fam = ip.includes(':') ? 6 : 4, bits = fam === 4 ? 32 : 128;
+      const len = l === undefined ? bits : +l, v = fam === 4 ? ip4(ip) : ip6(ip), size = 1n << BigInt(bits - len);
+      const lo = v - (v % size); r = { fam, lo, hi: lo + size - 1n, len, text: s };
+    }
+    pc.set(s, r); return r;
+  }
+  const famOfText = s => (s === '*' ? 0 : s.includes(':') ? 6 : 4);
+  const contains = (a, b) => !!a.any || (!b.any && a.fam === b.fam && a.lo <= b.lo && b.hi <= a.hi);
+  const overlaps = (a, b) => !!a.any || !!b.any || (a.fam === b.fam && a.lo <= b.hi && b.lo <= a.hi);
+  const inP = (s, addr) => { const p = P(s); return !!p.any || (p.fam === addr.fam && p.lo <= addr.v && addr.v <= p.hi); };
+  function covered(p, list) { // p inside the union of list (parsed prefixes)
+    if (p.any) return list.some(q => q.any);
+    const iv = list.filter(q => q.any || q.fam === p.fam).map(q => (q.any ? [0n, 1n << 129n] : [q.lo, q.hi])).sort((a, b) => cmpBig(a[0], b[0]));
+    let cur = p.lo;
+    for (const [lo, hi] of iv) { if (lo > cur) break; if (hi >= cur) cur = hi + 1n; if (cur > p.hi) return true; }
+    return cur > p.hi;
+  }
+  function fmtAddr(a) {
+    if (a.fam === 4) { const v = Number(a.v); return [24, 16, 8, 0].map(s => (v >>> s) & 255).join('.'); }
+    const g = []; let v = a.v; for (let i = 0; i < 8; i++) { g.unshift((v & 0xffffn).toString(16)); v >>= 16n; }
+    let best = [-1, 0]; for (let i = 0; i < 8;) { if (g[i] !== '0') { i++; continue; } let j = i; while (j < 8 && g[j] === '0') j++; if (j - i > best[1]) best = [i, j - i]; i = j; }
+    if (best[1] < 2) return g.join(':');
+    return (g.slice(0, best[0]).join(':') + '::' + g.slice(best[0] + best[1]).join(':'));
+  }
+  const PRIVATE = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '100.64.0.0/10', 'fc00::/7', 'fe80::/10'];
+  const isPrivate = a => PRIVATE.some(s => inP(s, a));
+  function normPrefixes(list) { // drop duplicates and prefixes inside another prefix of the same list (issue 13, point 10)
+    const u = uniq(list); if (u.includes('*')) return ['*'];
+    const ps = u.map((s, i) => ({ p: P(s), i })).sort((x, y) => x.p.fam - y.p.fam || cmpBig(x.p.lo, y.p.lo) || cmpBig(y.p.hi, x.p.hi) || x.i - y.i);
+    const keep = new Set(); let fam = null, maxHi = -1n; // CIDR ranges are nested or disjoint, so one sweep finds the contained ones
+    for (const x of ps) { if (x.p.fam !== fam) { fam = x.p.fam; maxHi = -1n; } if (x.p.hi <= maxHi) continue; keep.add(x.i); maxHi = x.p.hi; }
+    return u.filter((s, i) => keep.has(i));
+  }
+  function famOf(list) { const f = uniq(list.map(famOfText)); return f.length === 1 ? f[0] : 0; }
+
+  // ---------- ports and services ----------
+  function parsePorts(s) { if (s === '*') return [0, 65535]; const [a, b] = String(s).split('-'); return [+a, b === undefined ? +a : +b]; }
+  function normPorts(list) {
+    if (list.includes('*')) return ['*'];
+    const r = list.map(parsePorts).sort((x, y) => x[0] - y[0]), out = [];
+    for (const [a, b] of r) { const l = out[out.length - 1]; if (l && a <= l[1] + 1) l[1] = Math.max(l[1], b); else out.push([a, b]); }
+    if (out.length === 1 && out[0][0] === 0 && out[0][1] === 65535) return ['*'];
+    return out.map(([a, b]) => (a === b ? String(a) : a + '-' + b));
+  }
+  const PROTOS = ['Tcp', 'Udp', 'Icmp', 'Esp', 'Ah', '*'];
+  function svcFlat(refs, inst) {
+    const out = [];
+    for (const r of refs) {
+      if (r === 'any') { out.push({ proto: '*', ports: '*' }); continue; }
+      const s = inst.services[r]; if (!s) throw new Error('unknown service ' + r);
+      if (s.kind === 'group') out.push(...svcFlat(s.members, inst)); else out.push({ proto: s.proto, ports: s.ports || '*' });
+    }
+    return out;
+  }
+  function protoGroups(refs, inst) { // one protocol group per protocol, ports merged (issue 13, point 8)
+    const f = svcFlat(refs, inst);
+    if (f.some(x => x.proto === '*')) return [{ proto: '*', ports: ['*'] }];
+    const by = {}; f.forEach(x => (by[x.proto] = by[x.proto] || []).push(x.ports));
+    return PROTOS.filter(p => by[p]).map(p => ({ proto: p, ports: p === 'Tcp' || p === 'Udp' ? normPorts(by[p]) : ['*'] }));
+  }
+
+  // ---------- instance helpers ----------
+  const isZone = (inst, id) => !!inst.zones[id] && inst.zones[id].state === 'managed';
+  const zoneIds = inst => Object.keys(inst.zones).filter(id => isZone(inst, id));
+  const nsgZoneIds = inst => Object.keys(inst.zones); // every zone record has an NSG (managed, retired or legacy)
+  const zoneAddrs = (inst, id) => { const z = inst.zones[id]; return z.prefixes.concat(z.state === 'managed' ? z.extra || [] : []); };
+  const nsgName = (inst, id) => inst.zones[id].nsg || `nsg-${inst.zones[id].vnet}-${id}`;
+  const envOf = (inst, vnet) => inst.envs[inst.vnets[vnet].env];
+  const membersOf = (inst, id) => (inst.objects[id].members || []).filter(n => inst.nics[n]);
+  function asgName(inst, id, vnet) {
+    const o = inst.objects[id];
+    if (o.kind === 'extasg') return o.asgName;
+    if (o.adopted && o.adopted[vnet]) return o.adopted[vnet];
+    return (envOf(inst, vnet).asgPattern || 'asg-{object}-{vnet}').replace('{object}', o.name).replace('{vnet}', vnet);
+  }
+  function refLabel(inst, r) {
+    if (r === 'any') return 'any';
+    if (r.startsWith('zone:')) return 'Zone ' + r.slice(5);
+    const o = inst.objects[r]; return o ? o.name : r;
+  }
+  function svcLabel(inst, r) { if (r === 'any') return 'any'; const s = inst.services[r]; return s ? s.name || r : r; }
+  function flat(refs, inst) {
+    const out = [];
+    for (const r of refs) {
+      if (r !== 'any' && !r.startsWith('zone:') && inst.objects[r] && inst.objects[r].kind === 'group') out.push(...flat(inst.objects[r].members, inst));
+      else out.push(r);
+    }
+    return uniq(out);
+  }
+
+  // ---------- Coverage (ADR 0004, 0006, 0017) ----------
+  function coverage(ref, inst) {
+    if (ref === 'any') return zoneIds(inst);
+    if (ref.startsWith('zone:')) { const z = ref.slice(5); return isZone(inst, z) ? [z] : []; }
+    const o = inst.objects[ref]; if (!o) throw new Error('unknown object ' + ref);
+    switch (o.kind) {
+      case 'host': case 'cidr': {
+        const p = P(o.value);
+        return zoneIds(inst).filter(z => (!o.bind || o.bind.includes(inst.zones[z].vnet)) && zoneAddrs(inst, z).some(q => overlaps(p, P(q))));
+      }
+      case 'vnet': return zoneIds(inst).filter(z => inst.zones[z].vnet === o.vnet);
+      case 'asg': case 'extasg': return uniq(membersOf(inst, ref).map(n => inst.nics[n].subnet).filter(s => isZone(inst, s)));
+      case 'group': return uniq(o.members.flatMap(m => coverage(m, inst)));
+      default: return []; // service tag, subnet that is not a Zone
+    }
+  }
+  const covList = (refs, inst) => uniq(refs.flatMap(r => coverage(r, inst)));
+
+  // Addresses an object stands for, as far as the engine knows them (null = unknown, e.g. a service tag)
+  function refPrefixes(r, inst) {
+    if (r === 'any') return ['*'];
+    if (r.startsWith('zone:')) return zoneAddrs(inst, r.slice(5));
+    const o = inst.objects[r];
+    switch (o.kind) {
+      case 'host': case 'cidr': return [o.value];
+      case 'subnet': return inst.subnets[o.subnet].prefixes;
+      case 'vnet': return inst.vnets[o.vnet].space;
+      case 'asg': case 'extasg': return membersOf(inst, r).flatMap(n => inst.nics[n].ips);
+      case 'group': { const parts = o.members.map(m => refPrefixes(m, inst)); return parts.some(p => p === null) ? null : parts.flat(); }
+      default: return null;
+    }
+  }
+  function allZonePrefixes(inst) { return zoneIds(inst).flatMap(z => zoneAddrs(inst, z)).map(P); }
+  function insideZones(prefixes, inst) { if (!prefixes) return false; const zs = allZonePrefixes(inst); return prefixes.every(s => s !== '*' && covered(P(s), zs)); }
+  function reachesOutsideZones(refs, inst) { return flat(refs, inst).some(r => { const p = refPrefixes(r, inst); return !p || !insideZones(p, inst); }); }
+
+  // ---------- one side of an NSG rule: partitions (issue 13, point 8; ADR 0006) ----------
+  function sideParts(refs, zid, own, inst, opt) {
+    let fl = flat(refs, inst);
+    if (own) fl = fl.filter(r => coverage(r, inst).includes(zid)); // own-side pruning (issue 13, point 9)
+    const z = inst.zones[zid], zv = z.vnet, tf = envOf(inst, zv).mode === 'terraform';
+    const pre = [], fb = [], tags = [], asgs = [];
+    for (const r of fl) {
+      if (r === 'any') { pre.push('*'); continue; }
+      if (r.startsWith('zone:')) { pre.push(...zoneAddrs(inst, r.slice(5))); continue; }
+      const o = inst.objects[r];
+      if (o.kind === 'host' || o.kind === 'cidr') pre.push(o.value);
+      else if (o.kind === 'subnet') pre.push(...inst.subnets[o.subnet].prefixes);
+      else if (o.kind === 'vnet') pre.push(...inst.vnets[o.vnet].space);
+      else if (o.kind === 'tag') tags.push(o.value);
+      else if (o.kind === 'asg' || o.kind === 'extasg') {
+        const mem = membersOf(inst, r), ips = ns => ns.flatMap(n => inst.nics[n].ips);
+        const here = mem.filter(n => inst.nics[n].vnet === zv), away = mem.filter(n => inst.nics[n].vnet !== zv);
+        if (z.kind === 'pgflex') {
+          const use = own ? mem.filter(n => inst.nics[n].subnet === zid) : mem;
+          if (use.length) fb.push({ obj: r, ips: ips(use), why: 'PostgreSQL flexible server takes no ASGs in NSG rules' });
+          continue;
+        }
+        if (here.length) {
+          asgs.push(asgName(inst, r, zv));
+          if (tf && o.kind === 'asg') { const v6 = ips(here).filter(s => s.includes(':')); if (v6.length) fb.push({ obj: r, ips: v6, why: 'Terraform writes ASG membership on IPv4 IP configurations only' }); }
+        }
+        if (!own && away.length) fb.push({ obj: r, ips: ips(away), why: 'ASG members in other VNets' });
+      }
+    }
+    const parts = [];
+    const addPre = (list, id, extra) => {
+      const n = normPrefixes(list); if (!n.length) return;
+      if (opt.splitFamilies && !n.includes('*')) {
+        const v4 = n.filter(s => !s.includes(':')), v6 = n.filter(s => s.includes(':'));
+        if (v4.length) parts.push(Object.assign({ kind: 'prefixes', id: id + ':v4', fam: 4, prefixes: v4 }, extra));
+        if (v6.length) parts.push(Object.assign({ kind: 'prefixes', id: id + ':v6', fam: 6, prefixes: v6 }, extra));
+      } else parts.push(Object.assign({ kind: 'prefixes', id, fam: famOf(n), prefixes: n }, extra));
+    };
+    addPre(pre, 'prefixes', {});
+    uniq(fb.map(f => f.obj)).forEach(obj => { const g = fb.filter(f => f.obj === obj); addPre(g.flatMap(f => f.ips), 'ips:' + obj, { fallback: obj, why: uniq(g.map(f => f.why)).join('; ') }); });
+    uniq(tags).forEach(t => parts.push({ kind: 'tag', id: 'tag:' + t, fam: 0, tag: t }));
+    const a = uniq(asgs); for (let i = 0; i < a.length; i += 10) parts.push({ kind: 'asgs', id: 'asgs:' + i / 10, fam: 0, asgs: a.slice(i, i + 10) });
+    return parts;
+  }
+
+  // ---------- NSG rules of one Rule on one NSG and direction ----------
+  function ruleNsgRules(rule, zid, dir, inst, opt) {
+    const own = dir === 'in' ? rule.dst : rule.src, far = dir === 'in' ? rule.src : rule.dst;
+    const ownP = sideParts(own, zid, true, inst, opt), farP = sideParts(far, zid, false, inst, opt);
+    const srcP = dir === 'in' ? farP : ownP, dstP = dir === 'in' ? ownP : farP;
+    const out = [];
+    for (const pg of protoGroups(rule.svc, inst)) for (const s of srcP) for (const d of dstP) {
+      if (s.fam && d.fam && s.fam !== d.fam) continue;
+      const key = [pg.proto, s.id, d.id].join('|');
+      out.push({ name: `nsgfw-r${rule.id}-${dir}-${h6(key)}`, key, ruleId: rule.id, dir, access: rule.action === 'deny' ? 'Deny' : 'Allow',
+        proto: pg.proto, ports: pg.ports, src: s, dst: d, kind: 'rule', desc: `Rule ${rule.id}: ${rule.name}`.slice(0, 140) });
+    }
+    return out;
+  }
+  const pre = list => ({ kind: 'prefixes', id: 'p', fam: famOf(list), prefixes: list });
+  const tag = t => ({ kind: 'tag', id: 'tag:' + t, fam: 0, tag: t });
+  const ANY = pre(['*']);
+  const fixed = (name, priority, dir, access, src, dst, kind, desc) => ({ name, priority, dir, access, proto: '*', ports: ['*'], src, dst, kind, desc });
+  function azureDefaults(dir) {
+    return dir === 'in'
+      ? [fixed('AllowVnetInBound', 65000, 'in', 'Allow', tag('VirtualNetwork'), tag('VirtualNetwork'), 'azure'), fixed('AllowAzureLoadBalancerInBound', 65001, 'in', 'Allow', tag('AzureLoadBalancer'), ANY, 'azure'), fixed('DenyAllInBound', 65500, 'in', 'Deny', ANY, ANY, 'azure')]
+      : [fixed('AllowVnetOutBound', 65000, 'out', 'Allow', tag('VirtualNetwork'), tag('VirtualNetwork'), 'azure'), fixed('AllowInternetOutBound', 65001, 'out', 'Allow', ANY, tag('Internet'), 'azure'), fixed('DenyAllOutBound', 65500, 'out', 'Deny', ANY, ANY, 'azure')];
+  }
+  function sidePrefixesKnown(side, inst) {
+    if (side.kind === 'prefixes') return side.prefixes;
+    if (side.kind === 'asgs') { const ips = []; for (const a of side.asgs) { const o = Object.keys(inst.objects).find(k => ['asg', 'extasg'].includes(inst.objects[k].kind) && membersOf(inst, k).some(n => asgName(inst, k, inst.nics[n].vnet) === a)); if (!o) return null; ips.push(...membersOf(inst, o).filter(n => asgName(inst, o, inst.nics[n].vnet) === a).flatMap(n => inst.nics[n].ips)); } return ips; }
+    return null;
+  }
+  function sideOverlap(a, b, inst) { const x = sidePrefixesKnown(a, inst), y = sidePrefixesKnown(b, inst); if (!x || !y) return true; return x.some(s => y.some(t => overlaps(P(s), P(t)))); }
+  function portsOverlap(a, b) { if (a.includes('*') || b.includes('*')) return true; return a.some(p => b.some(q => { const [x1, x2] = parsePorts(p), [y1, y2] = parsePorts(q); return x1 <= y2 && y1 <= x2; })); }
+  function nsgRuleOverlap(a, b, inst) { return (a.proto === '*' || b.proto === '*' || a.proto === b.proto) && portsOverlap(a.ports, b.ports) && sideOverlap(a.src, b.src, inst) && sideOverlap(a.dst, b.dst, inst); }
+
+  // ---------- priorities (ADR 0005, issue 13 point 4) ----------
+  function lis(c) { // c: [[i, p]] ordered by i; longest strictly increasing subsequence by p
+    const tails = [], prev = new Array(c.length).fill(-1), idx = [];
+    c.forEach(([, p], k) => {
+      let lo = 0, hi = tails.length; while (lo < hi) { const m = (lo + hi) >> 1; if (c[tails[m]][1] < p) lo = m + 1; else hi = m; }
+      if (lo > 0) prev[k] = tails[lo - 1]; tails[lo] = k; idx[lo] = k;
+    });
+    const out = []; let k = tails.length ? tails[tails.length - 1] : -1; while (k >= 0) { out.unshift(c[k]); k = prev[k]; } return out;
+  }
+  function spread(list, pr, a, b, lo, hi) { // spread list[a..b] in (lo, hi), blocks of one Rule consecutive
+    const blocks = []; for (let i = a; i <= b; i++) { const l = blocks[blocks.length - 1]; if (l && list[l[0]].ruleId === list[i].ruleId) l.push(i); else blocks.push([i]); }
+    const step = (hi - lo) / (blocks.length + 1); let prevEnd = lo, remaining = b - a + 1;
+    blocks.forEach((bl, j) => {
+      let start = Math.round(lo + step * (j + 1) - (bl.length - 1) / 2);
+      start = Math.max(start, prevEnd + 1); start = Math.min(start, hi - remaining);
+      bl.forEach((i, k) => (pr[i] = start + k)); prevEnd = start + bl.length - 1; remaining -= bl.length;
+    });
+  }
+  function assignPriorities(list, prev, opt) {
+    // Anchors: NSG rules whose order relative to their neighbours holds keep their stored priority (longest increasing run).
+    // A new or moved NSG rule takes the middle of the gap. Without a free number, a window of priorities grows around
+    // the spot until it is at most half occupied, and only that window is spread evenly.
+    const n = list.length, pr = new Array(n).fill(null), windows = [];
+    const cand = []; list.forEach((r, i) => { const p = prev && prev.get(r.name); if (p !== undefined && p >= RULES_LO && p <= RULES_HI) cand.push([i, p]); });
+    lis(cand).forEach(([i, p]) => (pr[i] = p));
+    let i = 0;
+    while (i < n) {
+      if (pr[i] !== null) { i++; continue; }
+      const a = i; while (i < n && pr[i] === null) i++; const b = i - 1;
+      const lo = a > 0 ? pr[a - 1] : RULES_LO - 1, hi = b < n - 1 ? pr[b + 1] : RULES_HI + 1;
+      if (b - a + 1 <= hi - lo - 1) { spread(list, pr, a, b, lo, hi); continue; }
+      const c = (lo + hi) / 2; let r = Math.max(1, Math.ceil((hi - lo) / 2));
+      for (;;) {
+        const L = Math.max(RULES_LO, Math.floor(c - r)), H = Math.min(RULES_HI, Math.ceil(c + r)), whole = L === RULES_LO && H === RULES_HI;
+        let i0 = a; while (i0 > 0 && pr[i0 - 1] !== null && pr[i0 - 1] >= L) i0--;
+        let i1 = b; while (i1 + 1 < n && (pr[i1 + 1] === null || pr[i1 + 1] <= H)) i1++;
+        const count = i1 - i0 + 1, size = H - L + 1;
+        if (count <= opt.windowFill * size || (whole && count <= size)) {
+          const before = pr.slice(i0, i1 + 1);
+          for (let k = i0; k <= i1; k++) pr[k] = null;
+          spread(list, pr, i0, i1, L - 1, H + 1);
+          windows.push({ dir: list[0].dir, from: L, to: H, count, renumbered: list.slice(i0, i1 + 1).filter((x, k) => before[k] !== null && before[k] !== pr[i0 + k]).map(x => x.name) });
+          i = i1 + 1; break;
+        }
+        if (whole) throw new Error('Rules band full: ' + count + ' NSG rules');
+        r *= 2;
+      }
+    }
+    list.forEach((x, k) => (x.priority = pr[k]));
+    return windows;
+  }
+
+  // ---------- translate one Managed NSG ----------
+  function legacySide(v) {
+    const l = Array.isArray(v) ? v : [v];
+    if (l.length === 1 && /^[A-Za-z]/.test(l[0])) return tag(l[0]);
+    return pre(l);
+  }
+  function legacyRules(list, dir) {
+    return list.map(l => ({ name: l.name, priority: l.priority, dir, access: l.access, proto: l.proto || '*', ports: [].concat(l.ports || '*'), src: legacySide(l.src), dst: legacySide(l.dst), kind: 'legacy', desc: l.desc || '' }));
+  }
+  function translateZone(inst, zid, opt, prevNsg, cov) {
+    const z = inst.zones[zid], res = { zone: zid, name: nsgName(inst, zid), state: z.state, kind: z.kind || 'normal', in: [], out: [], dropped: [], windows: [] };
+    if (z.state === 'legacy') { res.in = legacyRules(z.legacy.in, 'in'); res.out = legacyRules(z.legacy.out, 'out'); return res; }
+    if (z.state === 'none') return res; // subnet without NSG: only Azure's defaults apply (used as Deployed state)
+    const appgw = z.kind === 'appgw', dual = z.prefixes.some(s => s.includes(':'));
+    const plat = [fixed('nsgfw-platform-lb', 100, 'in', 'Allow', tag('AzureLoadBalancer'), ANY, 'platform', 'Platform exception: Azure Load Balancer probes')];
+    if (dual) plat.push(fixed('nsgfw-platform-lb-v6', 101, 'in', 'Allow', pre(['fe80::1234:5678:9abc']), ANY, 'platform', 'Platform exception: IPv6 probe source'));
+    const denyIn = fixed('nsgfw-denyall-in', 4096, 'in', 'Deny', ANY, ANY, 'denyall', 'Deny-all rule');
+    const denyOut = fixed('nsgfw-denyall-out', 4096, 'out', 'Deny', ANY, ANY, 'denyall', 'Deny-all rule');
+    if (z.state === 'retired') { res.in = plat.concat(denyIn); res.out = appgw ? [] : [denyOut]; return res; }
+    let inR = [], outR = [];
+    for (const r of inst.rules) {
+      if (r.enabled === false) continue;
+      if (cov[r.id].dst.includes(zid)) inR.push(...ruleNsgRules(r, zid, 'in', inst, opt));
+      if (cov[r.id].src.includes(zid)) outR.push(...ruleNsgRules(r, zid, 'out', inst, opt));
+    }
+    if (z.posture === 'dest' && !appgw) { // ADR 0016: leave out outbound NSG rules without effect, bottom-up
+      const internal = inst.internal.map(P), kept = [];
+      for (let i = outR.length - 1; i >= 0; i--) {
+        const n = outR[i], known = sidePrefixesKnown(n.dst, inst);
+        if (n.access === 'Deny' && known && insideZones(known, inst)) { res.dropped.unshift({ rule: n, why: 'deny whose destination lies entirely inside Zones: the same deny lands inbound there' }); continue; }
+        if (n.access === 'Allow' && known && known.every(s => s !== '*' && covered(P(s), internal)) && !kept.some(k => k.access === 'Deny' && nsgRuleOverlap(k, n, inst))) {
+          res.dropped.unshift({ rule: n, why: 'allow whose destination lies inside the Internal address space: the egress allow already lets it out' }); continue;
+        }
+        kept.unshift(n);
+      }
+      outR = kept;
+    }
+    const prevMap = d => new Map(prevNsg ? prevNsg[d].filter(x => x.kind === 'rule').map(x => [x.name, x.priority]) : []);
+    res.windows = res.windows.concat(assignPriorities(inR, prevMap('in'), opt), assignPriorities(outR, prevMap('out'), opt));
+    const addrs = zoneAddrs(inst, zid), v4 = addrs.filter(s => !s.includes(':')), v6 = addrs.filter(s => s.includes(':'));
+    const intra = d => [].concat(v4.length ? [fixed(`nsgfw-intrazone-${d}-v4`, 4080, d, 'Allow', pre(v4), pre(v4), 'intra', 'Intra-zone default')] : [], v6.length ? [fixed(`nsgfw-intrazone-${d}-v6`, 4081, d, 'Allow', pre(v6), pre(v6), 'intra', 'Intra-zone default')] : []);
+    const inh = z.inherit || {}, inhIn = [], inhOut = [];
+    if (inh.inVNet) inhIn.push(fixed('nsgfw-inherit-in-vnet', 4090, 'in', 'Allow', tag('VirtualNetwork'), tag('VirtualNetwork'), 'inherited', 'Inherited default: inbound from VirtualNetwork'));
+    if (inh.outVNet) inhOut.push(fixed('nsgfw-inherit-out-vnet', 4090, 'out', 'Allow', tag('VirtualNetwork'), tag('VirtualNetwork'), 'inherited', 'Inherited default: outbound to VirtualNetwork'));
+    if (inh.outInternet) inhOut.push(fixed('nsgfw-inherit-out-internet', 4091, 'out', 'Allow', ANY, tag('Internet'), 'inherited', 'Inherited default: outbound to Internet'));
+    const egress = [];
+    if (z.posture === 'dest' && !appgw) {
+      const i4 = inst.internal.filter(s => !s.includes(':')), i6 = inst.internal.filter(s => s.includes(':'));
+      if (i4.length) egress.push(fixed('nsgfw-egress-internal-v4', 4094, 'out', 'Allow', ANY, pre(i4), 'egress', 'Egress posture destination-enforced: Internal address space'));
+      if (i6.length) egress.push(fixed('nsgfw-egress-internal-v6', 4095, 'out', 'Allow', ANY, pre(i6), 'egress', 'Egress posture destination-enforced: Internal address space'));
+    }
+    res.in = plat.concat(inR, intra('in'), inhIn, [denyIn]);
+    res.out = outR.concat(intra('out'), inhOut, egress, appgw ? [] : [denyOut]);
+    return res;
+  }
+
+  // ---------- Managed ASGs and membership ----------
+  function managedAsgs(inst) {
+    const out = {};
+    for (const [id, o] of Object.entries(inst.objects)) if (o.kind === 'asg') for (const n of membersOf(inst, id)) {
+      const v = inst.nics[n].vnet, name = asgName(inst, id, v);
+      (out[name] = out[name] || { name, object: id, vnet: v, env: inst.vnets[v].env, members: [] }).members.push(n);
+    }
+    return out;
+  }
+  function nicAsgs(inst) { // tool-written memberships per network interface
+    const out = {}; Object.values(managedAsgs(inst)).forEach(a => a.members.forEach(n => (out[n] = out[n] || []).push(a.name)));
+    Object.keys(out).forEach(n => out[n].sort()); return out;
+  }
+  function membership(inst) { // ASG name -> addresses of its members (managed and unmanaged ASGs)
+    const m = {};
+    for (const [id, o] of Object.entries(inst.objects)) if (o.kind === 'asg' || o.kind === 'extasg') for (const n of membersOf(inst, id)) {
+      const name = asgName(inst, id, inst.nics[n].vnet); (m[name] = m[name] || []).push(...inst.nics[n].ips);
+    }
+    return m;
+  }
+
+  // ---------- translate the whole Rule base ----------
+  function translate(inst, o) {
+    const opt = Object.assign({}, DEFAULT_OPT, o || {}), prev = opt.prev || null;
+    const cov = {}; inst.rules.forEach(r => (cov[r.id] = { src: covList(r.src, inst), dst: covList(r.dst, inst) }));
+    const nsgs = {};
+    for (const zid of nsgZoneIds(inst)) nsgs[zid] = translateZone(inst, zid, opt, prev && prev.nsgs[zid], cov);
+    const cost = {}, noEffect = [];
+    for (const r of inst.rules) {
+      const c = { nsgs: [], nsgRules: 0 };
+      for (const [zid, n] of Object.entries(nsgs)) { const k = n.in.concat(n.out).filter(x => x.ruleId === r.id).length; if (k) { c.nsgs.push(zid); c.nsgRules += k; } }
+      cost[r.id] = c; if (r.enabled !== false && !c.nsgRules) noEffect.push(r.id);
+    }
+    const limits = {}, errors = [], warnings = [];
+    for (const [zid, n] of Object.entries(nsgs)) {
+      const all = n.in.concat(n.out), sum = side => all.reduce((a, x) => a + (x[side].kind === 'prefixes' ? x[side].prefixes.length : 0), 0);
+      const L = { rules: all.length, srcPrefixes: sum('src'), dstPrefixes: sum('dst'), asgs: uniq(all.flatMap(x => [x.src, x.dst]).filter(s => s.kind === 'asgs').flatMap(s => s.asgs)).length };
+      limits[zid] = L;
+      [['rules', 'NSG rules', LIMITS.rules], ['srcPrefixes', 'source prefixes', LIMITS.prefixesPerSide], ['dstPrefixes', 'destination prefixes', LIMITS.prefixesPerSide], ['asgs', 'ASGs', LIMITS.asgsPerNsg]].forEach(([k, label, max]) => {
+        if (L[k] > max) {
+          const top = Object.entries(all.reduce((a, x) => (x.ruleId && (a[x.ruleId] = (a[x.ruleId] || 0) + 1), a), {})).sort((a, b) => b[1] - a[1]).slice(0, 3);
+          errors.push({ kind: 'limit', nsg: n.name, limit: label, count: L[k], max, top, text: `${n.name}: ${L[k]} ${label}, limit ${max}. Most NSG rules: ${top.map(([id, c]) => `Rule ${id} (${c})`).join(', ')}` });
+        } else if (L[k] >= LIMITS.warnAt * max) warnings.push({ kind: 'limit', nsg: n.name, text: `${n.name}: ${L[k]} of ${max} ${label} (${Math.round((100 * L[k]) / max)} %)` });
+      });
+    }
+    return { engineVersion: opt.engineVersion, opt: { splitFamilies: opt.splitFamilies }, nsgs, cost, noEffect, limits, errors, warnings, asgs: managedAsgs(inst), nicAsgs: nicAsgs(inst), cov };
+  }
+
+  // ---------- evaluation (for the Rule base check, Crossing flows and member steps) ----------
+  function knownTag(t, addr, zid, inst) {
+    const z = inst.zones[zid], vn = [z.vnet].concat(inst.vnets[z.vnet].peers || []);
+    const inVnet = vn.some(v => inst.vnets[v].space.some(s => inP(s, addr)));
+    if (t === 'VirtualNetwork') return inVnet ? true : null; // documented: own VNet and peered VNets are inside the tag
+    if (t === 'Internet') return inVnet ? false : null;
+    return isPrivate(addr) ? false : null; // Azure service tags hold public ranges
+  }
+  function portIn(ports, port) { if (port === null) return true; return ports.some(p => { const [a, b] = parsePorts(p); return a <= port && port <= b; }); }
+  function sideMatch(side, addr, ctx, role) {
+    if (side.kind === 'prefixes') return side.prefixes.some(s => inP(s, addr));
+    if (side.kind === 'tag') { const k = ctx.known(side.tag, addr); if (k !== null) return k; const key = side.tag + '|' + role; ctx.seen.add(key); return !!ctx.cases[key]; }
+    if (side.kind === 'asgs') { const key = addr.fam + ':' + addr.v; return side.asgs.some(a => (ctx.members[a] || []).some(s => { const p = P(s); return p.fam === addr.fam && p.lo === addr.v; })); }
+    return false;
+  }
+  function firstMatch(list, f, ctx) {
+    for (const r of list) {
+      if (r.proto !== '*' && r.proto !== f.proto) continue;
+      if (!portIn(r.ports, f.port)) continue;
+      if (!sideMatch(r.src, f.s, ctx, 'src') || !sideMatch(r.dst, f.d, ctx, 'dst')) continue;
+      return r;
+    }
+    return null;
+  }
+  const fullList = (nsg, dir) => (nsg ? nsg[dir].slice().sort((a, b) => a.priority - b.priority) : []).concat(azureDefaults(dir));
+  // All tag cases for one NSG and one flow: the known facts decide where they can, both ways elsewhere (ADR 0018)
+  function tagCases(lists, f, zid, inst, members) {
+    const seen = new Set(), probe = { known: (t, a) => knownTag(t, a, zid, inst), seen, cases: {}, members };
+    lists.forEach(l => firstMatchAll(l, f, probe));
+    const keys = [...seen], out = [];
+    for (let m = 0; m < 1 << keys.length; m++) { const c = {}; keys.forEach((k, i) => (c[k] = !!(m & (1 << i)))); out.push(c); }
+    return out;
+  }
+  function firstMatchAll(list, f, ctx) { for (const r of list) { if (r.proto !== '*' && r.proto !== f.proto) continue; if (!portIn(r.ports, f.port)) continue; sideMatch(r.src, f.s, ctx, 'src'); sideMatch(r.dst, f.d, ctx, 'dst'); } }
+  function verdict(list, f, zid, inst, members, cases) {
+    const r = firstMatch(list, f, { known: (t, a) => knownTag(t, a, zid, inst), seen: new Set(), cases, members });
+    return { ok: !r || r.access === 'Allow', rule: r };
+  }
+  function cutsFrom(lists) { const c = []; lists.forEach(l => l.forEach(r => [r.src, r.dst].forEach(s => s.kind === 'prefixes' && s.prefixes.forEach(p => p !== '*' && c.push(p))))); return uniq(c); }
+  function repsOf(prefixes, cuts, points) {
+    const out = [];
+    for (const t of uniq(prefixes)) {
+      const p = P(t), cs = new Set([p.lo]);
+      for (const c of cuts) { const q = P(c); if (q.fam !== p.fam) continue; if (q.lo > p.lo && q.lo <= p.hi) cs.add(q.lo); if (q.hi + 1n > p.lo && q.hi + 1n <= p.hi) cs.add(q.hi + 1n); }
+      for (const s of points) { const a = P(s); if (a.fam === p.fam && a.lo >= p.lo && a.lo <= p.hi) { cs.add(a.lo); if (a.lo + 1n <= p.hi) cs.add(a.lo + 1n); } }
+      const sorted = [...cs].sort(cmpBig);
+      sorted.forEach((v, k) => { const end = k + 1 < sorted.length ? sorted[k + 1] - 1n : p.hi; out.push({ fam: p.fam, v: end > v ? v + 1n : v }); });
+    }
+    const seen = new Set(); return out.filter(a => { const k = a.fam + ':' + a.v; if (seen.has(k)) return false; seen.add(k); return true; });
+  }
+  function portReps(lists) {
+    const cuts = new Set([1]);
+    lists.forEach(l => l.forEach(r => (r.proto === 'Tcp' || r.proto === 'Udp' || r.proto === '*') && r.ports.forEach(p => { if (p === '*') return; const [a, b] = parsePorts(p); cuts.add(a); if (b < 65535) cuts.add(b + 1); })));
+    const ps = [...cuts].sort((a, b) => a - b), out = [];
+    ['Tcp', 'Udp'].forEach(proto => ps.forEach(port => out.push({ proto, port })));
+    out.push({ proto: 'Icmp', port: null });
+    return out;
+  }
+  const allNicIps = inst => Object.values(inst.nics).flatMap(n => n.ips);
+
+  // Crossing flows (ADR 0018): one NSG closes a flow between two Zones, the other opens it
+  function crossings(dep, tgt, membersMid) {
+    const zones = uniq(Object.keys(dep.out.nsgs).concat(Object.keys(tgt.out.nsgs)));
+    const sig = n => JSON.stringify(n ? n.in.concat(n.out).map(r => [r.dir, r.priority, r.access, r.proto, r.ports, r.src, r.dst]) : null);
+    const changed = zones.filter(z => sig(dep.out.nsgs[z]) !== sig(tgt.out.nsgs[z]));
+    const edges = {};
+    const addrsOf = z => uniq([].concat(dep.inst.zones[z] ? zoneAddrs(dep.inst, z) : [], tgt.inst.zones[z] ? zoneAddrs(tgt.inst, z) : []));
+    for (const A of changed) for (const B of changed) {
+      if (A === B) continue;
+      const Ao = fullList(dep.out.nsgs[A], 'out'), An = fullList(tgt.out.nsgs[A], 'out'), Bo = fullList(dep.out.nsgs[B], 'in'), Bn = fullList(tgt.out.nsgs[B], 'in');
+      const lists = [Ao, An, Bo, Bn], cuts = cutsFrom(lists).concat(dep.inst.internal), pts = allNicIps(tgt.inst).concat(allNicIps(dep.inst));
+      const S = repsOf(addrsOf(A), cuts, pts), D = repsOf(addrsOf(B), cuts, pts), ports = portReps(lists);
+      const instA = tgt.inst.zones[A] ? tgt.inst : dep.inst, instB = tgt.inst.zones[B] ? tgt.inst : dep.inst;
+      for (const s of S) for (const d of D) for (const pp of ports) {
+        const f = { s, d, proto: pp.proto, port: pp.port };
+        for (const ca of tagCases([Ao, An], f, A, instA, membersMid)) for (const cb of tagCases([Bo, Bn], f, B, instB, membersMid)) {
+          const ao = verdict(Ao, f, A, instA, membersMid, ca), an = verdict(An, f, A, instA, membersMid, ca), bo = verdict(Bo, f, B, instB, membersMid, cb), bn = verdict(Bn, f, B, instB, membersMid, cb);
+          let from = null, to = null, why;
+          if (!ao.ok && an.ok && bo.ok && !bn.ok) { from = B; to = A; why = { closes: bn.rule, opens: an.rule }; }
+          if (ao.ok && !an.ok && !bo.ok && bn.ok) { from = A; to = B; why = { closes: an.rule, opens: bn.rule }; }
+          if (!from) continue;
+          const key = from + '>' + to, e = edges[key] || (edges[key] = { from, to, count: 0, witness: null });
+          e.count++;
+          if (!e.witness) e.witness = { flow: `${fmtAddr(s)} (Zone ${A}) → ${fmtAddr(d)} (Zone ${B}) ${pp.proto}${pp.port === null ? '' : '/' + pp.port}`,
+            cases: Object.entries(Object.assign({}, ca, cb)).map(([k, v]) => `${k.split('|')[0]} ${v ? 'contains' : 'does not contain'} the ${k.split('|')[1] === 'src' ? 'source' : 'destination'}`),
+            closes: `${from === A ? 'outbound' : 'inbound'} ${why.closes ? why.closes.name : 'nothing (Azure default)'}`, opens: `${to === A ? 'outbound' : 'inbound'} ${why.opens ? why.opens.name : 'Azure default'}` };
+        }
+      }
+    }
+    return { changed, edges: Object.values(edges) };
+  }
+
+  // Verdict of a whole flow through the NSGs of a state (source Zone outbound, destination Zone inbound)
+  function zoneOfAddr(inst, a) { return zoneIds(inst).concat(Object.keys(inst.zones).filter(z => !isZone(inst, z))).find(z => zoneAddrs(inst, z).some(s => inP(s, a))) || null; }
+  function flowAllowed(inst, out, members, f, srcZone, dstZone) {
+    const sz = srcZone !== undefined ? srcZone : zoneOfAddr(inst, f.s), dz = dstZone !== undefined ? dstZone : zoneOfAddr(inst, f.d);
+    const lo = sz ? fullList(out.nsgs[sz], 'out') : null, li = dz ? fullList(out.nsgs[dz], 'in') : null;
+    const cs = uniq([].concat(lo ? [[lo, sz]] : [], li ? [[li, dz]] : []).map(x => x));
+    const caseSets = []; if (lo) caseSets.push(tagCases([lo], f, sz, inst, members)); if (li) caseSets.push(tagCases([li], f, dz, inst, members));
+    const results = [];
+    const combos = caseSets.length === 0 ? [[]] : caseSets.length === 1 ? caseSets[0].map(c => [c]) : caseSets[0].flatMap(a => caseSets[1].map(b => [a, b]));
+    for (const c of combos) {
+      let k = 0, ok = true;
+      if (lo) ok = ok && verdict(lo, f, sz, inst, members, c[k++]).ok;
+      if (li) ok = ok && verdict(li, f, dz, inst, members, c[k++]).ok;
+      results.push(ok);
+    }
+    return results; // one verdict per tag case
+  }
+
+  // Flows into (in) or out of (out) one Zone whose verdict on its NSG changes between two contents (Import notes)
+  function zoneFlowChanges(oldNsg, newNsg, zid, inst, dir, max) {
+    const Lo = fullList(oldNsg, dir), Ln = fullList(newNsg, dir), cuts = cutsFrom([Lo, Ln]).concat(inst.internal);
+    const own = repsOf(zoneAddrs(inst, zid), cuts, []);
+    const far = repsOf(uniq(cuts.concat(Object.keys(inst.zones).flatMap(z => zoneAddrs(inst, z)), ['198.51.100.0/24'])), cuts, []).filter(a => !zoneAddrs(inst, zid).some(s => inP(s, a)));
+    const ports = portReps([Lo, Ln]), opens = {}, closes = {};
+    for (const o of own) for (const x of far) { if (o.fam !== x.fam) continue; for (const pp of ports) {
+      const f = dir === 'in' ? { s: x, d: o, proto: pp.proto, port: pp.port } : { s: o, d: x, proto: pp.proto, port: pp.port };
+      const pair = `${fmtAddr(f.s)} → ${fmtAddr(f.d)}`, svc = pp.proto + (pp.port === null ? '' : '/' + pp.port);
+      for (const c of tagCases([Lo, Ln], f, zid, inst, {})) {
+        const a = verdict(Lo, f, zid, inst, {}, c), b = verdict(Ln, f, zid, inst, {}, c), t = !a.ok && b.ok ? opens : a.ok && !b.ok ? closes : null;
+        if (t) { const e = t[pair] || (t[pair] = { flow: pair, svcs: [], by: b.rule ? b.rule.name : '' }); e.svcs.push(svc); break; }
+      } } }
+    const fmt = t => Object.values(t).map(e => ({ flow: `${e.flow} ${e.svcs.length >= ports.length ? 'every port' : e.svcs.slice(0, 3).join(', ') + (e.svcs.length > 3 ? ' …' : '')}`, by: e.by }));
+    const op = fmt(opens), cl = fmt(closes);
+    return { opens: op.slice(0, max || 8), closes: cl.slice(0, max || 8), openCount: op.length, closeCount: cl.length };
+  }
+  function rulesUsing(inst, objId) {
+    return inst.rules.filter(r => flat(r.src.concat(r.dst), inst).includes(objId) || r.src.concat(r.dst).includes(objId));
+  }
+
+  // ---------- ASG member changes (ADR 0018: three steps) ----------
+  function memberChanges(depInst, tgtInst) {
+    const a = nicAsgs(depInst), b = nicAsgs(tgtInst);
+    // a deleted network interface needs no write
+    return uniq(Object.keys(a).concat(Object.keys(b))).filter(n => tgtInst.nics[n] && JSON.stringify(a[n] || []) !== JSON.stringify(b[n] || [])).map(n => ({ nic: n, before: a[n] || [], after: b[n] || [] }));
+  }
+  function withNic(members, inst, nicId, asgsBefore, asgsAfter) {
+    const m = clone(members), ips = (inst.nics[nicId] || { ips: [] }).ips;
+    asgsBefore.forEach(a => (m[a] = (m[a] || []).filter(s => !ips.includes(s))));
+    asgsAfter.forEach(a => (m[a] = uniq((m[a] || []).concat(ips))));
+    return m;
+  }
+  function memberEffect(inst, out, before, after, nicId, otherInst) {
+    const nic = inst.nics[nicId] || otherInst.nics[nicId]; const opens = [], closes = [];
+    const lists = Object.values(out.nsgs).flatMap(n => [fullList(n, 'in'), fullList(n, 'out')]);
+    const cuts = cutsFrom(lists), pts = allNicIps(inst);
+    const others = repsOf(uniq(Object.keys(inst.zones).flatMap(z => zoneAddrs(inst, z)).concat(cuts)), cuts, pts).concat([{ fam: 4, v: ip4('198.51.100.1') }]);
+    const ports = portReps(lists);
+    for (const ipS of nic.ips) { const x = { fam: P(ipS).fam, v: P(ipS).lo };
+      for (const y of others) { if (y.fam !== x.fam || y.v === x.v) continue;
+        for (const pp of ports) for (const [s, d] of [[x, y], [y, x]]) {
+          const f = { s, d, proto: pp.proto, port: pp.port };
+          const sz = s === x ? (isZone(inst, nic.subnet) ? nic.subnet : null) : undefined, dz = d === x ? (isZone(inst, nic.subnet) ? nic.subnet : null) : undefined;
+          const b = flowAllowed(inst, out, before, f, sz, dz), a = flowAllowed(inst, out, after, f, sz, dz);
+          const fl = `${fmtAddr(s)} → ${fmtAddr(d)} ${pp.proto}${pp.port === null ? '' : '/' + pp.port}`;
+          if (b.some((v, i) => !v && a[i])) opens.push(fl);
+          if (b.some((v, i) => v && !a[i])) closes.push(fl);
+        } } }
+    return { opens: uniq(opens), closes: uniq(closes) };
+  }
+
+  // ---------- Deployment plan ----------
+  function plan(dep, tgt) {
+    const writes = [], edges = [], errors = [];
+    const W = (id, kind, label, extra) => writes.push(Object.assign({ id, kind, label }, extra || {}));
+    const dA = dep.out.asgs, tA = tgt.out.asgs;
+    Object.keys(tA).filter(n => !dA[n]).forEach(n => W('asg+:' + n, 'asg-create', `create Managed ASG ${n}`, { env: tA[n].env }));
+    const changes = memberChanges(dep.inst, tgt.inst);
+    changes.forEach(c => W('nic:' + c.nic, 'member', `network interface ${(tgt.inst.nics[c.nic] || dep.inst.nics[c.nic]).name}: ASGs ${c.before.join(', ') || '—'} → ${c.after.join(', ') || '—'}`, { change: c, env: tgt.inst.vnets[(tgt.inst.nics[c.nic] || dep.inst.nics[c.nic]).vnet].env }));
+    const sig = n => JSON.stringify(n ? n.in.concat(n.out).map(r => [r.name, r.dir, r.priority, r.access, r.proto, r.ports, r.src, r.dst]) : null);
+    const zones = uniq(Object.keys(dep.out.nsgs).concat(Object.keys(tgt.out.nsgs)));
+    const nsgW = zones.filter(z => tgt.out.nsgs[z] && sig(dep.out.nsgs[z]) !== sig(tgt.out.nsgs[z]));
+    nsgW.forEach(z => { const st = dep.inst.zones[z] ? dep.inst.zones[z].state : 'new'; W('nsg:' + z, 'nsg', `write NSG ${tgt.out.nsgs[z].name}${st === 'legacy' ? ' (adopted in place, legacy content until now)' : st === 'none' || st === 'new' ? ' (new)' : ''}`, { zone: z, env: tgt.inst.vnets[tgt.inst.zones[z].vnet].env }); });
+    zones.filter(z => tgt.inst.zones[z] && (!dep.inst.zones[z] || dep.inst.zones[z].state === 'none')).forEach(z => { W('assoc:' + z, 'assoc', `associate ${tgt.out.nsgs[z].name} with subnet ${z}`, { env: tgt.inst.vnets[tgt.inst.zones[z].vnet].env }); edges.push({ from: 'nsg:' + z, to: 'assoc:' + z, kind: 'dep', why: 'association after its NSG' }); });
+    Object.keys(dA).filter(n => !tA[n]).forEach(n => W('asg-:' + n, 'asg-delete', `delete Managed ASG ${n}`, { env: dA[n].env }));
+    const refs = (out, z, name) => out.nsgs[z] && out.nsgs[z].in.concat(out.nsgs[z].out).some(r => [r.src, r.dst].some(s => s.kind === 'asgs' && s.asgs.includes(name)));
+    writes.filter(w => w.kind === 'asg-create').forEach(w => { const n = w.id.slice(5);
+      writes.filter(x => x.kind === 'member' && x.change.after.includes(n)).forEach(x => edges.push({ from: w.id, to: x.id, kind: 'dep', why: 'ASG exists before a member joins' }));
+      nsgW.filter(z => refs(tgt.out, z, n)).forEach(z => edges.push({ from: w.id, to: 'nsg:' + z, kind: 'dep', why: 'ASG exists before an NSG rule references it' })); });
+    writes.filter(w => w.kind === 'asg-delete').forEach(w => { const n = w.id.slice(5);
+      writes.filter(x => x.kind === 'member' && x.change.before.includes(n)).forEach(x => edges.push({ from: x.id, to: w.id, kind: 'dep', why: 'last member leaves before the ASG is deleted' }));
+      nsgW.filter(z => refs(dep.out, z, n)).forEach(z => edges.push({ from: 'nsg:' + z, to: w.id, kind: 'dep', why: 'no NSG rule references the ASG any more' })); });
+    // member steps
+    const memDep = membership(dep.inst), memTgt = membership(tgt.inst);
+    const step1 = [], step3 = [];
+    let mid = clone(memDep);
+    changes.forEach(c => {
+      const eOld = memberEffect(dep.inst, dep.out, memDep, withNic(memDep, tgt.inst.nics[c.nic] ? tgt.inst : dep.inst, c.nic, c.before, c.after), c.nic, tgt.inst);
+      c.effectOld = eOld; if (!eOld.opens.length) { step1.push(c.nic); c.effect = eOld; c.step = 1; }
+    });
+    step1.forEach(n => { const c = changes.find(x => x.nic === n); mid = withNic(mid, tgt.inst.nics[n] ? tgt.inst : dep.inst, n, c.before, c.after); });
+    changes.filter(c => !c.step).forEach(c => {
+      const eNew = memberEffect(tgt.inst, tgt.out, withNic(memTgt, tgt.inst, c.nic, c.after, c.before), memTgt, c.nic, dep.inst);
+      c.effect = eNew;
+      if (!eNew.closes.length) { step3.push(c.nic); c.step = 3; }
+      else errors.push({ kind: 'member', text: `Member change on ${tgt.inst.nics[c.nic].name} neither only closes under the Deployed NSG contents nor only opens under the target: it closes ${eNew.closes[0]} and opens ${c.effectOld.opens[0]}. Split the Change set.` });
+    });
+    step1.forEach(n => nsgW.forEach(z => edges.push({ from: 'nic:' + n, to: 'nsg:' + z, kind: 'step', why: 'member change that only closes goes first' })));
+    step3.forEach(n => nsgW.forEach(z => edges.push({ from: 'nsg:' + z, to: 'nic:' + n, kind: 'step', why: 'member change that only opens goes last' })));
+    // Crossing flows, against the members after step 1
+    const cr = crossings(dep, tgt, mid);
+    cr.edges.forEach(e => { if (nsgW.includes(e.from) || nsgW.includes(e.to)) edges.push({ from: 'nsg:' + e.from, to: 'nsg:' + e.to, kind: 'crossing', why: `Crossing flow, e.g. ${e.witness.flow}`, witness: e.witness, count: e.count }); });
+    // cycles among crossing edges
+    const cyc = findCycle(writes.map(w => w.id), edges.filter(e => e.kind === 'crossing'));
+    if (cyc) errors.push({ kind: 'cycle', cycle: cyc, text: `The write order has a cycle: ${cyc.map(id => id.replace('nsg:', 'NSG of Zone ')).join(' → ')}. The Change set cannot be ordered; split it into two Commits.`, flows: edges.filter(e => e.kind === 'crossing' && cyc.includes(e.from) && cyc.includes(e.to)).map(e => e.witness.flow) });
+    const levels = cyc ? null : layer(writes.map(w => w.id), edges);
+    const prSteps = cyc ? null : layer(writes.map(w => w.id), edges.filter(e => e.kind !== 'dep'));
+    return { writes, edges, errors, levels, prSteps, members: changes, mid };
+  }
+  function findCycle(nodes, edges) {
+    const adj = {}; nodes.forEach(n => (adj[n] = [])); edges.forEach(e => adj[e.from] && adj[e.from].push(e.to));
+    const color = {}, stack = [];
+    function dfs(n) { color[n] = 1; stack.push(n); for (const m of adj[n] || []) { if (color[m] === 1) return stack.slice(stack.indexOf(m)).concat(m); if (!color[m]) { const c = dfs(m); if (c) return c; } } stack.pop(); color[n] = 2; return null; }
+    for (const n of nodes) if (!color[n]) { const c = dfs(n); if (c) return c; }
+    return null;
+  }
+  function layer(nodes, edges) {
+    const indeg = {}; nodes.forEach(n => (indeg[n] = 0)); edges.forEach(e => indeg[e.to] !== undefined && indeg[e.from] !== undefined && indeg[e.to]++);
+    const levels = []; let cur = nodes.filter(n => !indeg[n]); const done = new Set();
+    while (cur.length) { levels.push(cur); cur.forEach(n => done.add(n)); const next = [];
+      edges.forEach(e => { if (cur.includes(e.from) && indeg[e.to] !== undefined) { indeg[e.to]--; if (!indeg[e.to] && !done.has(e.to)) next.push(e.to); } });
+      cur = uniq(next); }
+    return levels;
+  }
+  function blocked(pl, failed) { // writes that wait because of failed writes (ADR 0018: only the ones with an edge from them)
+    const out = new Set(), q = [...failed];
+    while (q.length) { const n = q.shift(); pl.edges.filter(e => e.from === n).forEach(e => { if (!out.has(e.to)) { out.add(e.to); q.push(e.to); } }); }
+    return [...out];
+  }
+
+  // ---------- Preview (diff of two outputs) ----------
+  function sameContent(a, b) { return JSON.stringify([a.access, a.proto, a.ports, a.src, a.dst, a.desc]) === JSON.stringify([b.access, b.proto, b.ports, b.src, b.dst, b.desc]); }
+  function preview(prev, out) {
+    const res = [];
+    for (const z of uniq(Object.keys(prev ? prev.nsgs : {}).concat(Object.keys(out.nsgs)))) {
+      const a = prev && prev.nsgs[z], b = out.nsgs[z];
+      const item = { zone: z, nsg: (b || a).name, added: [], removed: [], changed: [], renumbered: [], state: !a ? 'new NSG' : a.state !== b.state ? `${a.state} → ${b.state}` : '' };
+      for (const d of ['in', 'out']) {
+        const A = new Map((a ? a[d] : []).map(r => [r.name, r])), B = new Map((b ? b[d] : []).map(r => [r.name, r]));
+        B.forEach((r, n) => { const o = A.get(n); if (!o) item.added.push(r); else if (!sameContent(o, r)) item.changed.push({ before: o, after: r }); else if (o.priority !== r.priority) item.renumbered.push({ before: o, after: r }); });
+        A.forEach((r, n) => { if (!B.has(n)) item.removed.push(r); });
+      }
+      if (item.added.length || item.removed.length || item.changed.length || item.renumbered.length || item.state) res.push(item);
+    }
+    return res;
+  }
+
+  // ---------- Affected Zones (ADR 0008 as amended by ADR 0016) ----------
+  function affectedZones(prevInst, inst) {
+    const res = {}, add = (z, why) => (res[z] = res[z] || []).push(why);
+    const objChanged = id => JSON.stringify(prevInst.objects[id]) !== JSON.stringify(inst.objects[id]);
+    const zoneChanged = id => JSON.stringify(prevInst.zones[id]) !== JSON.stringify(inst.zones[id]);
+    const refsChanged = (refs, I) => flat(refs, I).some(r => r !== 'any' && (r.startsWith('zone:') ? zoneChanged(r.slice(5)) : objChanged(r))) || refs.some(r => r !== 'any' && !r.startsWith('zone:') && objChanged(r));
+    const order = I => I.rules.map(r => r.id), po = order(prevInst), no = order(inst);
+    const common = no.filter(id => po.includes(id)), stay = new Set(lis(common.map((id, i) => [i, po.indexOf(id)])).map(([i]) => common[i]));
+    const ids = uniq(po.concat(no));
+    for (const id of ids) {
+      const r0 = prevInst.rules.find(r => r.id === id), r1 = inst.rules.find(r => r.id === id);
+      const why = !r0 ? 'added' : !r1 ? 'removed' : JSON.stringify(r0) !== JSON.stringify(r1) ? 'edited' : !stay.has(id) ? 'moved' : refsChanged(r1.src.concat(r1.dst), inst) || refsChanged(r0.src.concat(r0.dst), prevInst) ? 'an Object or Zone it uses changed' : null;
+      if (!why) continue;
+      for (const [r, I, when] of [[r0, prevInst, 'before'], [r1, inst, 'after']]) {
+        if (!r) continue;
+        covList(r.dst, I).forEach(z => add(z, `Rule ${id} (${why}): destination, ${when}`));
+        const outside = reachesOutsideZones(r.dst, I);
+        covList(r.src, I).forEach(z => { if (outside) add(z, `Rule ${id} (${why}): source, ${when}; the destination reaches outside Zones`); else if (I.zones[z].posture === 'strict') add(z, `Rule ${id} (${why}): source with a strict Egress posture, ${when}`); });
+      }
+    }
+    const a = nicAsgs(prevInst), b = nicAsgs(inst);
+    uniq(Object.keys(a).concat(Object.keys(b))).forEach(n => { if (JSON.stringify(a[n] || []) === JSON.stringify(b[n] || [])) return; const nic = inst.nics[n] || prevInst.nics[n]; if (isZone(inst, nic.subnet) || isZone(prevInst, nic.subnet)) add(nic.subnet, `ASG member ${nic.name} added or removed`); });
+    uniq(Object.keys(prevInst.zones).concat(Object.keys(inst.zones))).forEach(z => { if (zoneChanged(z)) add(z, 'the Zone itself is onboarded, removed or changed'); });
+    Object.keys(res).forEach(z => (res[z] = uniq(res[z])));
+    return res;
+  }
+
+  // ---------- Rebase order conflicts (ADR 0007 as amended) ----------
+  function ruleOverlap(a, b, inst) {
+    const sides = (x, y) => { const p = flat(x, inst).map(r => refPrefixes(r, inst)), q = flat(y, inst).map(r => refPrefixes(r, inst)); if (p.some(v => v === null) || q.some(v => v === null)) return true; return p.flat().some(s => q.flat().some(t => overlaps(P(s), P(t)))); };
+    const sv = (x, y) => { const p = svcFlat(x, inst), q = svcFlat(y, inst); return p.some(m => q.some(n => (m.proto === '*' || n.proto === '*' || m.proto === n.proto) && portsOverlap([m.ports], [n.ports]))); };
+    return sides(a.src, b.src) && sides(a.dst, b.dst) && sv(a.svc, b.svc);
+  }
+  function rebase(baseOrder, placed, latest, inst) {
+    // placed: { id, above, below } as stored by the Change set; latest: Rule IDs of the latest Version
+    const intended = baseOrder.slice(); intended.splice(intended.indexOf(placed.above) + 1, 0, placed.id);
+    const reb = latest.slice(); const at = reb.includes(placed.above) ? reb.indexOf(placed.above) + 1 : reb.includes(placed.below) ? reb.indexOf(placed.below) : reb.length; reb.splice(at, 0, placed.id);
+    const P0 = inst.rules.find(r => r.id === placed.id), conflicts = [], quiet = [];
+    for (const q of inst.rules) {
+      if (q.id === placed.id || !intended.includes(q.id) || !reb.includes(q.id)) continue;
+      const before = intended.indexOf(q.id) < intended.indexOf(placed.id), after = reb.indexOf(q.id) < reb.indexOf(placed.id);
+      if (before === after) continue;
+      if (q.action !== P0.action && ruleOverlap(P0, q, inst)) conflicts.push(q.id); else quiet.push(q.id);
+    }
+    return { intended, rebased: reb, conflicts, quiet };
+  }
+
+  // ---------- Import (ADR 0011, issue 18) ----------
+  function importNsg(inst, zid, legacy, o) {
+    const opt = Object.assign({ bindings: 'none' }, o || {}), z = inst.zones[zid], zp = zoneAddrs(inst, zid).map(P);
+    const notes = [], rules = [], newObjects = {}, newServices = {};
+    const connected = [z.vnet].concat(inst.vnets[z.vnet].peers || []);
+    const findObj = v => Object.keys(inst.objects).concat(Object.keys(newObjects)).find(k => { const x = inst.objects[k] || newObjects[k]; return (x.kind === 'host' || x.kind === 'cidr') && x.value === v && !x.bind; });
+    function far(v, src) {
+      if (v === '*') return 'any';
+      if (/^[A-Za-z]/.test(v)) { const id = Object.keys(inst.objects).find(k => inst.objects[k].kind === 'tag' && inst.objects[k].value === v) || 'tag-' + v; if (!inst.objects[id]) newObjects[id] = { kind: 'tag', value: v, name: v }; if (v === 'VirtualNetwork') notes.push({ level: 'warning', text: `${src.name}: keeps the VirtualNetwork tag, which means different prefixes per NSG; it lands only on Zone ${zid}` }); return id; }
+      const p = P(v), exact = zoneIds(inst).filter(k => zoneAddrs(inst, k).some(s => { const q = P(s); return q.fam === p.fam && q.lo === p.lo && q.hi === p.hi; }));
+      const near = exact.filter(k => connected.includes(inst.zones[k].vnet));
+      if (near.length === 1) return 'zone:' + near[0];
+      const ex = findObj(v); if (ex) return ex;
+      const sub = Object.keys(inst.subnets).find(k => inst.subnets[k].prefixes.includes(v)); if (sub) return 'sub-' + sub;
+      const vn = Object.keys(inst.vnets).find(k => inst.vnets[k].space.length === 1 && inst.vnets[k].space[0] === v); if (vn) return 'vnet-' + vn;
+      const id = (p.len === (p.fam === 4 ? 32 : 128) ? 'host-' : 'net-') + v.replace(/[/:.]/g, '_');
+      const coveredVnets = uniq(zoneIds(inst).filter(k => zoneAddrs(inst, k).some(s => overlaps(P(s), p))).map(k => inst.zones[k].vnet));
+      const unconnected = coveredVnets.filter(x => !connected.includes(x));
+      const obj = { kind: p.len === (p.fam === 4 ? 32 : 128) ? 'host' : 'cidr', value: v, name: v };
+      if (unconnected.length) {
+        if (opt.bindings === 'connected') { obj.bind = connected.filter(x => inst.vnets[x]); notes.push({ level: 'info', text: `${src.name}: ${v} also matches Zones in VNets that ${z.vnet} is not connected to (${unconnected.join(', ')}); the new object is bound to ${obj.bind.join(', ')}` }); }
+        else notes.push({ level: 'warning', text: `${src.name}: ${v} also matches Zones in VNets that ${z.vnet} is not connected to (${unconnected.join(', ')}); the new object covers them too` });
+      }
+      newObjects[id] = obj; return id;
+    }
+    function own(v, src) {
+      if (v === '*' || v === 'VirtualNetwork') return ['zone:' + zid];
+      if (/^[A-Za-z]/.test(v)) return [];
+      const p = P(v);
+      if (zp.some(q => contains(p, q))) return ['zone:' + zid];
+      if (zp.some(q => contains(q, p))) { const id = findObj(v) || ('net-' + v.replace(/[/:.]/g, '_')); if (!inst.objects[id] && !newObjects[id]) newObjects[id] = { kind: p.len === 32 ? 'host' : 'cidr', value: v, name: v }; return [id]; }
+      notes.push({ level: 'info', text: `${src.name}: ${v} is disjoint from Zone ${zid}; dropped` }); return [];
+    }
+    function svc(l) {
+      const proto = l.proto || '*', ports = [].concat(l.ports || '*');
+      if (proto === '*' && ports.includes('*')) return ['any'];
+      const protos = proto === '*' ? ['Tcp', 'Udp'] : [proto];
+      if (proto === '*') notes.push({ level: 'warning', text: `${l.name}: protocol * with ports ${ports.join(',')} is approximated as Tcp and Udp` });
+      return protos.flatMap(pr => ports.map(pt => { const ex = Object.keys(inst.services).find(k => inst.services[k].proto === pr && String(inst.services[k].ports) === String(pt)); if (ex) return ex;
+        const id = `${pr.toLowerCase()}-${pt}`; if (!inst.services[id]) newServices[id] = { proto: pr, ports: pt, name: `${pr.toLowerCase()}/${pt}` }; return id; }));
+    }
+    const flags = { inVNet: true, outVNet: true, outInternet: true };
+    // an Azure default rule took effect unless a custom rule above it matches everything it matches
+    const allSvc = l => (l.proto || '*') === '*' && [].concat(l.ports || '*').includes('*'), has = (v, xs) => [].concat(v).some(x => xs.includes(x));
+    for (const d of ['in', 'out']) {
+      const list = legacy[d].slice().sort((a, b) => a.priority - b.priority);
+      for (const l of list) {
+        const srcs = [].concat(l.src), dsts = [].concat(l.dst);
+        if (allSvc(l) && has(l.src, ['*', 'VirtualNetwork']) && has(l.dst, ['*', 'VirtualNetwork'])) flags[d === 'in' ? 'inVNet' : 'outVNet'] = false;
+        if (d === 'out' && allSvc(l) && has(l.src, ['*']) && has(l.dst, ['*', 'Internet'])) flags.outInternet = false;
+        if ((l.proto || '*') === '*' && [].concat(l.ports || '*').includes('*') && srcs.includes('*') && dsts.includes('*') && l.access === 'Deny') { notes.push({ level: 'info', text: `${l.name}: custom deny-all is redundant with the Deny-all rules; dropped` }); continue; }
+        if (d === 'in' && srcs.includes('AzureLoadBalancer')) { notes.push(l.access === 'Allow' ? { level: 'info', text: `${l.name}: AzureLoadBalancer allow is redundant with the Platform exceptions; dropped` } : { level: 'warning', text: `${l.name}: a deny from AzureLoadBalancer has no effect, the Platform exceptions sit above it` }); continue; }
+        const src = d === 'in' ? uniq(srcs.map(v => far(v, l))) : uniq(srcs.flatMap(v => own(v, l)));
+        const dst = d === 'in' ? uniq(dsts.flatMap(v => own(v, l))) : uniq(dsts.map(v => far(v, l)));
+        if (!src.length || !dst.length) continue;
+        rules.push({ id: l.ruleId, name: l.name, src, dst, svc: svc(l), action: l.access === 'Deny' ? 'deny' : 'allow', imported: { nsg: legacy.name, rule: l.name, priority: l.priority, dir: d }, policy: `${legacy.name}/${d}` });
+      }
+    }
+    return { rules, newObjects, newServices, notes, flags };
+  }
+  // Constraint merge: each imported (NSG, direction) keeps its order, the Rule base keeps its order,
+  // and where Rules of different policies overlap with different actions, the deny comes first.
+  function constraintMerge(existing, policies, inst) {
+    const nodes = existing.concat(policies.flat()), id = r => r.id, edges = [], notes = [];
+    const chain = list => list.forEach((r, i) => i && edges.push({ a: list[i - 1].id, b: r.id, kind: 'order' }));
+    chain(existing); policies.forEach(chain);
+    const pol = r => r.policy || 'Rule base';
+    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+      const x = nodes[i], y = nodes[j];
+      if (pol(x) === pol(y) || x.action === y.action || !ruleOverlap(x, y, inst)) continue;
+      const [d, a] = x.action === 'deny' ? [x, y] : [y, x];
+      edges.push({ a: d.id, b: a.id, kind: 'deny-first' });
+    }
+    for (let guard = 0; guard < 50; guard++) {
+      const cyc = findCycle(nodes.map(id), edges.map(e => ({ from: e.a, to: e.b })));
+      if (!cyc) break;
+      // break toward closing: in the cycle, find an own-policy order edge allow -> deny and flip it (the deny moves up)
+      let k = -1;
+      for (let i = 0; i < cyc.length - 1 && k < 0; i++) { const e = edges.findIndex(e => e.a === cyc[i] && e.b === cyc[i + 1] && e.kind === 'order'); if (e >= 0) { const A = nodes.find(n => n.id === edges[e].a), B = nodes.find(n => n.id === edges[e].b); if (A.action === 'allow' && B.action === 'deny' && A.policy) k = e; } }
+      if (k < 0) { notes.push({ level: 'blocking', text: 'Constraint cycle without an allow → deny order edge inside one policy' }); break; }
+      const e = edges[k], A = nodes.find(n => n.id === e.a), B = nodes.find(n => n.id === e.b);
+      edges.splice(k, 1, { a: e.b, b: e.a, kind: 'cycle-break' });
+      notes.push({ level: 'warning', rule: B.id, text: `Cycle broken toward closing: imported deny "${B.name}" moves above imported allow "${A.name}" of the same NSG. Flows that both match now close.` });
+    }
+    // order: keep existing Rules as early as possible, imported Rules as late as their constraints allow
+    const preds = {}; nodes.forEach(n => (preds[n.id] = new Set())); edges.forEach(e => preds[e.b].add(e.a));
+    const done = new Set(), out = [];
+    const ready = n => [...preds[n.id]].every(p => done.has(p));
+    const ancestors = n => { const s = new Set(), q = [...preds[n.id]]; while (q.length) { const x = q.shift(); if (!s.has(x)) { s.add(x); q.push(...preds[x]); } } return s; };
+    let guard = 0;
+    while (out.length < nodes.length && guard++ < 10000) {
+      const head = existing.find(r => !done.has(r.id));
+      if (head && ready(head)) { out.push(head); done.add(head.id); continue; }
+      const anc = head ? ancestors(head) : null;
+      const pick = policies.flat().find(r => !done.has(r.id) && ready(r) && (!anc || anc.has(r.id)));
+      if (!pick) break;
+      out.push(pick); done.add(pick.id);
+    }
+    return { order: out, edges, notes };
+  }
+  // Merge proposal (issue 27, point 17): imported Rules that differ only in their own Zone
+  function mergeProposals(imported, mergeResult, inst) {
+    const sig = r => { const dir = r.imported.dir; return JSON.stringify([r.action, r.svc, dir, dir === 'in' ? r.src : r.dst]); };
+    const groups = {}; imported.forEach(r => (groups[sig(r)] = groups[sig(r)] || []).push(r));
+    return Object.values(groups).filter(g => g.length > 1 && uniq(g.map(r => r.policy)).length === g.length).map(g => {
+      const ids = new Set(g.map(r => r.id)), m = 'merged';
+      const edges = mergeResult.edges.map(e => ({ from: ids.has(e.a) ? m : e.a, to: ids.has(e.b) ? m : e.b })).filter(e => e.from !== e.to);
+      const nodes = uniq(edges.flatMap(e => [e.from, e.to]).concat([m]));
+      const cyc = findCycle(nodes, edges);
+      return { rules: g.map(r => r.id), names: g.map(r => r.name), possible: !cyc, why: cyc ? `order constraints form a cycle: ${cyc.join(' → ')}` : 'no order constraint is broken' };
+    });
+  }
+
+  // ---------- Data contract for one Terraform root module (ADR 0010) ----------
+  function sideArm(side, inst, pfx) {
+    if (side.kind === 'tag') return { [pfx + 'AddressPrefix']: side.tag };
+    if (side.kind === 'asgs') return { [pfx + 'ApplicationSecurityGroups']: side.asgs.map(a => ({ id: `/subscriptions/{${pfx === 'source' ? 'sub' : 'sub'}}/resourceGroups/rg-nsgfw/providers/Microsoft.Network/applicationSecurityGroups/${a}` })) };
+    return side.prefixes.length === 1 ? { [pfx + 'AddressPrefix']: side.prefixes[0] } : { [pfx + 'AddressPrefixes']: side.prefixes };
+  }
+  function armRule(r, inst) {
+    const p = Object.assign({ priority: r.priority, direction: r.dir === 'in' ? 'Inbound' : 'Outbound', access: r.access, protocol: r.proto, sourcePortRange: '*' },
+      sideArm(r.src, inst, 'source'), sideArm(r.dst, inst, 'destination'), r.ports.length === 1 ? { destinationPortRange: r.ports[0] } : { destinationPortRanges: r.ports }, { description: r.desc || '' });
+    return { name: r.name, properties: p };
+  }
+  function dataContract(inst, out, sub, revision) {
+    const zs = Object.keys(out.nsgs).filter(z => inst.vnets[inst.zones[z].vnet].subscription === sub);
+    const vnets = Object.keys(inst.vnets).filter(v => inst.vnets[v].subscription === sub);
+    const env = inst.envs[inst.vnets[vnets[0]].env];
+    return {
+      data_contract_version: '1', revision, generated_by: `nsgfw engine ${out.engineVersion}`,
+      network_security_groups: Object.fromEntries(zs.map(z => [out.nsgs[z].name, {
+        resource_group: inst.zones[z].rg || `rg-${inst.zones[z].vnet}`, location: inst.vnets[inst.zones[z].vnet].region, flush_connection: !!env.flushConnection,
+        tags: { 'nsgfw-managed-by': 'instance-0001', 'nsgfw-zone': z },
+        security_rules: out.nsgs[z].in.concat(out.nsgs[z].out).map(r => armRule(r, inst)) }])),
+      subnet_nsg: zs.filter(z => inst.zones[z].state !== 'legacy').map(z => ({ subnet: `${inst.zones[z].vnet}/${z}`, network_security_group: out.nsgs[z].name })),
+      application_security_groups: Object.values(out.asgs).filter(a => vnets.includes(a.vnet)).map(a => ({ name: a.name, resource_group: `rg-${a.vnet}`, location: inst.vnets[a.vnet].region, tags: { 'nsgfw-managed-by': 'instance-0001', 'nsgfw-object': a.object } })),
+      network_interface_asg: Object.entries(out.nicAsgs).filter(([n]) => vnets.includes(inst.nics[n].vnet)).flatMap(([n, l]) => l.map(a => ({ network_interface: inst.nics[n].name, application_security_group: a }))),
+      imports: zs.filter(z => inst.zones[z].adopted).map(z => ({ to: `network_security_groups["${out.nsgs[z].name}"]`, id: `/subscriptions/{${sub}}/resourceGroups/${inst.zones[z].rg || 'rg-' + inst.zones[z].vnet}/providers/Microsoft.Network/networkSecurityGroups/${out.nsgs[z].name}` }))
+    };
+  }
+
+  root.Engine = { ENGINE_VERSION, LIMITS, DEFAULT_OPT, translate, coverage, covList, flat, refLabel, svcLabel, preview, plan, blocked, crossings, affectedZones, rebase, ruleOverlap,
+    importNsg, constraintMerge, mergeProposals, dataContract, memberChanges, membership, managedAsgs, normPrefixes, normPorts, protoGroups, fullList, azureDefaults, clone, uniq, P, fmtAddr, flowAllowed, zoneIds, reachesOutsideZones,
+    zoneFlowChanges, rulesUsing, ip: s => ({ fam: P(s).fam, v: P(s).lo }) };
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>// PROTOTYPE, throwaway. Worked examples for issue 22 as data. Each example is a list of steps;
+// a step builds and commits a Version, or edits a Change set on top of the last Version.
+(function (root) {
+  'use strict';
+  const E = root.Engine;
+
+  // ---------- one small estate shared by all examples (no real IDs) ----------
+  const VNETS = {
+    hub: { space: ['10.0.0.0/16'], env: 'prod', region: 'westeurope', peers: ['spoke1', 'spoke2', 'spoke3'], subscription: 'sub-connectivity' },
+    spoke1: { space: ['10.1.0.0/16'], env: 'prod', region: 'westeurope', peers: ['hub'], subscription: 'sub-app1' },
+    spoke2: { space: ['10.2.0.0/16'], env: 'prod', region: 'westeurope', peers: ['hub'], subscription: 'sub-app2' },
+    spoke3: { space: ['10.3.0.0/16', 'fd00:3::/48'], env: 'prod', region: 'westeurope', peers: ['hub'], subscription: 'sub-app3' },
+    lab: { space: ['10.1.0.0/16'], env: 'prod', region: 'northeurope', peers: [], subscription: 'sub-lab' }
+  };
+  const ENVS = { prod: { name: 'Production', mode: 'arm', asgPattern: 'asg-{object}-{vnet}', flushConnection: false }, tf: { name: 'Platform (Terraform)', mode: 'terraform', asgPattern: 'asg-{object}-{vnet}', flushConnection: false } };
+  const ZONES = {
+    web: { vnet: 'spoke1', prefixes: ['10.1.1.0/24'] }, app: { vnet: 'spoke1', prefixes: ['10.1.2.0/24'] }, db: { vnet: 'spoke1', prefixes: ['10.1.3.0/24'] },
+    billing: { vnet: 'spoke1', prefixes: ['10.1.4.0/24'] }, hr: { vnet: 'spoke1', prefixes: ['10.1.5.0/24'] }, aks2: { vnet: 'spoke1', prefixes: ['10.1.8.0/22'] },
+    api: { vnet: 'spoke2', prefixes: ['10.2.1.0/24'] }, pg: { vnet: 'spoke2', prefixes: ['10.2.5.0/24'], kind: 'pgflex' }, aks: { vnet: 'spoke2', prefixes: ['10.2.8.0/22'] },
+    appgw: { vnet: 'hub', prefixes: ['10.0.1.0/24'], kind: 'appgw' },
+    dual: { vnet: 'spoke3', prefixes: ['10.3.1.0/24', 'fd00:3:0:1::/64'] }, dual2: { vnet: 'spoke3', prefixes: ['10.3.2.0/24', 'fd00:3:0:2::/64'] },
+    labapp: { vnet: 'lab', prefixes: ['10.1.2.0/24'] }
+  };
+  const SUBNETS = { mgmt: { vnet: 'hub', prefixes: ['10.0.9.0/24'], name: 'hub/mgmt (jump hosts, not a Zone)' }, labclients: { vnet: 'lab', prefixes: ['10.1.4.0/24'], name: 'lab/clients (not a Zone)' } };
+  const NICS = {
+    'nic-web1': { name: 'vm-web1-nic', vnet: 'spoke1', subnet: 'web', ips: ['10.1.1.4'] }, 'nic-web2': { name: 'vm-web2-nic', vnet: 'spoke1', subnet: 'web', ips: ['10.1.1.5'] },
+    'nic-app1': { name: 'vm-app1-nic', vnet: 'spoke1', subnet: 'app', ips: ['10.1.2.4'] }, 'nic-db1': { name: 'vm-db1-nic', vnet: 'spoke1', subnet: 'db', ips: ['10.1.3.4'] },
+    'nic-api1': { name: 'vm-api1-nic', vnet: 'spoke2', subnet: 'api', ips: ['10.2.1.4'] }, 'nic-jump1': { name: 'vm-jump1-nic', vnet: 'hub', subnet: 'mgmt', ips: ['10.0.9.4'] },
+    'nic-vmss0': { name: 'vmss-api_0-nic', vnet: 'spoke2', subnet: 'api', ips: ['10.2.1.10'], vmss: true }, 'nic-vmss1': { name: 'vmss-api_1-nic', vnet: 'spoke2', subnet: 'api', ips: ['10.2.1.11'], vmss: true },
+    'nic-dual1': { name: 'vm-dual1-nic', vnet: 'spoke3', subnet: 'dual', ips: ['10.3.1.4', 'fd00:3:0:1::4'] }
+  };
+  const OBJECTS = {
+    onprem: { kind: 'cidr', value: '192.168.10.0/24', name: 'onprem-clients' }, net10: { kind: 'cidr', value: '10.0.0.0/8', name: 'net-10' },
+    'spoke1-net': { kind: 'cidr', value: '10.1.0.0/16', name: 'spoke1-range' }, web01: { kind: 'host', value: '10.1.1.5', name: 'web01' },
+    'tag-internet': { kind: 'tag', value: 'Internet', name: 'Internet' }, 'tag-storage': { kind: 'tag', value: 'Storage.WestEurope', name: 'Storage.WestEurope' },
+    'tag-sql': { kind: 'tag', value: 'Sql.WestEurope', name: 'Sql.WestEurope' }, 'tag-afd': { kind: 'tag', value: 'AzureFrontDoor.Backend', name: 'AzureFrontDoor.Backend' },
+    'tag-gwm': { kind: 'tag', value: 'GatewayManager', name: 'GatewayManager' }, 'tag-vnet': { kind: 'tag', value: 'VirtualNetwork', name: 'VirtualNetwork (imported tag)' },
+    'sub-mgmt': { kind: 'subnet', subnet: 'mgmt', name: 'hub-mgmt-subnet' }, 'vnet-spoke1': { kind: 'vnet', vnet: 'spoke1', name: 'VNet spoke1' }
+  };
+  const SERVICES = {
+    https: { proto: 'Tcp', ports: '443', name: 'https' }, ssh: { proto: 'Tcp', ports: '22', name: 'ssh' }, rdp: { proto: 'Tcp', ports: '3389', name: 'rdp' },
+    sql: { proto: 'Tcp', ports: '1433', name: 'mssql' }, pgsql: { proto: 'Tcp', ports: '5432', name: 'postgres' }, smb: { proto: 'Tcp', ports: '445', name: 'smb' },
+    telnet: { proto: 'Tcp', ports: '23', name: 'telnet' }, 'tcp-8443': { proto: 'Tcp', ports: '8443', name: 'tcp/8443' }, 'udp-53': { proto: 'Udp', ports: '53', name: 'dns-udp' },
+    http: { proto: 'Tcp', ports: '80', name: 'http' }, 'tcp-80-90': { proto: 'Tcp', ports: '80-90', name: 'tcp/80-90' }, 'tcp-91': { proto: 'Tcp', ports: '91', name: 'tcp/91' },
+    'tcp-8080': { proto: 'Tcp', ports: '8080', name: 'tcp/8080' }, 'tcp-8000s': { proto: 'Tcp', ports: '8000-8100', name: 'tcp/8000-8100' },
+    'gwm-ports': { proto: 'Tcp', ports: '65200-65535', name: 'appgw-infra' }, kubelet: { proto: 'Tcp', ports: '10250', name: 'kubelet' }
+  };
+  function world(zones, o) {
+    o = o || {};
+    const inst = { internal: ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'], envs: E.clone(ENVS), vnets: E.clone(VNETS), subnets: E.clone(SUBNETS), nics: E.clone(NICS),
+      objects: Object.assign(E.clone(OBJECTS), E.clone(o.objects || {})), services: Object.assign(E.clone(SERVICES), E.clone(o.services || {})), zones: {}, rules: E.clone(o.rules || []) };
+    for (const z of zones) { const [id, ov] = typeof z === 'string' ? [z, {}] : z; inst.zones[id] = Object.assign({ state: 'managed', posture: 'dest', inherit: {}, extra: [] }, E.clone(ZONES[id]), E.clone(ov)); }
+    if (o.edit) o.edit(inst);
+    return inst;
+  }
+  const R = (id, name, src, dst, svc, action, extra) => Object.assign({ id, name, src, dst, svc, action: action || 'allow' }, extra || {});
+  const asg = (name, members) => ({ kind: 'asg', name, members });
+  const rule = (I, id) => I.rules.find(r => r.id === id);
+
+  // ---------- steps ----------
+  function commit(S) {
+    const out = E.translate(S.inst, Object.assign({ prev: S.committed ? S.committed.out : null }, S.opt || {}));
+    S.committed = { inst: E.clone(S.inst), out }; S.version = (S.version || 0) + 1; S.pending = false;
+  }
+  const step = (label, kind, fn, x) => Object.assign({ label, kind, run: S => { S.note = null; fn(S); } }, x || {});
+  const V = (label, build, x) => step(label, 'version', S => { S.inst = build(S); S.failed = null; S.deployed = null; commit(S); if (S.seed) { S.committed.out = S.seed; S.seed = null; } }, x);
+  const C = (label, edit, x) => step(label, 'change', S => { S.inst = E.clone(S.inst); edit(S.inst, S); S.pending = true; }, x);
+  const K = (label, x) => step(label, 'commit', S => { S.failed = null; S.deployed = null; commit(S); }, x);
+  const X = (label, fn, x) => step(label, 'action', fn, x); // anything else (fail a write, an engine upgrade)
+
+  // derived view of a state: target output, Preview, Affected Zones, Deployment plan
+  function derive(S) {
+    const D = {};
+    if (!S.inst) return D;
+    D.out = S.pending ? E.translate(S.inst, Object.assign({ prev: S.committed ? S.committed.out : null }, S.opt || {})) : S.committed.out;
+    if (S.pending && S.committed) {
+      const dep = S.deployed || { inst: S.committed.inst, out: S.committed.out };
+      D.preview = E.preview(S.committed.out, D.out);
+      D.affected = E.affectedZones(S.committed.inst, S.inst);
+      D.plan = E.plan(dep, { inst: S.inst, out: D.out });
+      if (S.failed) D.waiting = E.blocked(D.plan, S.failed);
+    }
+    return D;
+  }
+  function runTo(ex, k) { const S = { inst: null, committed: null }; for (let i = 0; i <= k; i++) ex.steps[i].run(S); return S; }
+
+  // check helpers
+  const nr = (D, z, dir) => D.out.nsgs[z][dir].filter(r => r.kind === 'rule');
+  const of = (D, z, dir, id) => nr(D, z, dir).filter(r => r.ruleId === id);
+  const dropped = (D, z, id) => D.out.nsgs[z].dropped.filter(d => d.rule.ruleId === id);
+  const prio = (D, z, dir, id) => of(D, z, dir, id).map(r => r.priority);
+  const edgesOf = D => D.plan.edges.filter(e => e.kind === 'crossing').map(e => e.from.slice(4) + '>' + e.to.slice(4));
+  const errKinds = D => D.plan.errors.map(e => e.kind);
+  const affected = D => Object.keys(D.affected).sort().join(',');
+
+  const EX = [];
+  const add = (group, key, title, text, watch, steps) => EX.push({ group, key, title, text, watch, steps });
+
+  // ======================= Placement =======================
+  add('Placement', 'zone-zone', 'Zone to Zone, both Egress postures',
+    'One allow Rule from Zone web to Zone db. With the default Egress posture (destination-enforced), only the destination NSG gets an NSG rule; web lets internal traffic out through its egress allow. Step 2 sets web to strict.',
+    ['db inbound holds the NSG rule in both steps.', 'web outbound holds it only when web is strict; before, the engine lists it as left out.', 'Affected Zones of the posture change: see the open question in the ticket.'],
+    [V('Version 1: web → db mssql', () => world(['web', 'db'], { rules: [R(1, 'web to db', ['zone:web'], ['zone:db'], ['sql'])] }), { checks: [['db inbound has the NSG rule', (S, D) => of(D, 'db', 'in', 1).length === 1], ['web outbound leaves it out', (S, D) => !of(D, 'web', 'out', 1).length && dropped(D, 'web', 1).length === 1]] }),
+     C('Change set: Zone web becomes strict', I => { I.zones.web.posture = 'strict'; }, { checks: [['web outbound now has it', (S, D) => of(D, 'web', 'out', 1).length === 1], ['egress allow is gone from web', (S, D) => !D.out.nsgs.web.out.some(r => r.kind === 'egress')]] })]);
+
+  add('Placement', 'internet', 'Zone to Internet, and "any" is not the Internet',
+    'Step 1: "web → Internet (tag) https" lands only outbound on web, because a service tag covers no Zone. Step 2 writes the same Rule with any as the destination, as firewall administrators often do. any stands for every address, so its Coverage is every Zone.',
+    ['Step 2: the Rule now lands inbound on every Zone and opens web → app and web → db on 443.', 'Rule cost goes from 1 NSG to 3 NSGs.'],
+    [V('Version 1: web → Internet https', () => world(['web', 'app', 'db'], { rules: [R(1, 'web out https', ['zone:web'], ['tag-internet'], ['https'])] }), { checks: [['only web, outbound', (S, D) => D.out.cost[1].nsgs.join() === 'web' && of(D, 'web', 'out', 1).length === 1]] }),
+     C('Change set: destination any instead of Internet', I => { rule(I, 1).dst = ['any']; }, { checks: [['lands on 3 NSGs', (S, D) => D.out.cost[1].nsgs.length === 3], ['app inbound now allows web on 443', (S, D) => of(D, 'app', 'in', 1).length === 1]] })]);
+
+  add('Placement', 'tags', 'Service-tag sources and destinations',
+    'Front Door reaches web through a service tag as source; app reaches Storage and SQL through two service tags. A service tag covers no Zone, so each Rule lands only on the Zone side. One NSG rule holds one service tag, so two tags make two NSG rules.',
+    ['web inbound: one NSG rule with source AzureFrontDoor.Backend.', 'app outbound: two NSG rules, one per tag. app is destination-enforced, but the engine keeps them: a tag is not known to lie inside the Internal address space.'],
+    [V('Version 1', () => world(['web', 'app'], { rules: [R(1, 'front door to web', ['tag-afd'], ['zone:web'], ['https']), R(2, 'app to storage and sql', ['zone:app'], ['tag-storage', 'tag-sql'], ['https'])] }),
+      { checks: [['two NSG rules on app outbound', (S, D) => of(D, 'app', 'out', 2).length === 2], ['Rule 1 only on web inbound', (S, D) => D.out.cost[1].nsgs.join() === 'web']] })]);
+
+  add('Placement', 'coverage', 'Coverage: host inside a Zone, CIDR over several Zones, any',
+    'web and app are strict here, so their outbound side shows. Rule 1 has a host inside web as source, Rule 2 a CIDR that covers web, app and db, Rule 3 any as source.',
+    ['Rule 1 lands outbound on web with only the host, not the whole Zone.', 'Rule 2 lands outbound on web and app (strict) and is left out on db (destination-enforced).', 'Rule 3 lands outbound on every strict Zone; on db it is left out.'],
+    [V('Version 1', () => world([['web', { posture: 'strict' }], ['app', { posture: 'strict' }], 'db'], { rules: [R(1, 'web01 to db', ['web01'], ['zone:db'], ['sql']), R(2, 'spoke1 ssh to db', ['spoke1-net'], ['zone:db'], ['ssh']), R(3, 'any to web', ['any'], ['zone:web'], ['https'])] }),
+      { checks: [['host only on web outbound', (S, D) => JSON.stringify(of(D, 'web', 'out', 1)[0].src.prefixes) === '["10.1.1.5"]'], ['CIDR lands on web, app, db', (S, D) => D.out.cost[2].nsgs.sort().join() === 'app,db,web'], ['db leaves Rule 2 out', (S, D) => dropped(D, 'db', 2).length === 1]] })]);
+
+  add('Placement', 'deny-allow', 'Deny before allow, deny on both sides',
+    'A deny for ssh from app sits above a broad allow from spoke1. Under ADR 0016 the deny lands on both sides. The destination-enforced source leaves both NSG rules out, because db inbound decides. Step 2 makes app strict.',
+    ['db inbound: the deny has the lower priority number, so it wins.', 'Step 2: app outbound gets both, deny first.'],
+    [V('Version 1', () => world(['app', 'db'], { rules: [R(1, 'no ssh from app', ['zone:app'], ['zone:db'], ['ssh'], 'deny'), R(2, 'spoke1 to db', ['spoke1-net'], ['zone:db'], ['any'])] }),
+      { checks: [['deny above allow on db', (S, D) => prio(D, 'db', 'in', 1)[0] < prio(D, 'db', 'in', 2)[0]], ['app outbound leaves both out', (S, D) => dropped(D, 'app', 1).length === 1 && dropped(D, 'app', 2).length === 1]] }),
+     C('Change set: app becomes strict', I => { I.zones.app.posture = 'strict'; }, { checks: [['app outbound has deny then allow', (S, D) => prio(D, 'app', 'out', 1)[0] < prio(D, 'app', 'out', 2)[0]]] })]);
+
+  add('Placement', 'one-sided', 'The former one-sided deny',
+    '"deny any → db rdp". ADR 0004 put it only on db. Under ADR 0016 it lands on db and on the source side of every Zone. Destination-enforced Zones leave it out, because its destination lies entirely inside Zones; strict Zones keep it.',
+    ['db inbound: the deny.', 'app (strict) outbound: the deny. web (destination-enforced): left out.'],
+    [V('Version 1', () => world(['web', ['app', { posture: 'strict' }], 'db'], { rules: [R(1, 'no rdp to db', ['any'], ['zone:db'], ['rdp'], 'deny')] }),
+      { checks: [['on app outbound', (S, D) => of(D, 'app', 'out', 1).length === 1], ['left out on web', (S, D) => dropped(D, 'web', 1).length === 1], ['on db inbound', (S, D) => of(D, 'db', 'in', 1).length === 1]] })]);
+
+  add('Placement', 'kept-allow', 'An allow that must stay, denies inside and outside Zones',
+    'web is destination-enforced. Rule 1 allows smb to db. Rule 2 denies smb to app (a destination inside Zones). Rule 3 denies smb to all of 10.0.0.0/8, which reaches beyond Zones (on-premises, subnets that are not Zones).',
+    ['web outbound keeps Rule 3 (its destination reaches outside Zones) and Rule 1 (Rule 3 below it overlaps it; without Rule 1 the egress allow would never be reached for db:445).', 'web outbound leaves Rule 2 out (db… app inbound holds it).', 'Rule 3 also lands inbound on web itself and closes smb inside web: the Rule base says so, above the Intra-zone default.'],
+    [V('Version 1', () => world(['web', 'app', 'db'], { rules: [R(1, 'web smb to db', ['zone:web'], ['zone:db'], ['smb']), R(2, 'no smb to app', ['zone:web'], ['zone:app'], ['smb'], 'deny'), R(3, 'no smb from web', ['zone:web'], ['net10'], ['smb'], 'deny')] }),
+      { checks: [['Rule 1 kept on web outbound', (S, D) => of(D, 'web', 'out', 1).length === 1], ['Rule 2 left out', (S, D) => dropped(D, 'web', 2).length === 1], ['Rule 3 kept', (S, D) => of(D, 'web', 'out', 3).length === 1], ['Rule 3 inbound on web too', (S, D) => of(D, 'web', 'in', 3).length === 1]] })]);
+
+  add('Placement', 'internal', 'The Internal address space',
+    'web is destination-enforced. Rule 1 allows ssh to on-premises clients (192.168.10.0/24, inside the default Internal address space). Rule 2 allows https to a partner network in 100.64.0.0/10, which is not. Step 2 adds 100.64.0.0/10 to the Internal address space.',
+    ['Rule 1 is left out: on-premises is reachable from web without any Rule, and on-premises has no NSG.', 'Step 2: Rule 2 is left out too. Affected Zones are empty, so the instance default (four-eyes) applies, if this is a Change set at all.'],
+    [V('Version 1', () => world(['web'], { objects: { partner: { kind: 'cidr', value: '100.64.0.0/10', name: 'partner-net' } }, rules: [R(1, 'web to onprem ssh', ['zone:web'], ['onprem'], ['ssh']), R(2, 'web to partner', ['zone:web'], ['partner'], ['https'])] }),
+      { checks: [['Rule 1 left out', (S, D) => dropped(D, 'web', 1).length === 1], ['Rule 2 kept', (S, D) => of(D, 'web', 'out', 2).length === 1]] }),
+     C('Change set: add 100.64.0.0/10 to the Internal address space', I => { I.internal.push('100.64.0.0/10'); }, { checks: [['Rule 2 left out now', (S, D) => dropped(D, 'web', 2).length === 1], ['no Affected Zones', (S, D) => affected(D) === '']] })]);
+
+  add('Placement', 'intra', 'Intra-zone default and a Rule above it',
+    'Traffic inside app is allowed by the Intra-zone default at 4080. Rule 1 denies rdp inside app and sits above it.',
+    ['app inbound: Rule 1 in the Rules band, then 4080.', 'app outbound leaves the deny out (its destination is a Zone); inbound enforces it.'],
+    [V('Version 1', () => world(['app'], { rules: [R(1, 'no rdp inside app', ['zone:app'], ['zone:app'], ['rdp'], 'deny')] }),
+      { checks: [['deny above intra-zone', (S, D) => prio(D, 'app', 'in', 1)[0] < 4080 && D.out.nsgs.app.in.some(r => r.name === 'nsgfw-intrazone-in-v4')]] })]);
+
+  add('Placement', 'dual', 'A dual-stack Zone',
+    'dual and dual2 carry IPv4 and IPv6 prefixes. Until the empirical checks show that Azure accepts both families in one NSG rule, the engine splits per family.',
+    ['Platform exceptions 100 (AzureLoadBalancer) and 101 (IPv6 probe source), Intra-zone default 4080 and 4081.', 'Rule 1 (any → dual): two NSG rules, IPv4 and IPv6. It also lands outbound on dual and dual2 for IPv6, because no IPv6 prefix is internal.', 'Rule 2 (dual → dual2) on destination-enforced dual: the IPv4 NSG rule is left out, the IPv6 one stays, because the default Internal address space holds no IPv6 prefix.', 'Step 2: one NSG rule per Rule if mixed families were allowed (engine option).'],
+    [V('Version 1', () => world(['dual', 'dual2'], { rules: [R(1, 'any to dual', ['any'], ['zone:dual'], ['https']), R(2, 'dual to dual2', ['zone:dual'], ['zone:dual2'], ['tcp-8443'])] }),
+      { checks: [['two NSG rules for Rule 1', (S, D) => of(D, 'dual', 'in', 1).length === 2], ['IPv6 kept outbound on dual', (S, D) => of(D, 'dual', 'out', 2).length === 1 && of(D, 'dual', 'out', 2)[0].dst.fam === 6], ['platform 101 present', (S, D) => D.out.nsgs.dual.in.some(r => r.priority === 101)]] }),
+     X('Engine option: mixed families in one NSG rule', S => { S.opt = { splitFamilies: false }; S.inst = E.clone(S.inst); S.pending = true; }, { checks: [['one NSG rule for Rule 1', (S, D) => of(D, 'dual', 'in', 1).length === 1]] })]);
+
+  add('Placement', 'appgw', 'An Application Gateway v2 Zone',
+    'appgw is an Application Gateway v2 subnet. Its outbound stays open, because Microsoft writes that outbound NSG rules that deny any outbound connectivity must not be created. The public frontend IP is an Extra prefix, as the listener rule needs it in its destination. Rules 1 and 2 are the ready-made Rules from the service catalog.',
+    ['No outbound Deny-all and no egress allow on appgw. Rule 3 still lands outbound, without effect, so the NSG is right if the setting is ever removed.', 'Inbound destination holds the subnet and the public frontend IP.', 'Extra prefixes count in both directions, so the public frontend IP also shows up as a source of Rule 3 on web. Harmless, but not what the prefix is for.'],
+    [V('Version 1', () => world([['appgw', { extra: ['198.51.100.10/32'] }], 'web'], { rules: [R(1, 'AppGW infrastructure', ['tag-gwm'], ['zone:appgw'], ['gwm-ports']), R(2, 'AppGW listeners', ['tag-internet'], ['zone:appgw'], ['https']), R(3, 'appgw to web', ['zone:appgw'], ['zone:web'], ['https'])] }),
+      { checks: [['no outbound deny-all on appgw', (S, D) => !D.out.nsgs.appgw.out.some(r => r.kind === 'denyall')], ['Rule 3 outbound on appgw', (S, D) => of(D, 'appgw', 'out', 3).length === 1], ['frontend IP in destination', (S, D) => of(D, 'appgw', 'in', 2)[0].dst.prefixes.includes('198.51.100.10/32')]] })]);
+
+  add('Placement', 'aks', 'Extra prefixes: the pod range of an AKS overlay cluster',
+    'aks holds the nodes of an AKS cluster with Azure CNI Overlay. Pod traffic inside the cluster is not encapsulated, so the subnet NSG sees pod addresses from 10.244.0.0/16, which belong to no subnet. Step 1 onboards the Zone without Extra prefixes; step 2 adds the pod range.',
+    ['Step 1: pod to pod traffic hits the Deny-all rules (the cluster breaks), and the object "pods" covers no Zone, so Rule 1 lands nowhere outbound.', 'Step 2: the Intra-zone default holds the node and the pod range, and "pods" covers aks.'],
+    [V('Version 1: aks without Extra prefixes', () => world(['aks', ['db', { posture: 'strict' }]], { objects: { pods: { kind: 'cidr', value: '10.244.0.0/16', name: 'aks-pods' } }, rules: [R(1, 'pods may not reach kubelet', ['pods'], ['zone:aks'], ['kubelet'], 'deny'), R(2, 'aks to db', ['zone:aks'], ['zone:db'], ['pgsql'])] }),
+      { checks: [['pod to pod dropped', (S, D) => !E.flowAllowed(S.inst, D.out, {}, { s: E.ip('10.244.1.5'), d: E.ip('10.244.2.6'), proto: 'Tcp', port: 8080 }, 'aks', 'aks').every(x => x)], ['pods cover no Zone', (S, D) => E.coverage('pods', S.inst).length === 0]] }),
+     C('Change set: Extra prefix 10.244.0.0/16 on aks', I => { I.zones.aks.extra = ['10.244.0.0/16']; }, { checks: [['pod to pod allowed', (S, D) => E.flowAllowed(S.inst, D.out, {}, { s: E.ip('10.244.1.5'), d: E.ip('10.244.2.6'), proto: 'Tcp', port: 8080 }, 'aks', 'aks').every(x => x)], ['pods cover aks', (S, D) => E.coverage('pods', S.inst).join() === 'aks'], ['intra-zone holds both', (S, D) => D.out.nsgs.aks.in.find(r => r.name === 'nsgfw-intrazone-in-v4').src.prefixes.length === 2]] })]);
+
+  add('Placement', 'pods-twice', 'The same pod range on two Zones',
+    'Two AKS clusters, aks (spoke2) and aks2 (spoke1), both use the default pod range 10.244.0.0/16 as an Extra prefix. The object "pods" covers both. Rule 1 was meant for the pods of aks only. Step 2 binds the object to spoke2.',
+    ['Step 1: Rule 1 lands inbound on both clusters.', 'Rule 2 (aks → aks2) carries 10.244.0.0/16 on both sides of aks2\'s inbound NSG rule. Pod traffic leaves a cluster through the node IP, so inside aks2 the source 10.244.0.0/16 means aks2\'s own pods: the Rule also allows aks2 pods → aks2 on 443.', 'Step 2: Rule 1 lands only on aks.'],
+    [V('Version 1', () => world([['aks', { extra: ['10.244.0.0/16'] }], ['aks2', { extra: ['10.244.0.0/16'] }]], { objects: { pods: { kind: 'cidr', value: '10.244.0.0/16', name: 'aks-pods' } }, rules: [R(1, 'no ssh into aks pods', ['any'], ['pods'], ['ssh'], 'deny'), R(2, 'aks to aks2', ['zone:aks'], ['zone:aks2'], ['https'])] }),
+      { checks: [['pods cover both', (S, D) => E.coverage('pods', S.inst).sort().join() === 'aks,aks2'], ['Rule 1 inbound on aks2', (S, D) => of(D, 'aks2', 'in', 1).length === 1]] }),
+     C('Change set: bind "pods" to VNet spoke2', I => { I.objects.pods.bind = ['spoke2']; }, { checks: [['pods cover aks only', (S, D) => E.coverage('pods', S.inst).join() === 'aks'], ['aks2 loses Rule 1', (S, D) => !of(D, 'aks2', 'in', 1).length]] })]);
+
+  add('Placement', 'binding', 'VNet binding with overlapping address spaces',
+    'VNet lab is not connected to anything and reuses 10.1.0.0/16, the range of spoke1. Its Zone labapp has the same prefix as app (10.1.2.0/24). The object "app-servers" is 10.1.2.0/24. In lab, 10.1.1.0/24 (the prefix of Zone web) is the client subnet, which is not a Zone.',
+    ['Step 1: Rule 1 also lands inbound on labapp and opens lab clients → labapp on ssh.', 'Step 2: with a VNet binding to spoke1, it lands only on app.'],
+    [V('Version 1', () => world(['web', 'app', 'labapp'], { objects: { 'app-servers': { kind: 'cidr', value: '10.1.2.0/24', name: 'app-servers' } }, edit: I => { I.subnets.labclients.prefixes = ['10.1.1.0/24']; }, rules: [R(1, 'web ssh to app servers', ['zone:web'], ['app-servers'], ['ssh'])] }),
+      { checks: [['labapp gets the NSG rule', (S, D) => of(D, 'labapp', 'in', 1).length === 1], ['lab clients reach labapp on ssh', (S, D) => E.flowAllowed(S.inst, D.out, {}, { s: E.ip('10.1.1.20'), d: E.ip('10.1.2.5'), proto: 'Tcp', port: 22 }, null, 'labapp').every(x => x)]] }),
+     C('Change set: bind "app-servers" to spoke1', I => { I.objects['app-servers'].bind = ['spoke1']; }, { checks: [['only app now', (S, D) => D.out.cost[1].nsgs.join() === 'app'], ['lab clients blocked', (S, D) => !E.flowAllowed(S.inst, D.out, {}, { s: E.ip('10.1.1.20'), d: E.ip('10.1.2.5'), proto: 'Tcp', port: 22 }, null, 'labapp').some(x => x)]] })]);
+
+  // ======================= Priorities and names =======================
+  add('Priorities and names', 'bands', 'The fixed priority bands',
+    'One Managed NSG with every block: db has all three Inherited defaults (as after an Import) and is destination-enforced.',
+    ['100–119 Platform exceptions, 120–4079 Rules, 4080–4089 Intra-zone default, 4090–4095 Inherited defaults, 4096 Deny-all, 65000+ Azure default rules (read-only).', 'Prototype choice, not decided: the egress allow of the Egress posture sits at 4094 (IPv4) and 4095 (IPv6), in the band that ADR 0011 gives the Inherited defaults.', 'A single NSG rule takes the middle of the Rules band (2100).'],
+    [V('Version 1', () => world([['db', { inherit: { inVNet: true, outVNet: true, outInternet: true } }]], { rules: [R(1, 'any to db', ['any'], ['zone:db'], ['sql']), R(2, 'db to storage', ['zone:db'], ['tag-storage'], ['https'])] }),
+      { checks: [['inherited at 4090', (S, D) => D.out.nsgs.db.in.some(r => r.priority === 4090 && r.kind === 'inherited')], ['egress at 4094', (S, D) => D.out.nsgs.db.out.some(r => r.priority === 4094 && r.kind === 'egress')], ['middle of the band', (S, D) => prio(D, 'db', 'in', 1)[0] === 2100]] })]);
+
+  const fourRules = () => [R(1, 'web01 to db', ['web01'], ['zone:db'], ['sql']), R(2, 'app to db', ['zone:app'], ['zone:db'], ['sql']), R(3, 'onprem to db', ['onprem'], ['zone:db'], ['sql']), R(4, 'any https to db', ['any'], ['zone:db'], ['https'])];
+  add('Priorities and names', 'stable', 'Insert, move and disable with stable priorities',
+    'Four Rules land inbound on db. The first Commit spreads them evenly over the Rules band. Then a Rule is inserted, one is moved to the top, and one is disabled, each committed.',
+    ['Insert: Rule 5 takes the middle of the gap between Rule 1 and Rule 2; no other NSG rule changes.', 'Move: only Rule 4 changes its priority.', 'Disable: Rule 2\'s NSG rule disappears; the others keep their numbers.'],
+    [V('Version 1: four Rules', () => world(['web', 'app', 'db'], { rules: fourRules() }), { checks: [['spread evenly', (S, D) => JSON.stringify([1, 2, 3, 4].map(i => prio(D, 'db', 'in', i)[0])) === '[911,1703,2496,3288]']] }),
+     C('Change set: insert Rule 5 between Rule 1 and Rule 2', I => { I.rules.splice(1, 0, R(5, 'web to db https', ['zone:web'], ['zone:db'], ['https'])); }, { checks: [['middle of the gap', (S, D) => prio(D, 'db', 'in', 5)[0] === 1307], ['others unchanged', (S, D) => D.preview.every(p => !p.renumbered.length)]] }),
+     K('Commit (Version 2)'),
+     C('Change set: move Rule 4 to the top', I => { const r = rule(I, 4); I.rules = [r].concat(I.rules.filter(x => x.id !== 4)); }, { checks: [['Rule 4 takes the gap above Rule 1', (S, D) => prio(D, 'db', 'in', 4)[0] === 515], ['one NSG rule changes', (S, D) => D.preview[0].renumbered.length === 1]] }),
+     K('Commit (Version 3)'),
+     C('Change set: disable Rule 2', I => { rule(I, 2).enabled = false; }, { checks: [['one NSG rule removed, none renumbered', (S, D) => D.preview[0].removed.length === 1 && !D.preview[0].renumbered.length]] })]);
+
+  add('Priorities and names', 'window', 'A window rebalance',
+    'After many edits, Rules 2–5 sit at 1000–1003 in db (the stored NSG rules of the last Version say so). A new Rule goes between Rule 3 and Rule 4, where no number is free.',
+    ['The window grows around the spot until it is at most half occupied (here 997–1006) and only that window is spread.', 'Rules 1 and 6 keep 500 and 3000.', 'The Preview groups the priority-only changes.'],
+    [V('Version 1 (stored priorities from history)', S => { const I = world(['web', 'app', 'db'], { rules: [R(1, 'r1', ['web01'], ['zone:db'], ['sql']), R(2, 'r2', ['zone:app'], ['zone:db'], ['sql']), R(3, 'r3', ['onprem'], ['zone:db'], ['sql']), R(4, 'r4', ['any'], ['zone:db'], ['https']), R(5, 'r5', ['zone:web'], ['zone:db'], ['rdp']), R(6, 'r6', ['zone:app'], ['zone:db'], ['ssh'])] });
+      const out = E.translate(I); const want = { 1: 500, 2: 1000, 3: 1001, 4: 1002, 5: 1003, 6: 3000 }; out.nsgs.db.in.forEach(r => { if (r.ruleId) r.priority = want[r.ruleId]; }); S.seed = out; return I; },
+      { checks: [['history applied', (S, D) => prio(D, 'db', 'in', 3)[0] === 1001]] }),
+     C('Change set: insert Rule 7 between Rule 3 and Rule 4', I => { I.rules.splice(3, 0, R(7, 'r7 new', ['onprem'], ['zone:db'], ['https'])); }, { checks: [['window 997–1006', (S, D) => D.out.nsgs.db.windows.some(w => w.from === 997 && w.to === 1006)], ['Rules 1 and 6 keep their numbers', (S, D) => prio(D, 'db', 'in', 1)[0] === 500 && prio(D, 'db', 'in', 6)[0] === 3000], ['4 NSG rules renumbered', (S, D) => D.preview[0].renumbered.length === 4]] })]);
+
+  add('Priorities and names', 'split', 'The split cross product',
+    'One Rule with four source Objects of three kinds and three services of two protocols lands inbound on db. Per direction it becomes protocol group × source partition × destination partition: (Tcp 443,8443 | Udp 53) × (prefix list | service tag | ASG chunk) × (db).',
+    ['Six NSG rules with consecutive priorities, one name each.', 'The prefix list holds on-premises and the host; the tag and the ASG stand alone.'],
+    [V('Version 1', () => world(['web', 'db'], { objects: { 'asg-web': asg('web-servers', ['nic-web1', 'nic-web2']), jump: { kind: 'host', value: '172.16.9.9', name: 'jumphost' } }, rules: [R(1, 'many to db', ['onprem', 'jump', 'tag-afd', 'asg-web'], ['zone:db'], ['https', 'tcp-8443', 'udp-53'])] }),
+      { checks: [['six NSG rules', (S, D) => of(D, 'db', 'in', 1).length === 6], ['consecutive priorities', (S, D) => { const p = prio(D, 'db', 'in', 1); return p.every((x, i) => !i || x === p[i - 1] + 1); }], ['Tcp ports merged into one list', (S, D) => of(D, 'db', 'in', 1)[0].ports.join() === '443,8443']] })]);
+
+  add('Priorities and names', 'pruning', 'Own-side pruning and list normalization',
+    'Address group AppServers = Zone app, Zone api and host 10.1.2.5 (inside app). Its services are tcp/80, tcp/80-90 and tcp/91. app and api are strict.',
+    ['On app outbound the source is only app\'s prefix: api is pruned (not app\'s side), the host disappears because the app prefix contains it.', 'Ports merge to 80-91.', 'On db inbound the far side stays complete (app and api), the host again normalized away.'],
+    [V('Version 1', () => world([['app', { posture: 'strict' }], ['api', { posture: 'strict' }], 'db'], { objects: { app05: { kind: 'host', value: '10.1.2.5', name: 'app05' }, AppServers: { kind: 'group', name: 'AppServers', members: ['zone:app', 'zone:api', 'app05'] } }, rules: [R(1, 'AppServers to db', ['AppServers'], ['zone:db'], ['http', 'tcp-80-90', 'tcp-91'])] }),
+      { checks: [['app outbound source pruned', (S, D) => JSON.stringify(of(D, 'app', 'out', 1)[0].src.prefixes) === '["10.1.2.0/24"]'], ['ports 80-91', (S, D) => of(D, 'app', 'out', 1)[0].ports.join() === '80-91'], ['db inbound source complete', (S, D) => JSON.stringify(of(D, 'db', 'in', 1)[0].src.prefixes) === '["10.1.2.0/24","10.2.1.0/24"]']] })]);
+
+  add('Priorities and names', 'names', 'NSG rule names',
+    'Rule 1042 "web to db". Names follow nsgfw-r<Rule ID>-<in|out>-<hash>, and the hash covers only the split key (protocol, kind and identity of each side\'s partition).',
+    ['Adding a port and a prefix keeps the name (step 2).', 'Renaming the Rule keeps the name; only the description changes (step 4).', 'A new protocol or a new partition (a service tag) adds NSG rules with new names (step 6).'],
+    [V('Version 1', () => world(['web', 'db'], { rules: [R(1042, 'web to db', ['zone:web'], ['zone:db'], ['https'])] })),
+     C('Change set: add tcp/8443 and on-premises to the Rule', I => { const r = rule(I, 1042); r.svc.push('tcp-8443'); r.src.push('onprem'); }, { checks: [['same name', (S, D) => of(D, 'db', 'in', 1042)[0].name === S.committed.out.nsgs.db.in.find(r => r.ruleId === 1042).name]] }),
+     K('Commit (Version 2)'),
+     C('Change set: rename the Rule', I => { rule(I, 1042).name = 'web tier to SQL'; }, { checks: [['same name, new description', (S, D) => D.preview[0].changed.length === 1 && D.preview[0].changed[0].before.name === D.preview[0].changed[0].after.name]] }),
+     K('Commit (Version 3)'),
+     C('Change set: add udp/53 and the Front Door tag', I => { const r = rule(I, 1042); r.svc.push('udp-53'); r.src.push('tag-afd'); }, { checks: [['three new NSG rules, old one kept', (S, D) => D.preview[0].added.length === 3 && !D.preview[0].removed.length]] })]);
+
+  add('Priorities and names', 'limits', 'Limit warning and a limit breach',
+    'db is the destination of 1,800 Rules (one host each). That is above 90 % of the 1,994 custom NSG rules counted per NSG. A Change set adds 200 more. Step 3 shows the address limit: one Rule with an Address group of 6,100 hosts.',
+    ['Version 1: a warning, no block.', 'Step 2: the Change set is blocked; the message names the NSG, the limit, the count and the Rules with the most NSG rules there.', 'Step 3: 6,100 source prefixes against 6,000 per side.'],
+    [V('Version 1: 1,800 Rules into db', () => world(['db'], { edit: I => { for (let i = 0; i < 1800; i++) { const id = 'h' + i; I.objects[id] = { kind: 'host', value: `172.20.${i >> 8}.${i & 255}`, name: id }; I.rules.push(R(10000 + i, 'partner ' + i, [id], ['zone:db'], ['https'])); } } }),
+      { checks: [['warning', (S, D) => D.out.warnings.some(w => /NSG rules/.test(w.text))], ['no error', (S, D) => !D.out.errors.length]] }),
+     C('Change set: 200 more Rules', I => { for (let i = 1800; i < 2000; i++) { const id = 'h' + i; I.objects[id] = { kind: 'host', value: `172.20.${i >> 8}.${i & 255}`, name: id }; I.rules.push(R(10000 + i, 'partner ' + i, [id], ['zone:db'], ['https'])); } }, { checks: [['blocked', (S, D) => D.out.errors.some(e => e.limit === 'NSG rules')]] }),
+     V('Separate Version: one Rule with 6,100 hosts', () => world(['db'], { edit: I => { const m = []; for (let i = 0; i < 6100; i++) { const id = 'g' + i; I.objects[id] = { kind: 'host', value: `172.21.${i >> 8}.${i & 255}`, name: id }; m.push(id); } I.objects.partners = { kind: 'group', name: 'partners', members: m }; I.rules.push(R(1, 'partners to db', ['partners'], ['zone:db'], ['https'])); } }),
+      { checks: [['address limit breached', (S, D) => D.out.errors.some(e => e.limit === 'source prefixes')]] })]);
+
+  // ======================= ASGs =======================
+  const asgWorld = (zones, objs, rules, edit) => world(zones, { objects: objs, rules, edit });
+  add('ASGs', 'asg-asg', 'ASG to ASG in one VNet',
+    'ASG objects web-servers (two VMs in Zone web) and db-servers (one VM in Zone db), all in spoke1. web is strict.',
+    ['Both NSG rules reference Managed ASGs on both sides: asg-web-servers-spoke1 → asg-db-servers-spoke1.', 'Two Managed ASGs, one per object in spoke1.'],
+    [V('Version 1', () => asgWorld([['web', { posture: 'strict' }], 'db'], { 'asg-web': asg('web-servers', ['nic-web1', 'nic-web2']), 'asg-db': asg('db-servers', ['nic-db1']) }, [R(1, 'web servers to db servers', ['asg-web'], ['asg-db'], ['sql'])]),
+      { checks: [['ASG on both sides', (S, D) => { const r = of(D, 'db', 'in', 1)[0]; return r.src.kind === 'asgs' && r.dst.kind === 'asgs'; }], ['two Managed ASGs', (S, D) => Object.keys(D.out.asgs).length === 2]] })]);
+
+  add('ASGs', 'asg-spokes', 'An ASG object across two spokes',
+    'ASG object web-servers has one member in spoke1 (Zone web) and one in spoke2 (Zone api, strict). Rule: web-servers → db (spoke1).',
+    ['db inbound: one NSG rule with the Managed ASG of spoke1 and one with the member IP from spoke2 (ASGs and prefixes never share a side).', 'api outbound (strict): source is the Managed ASG of spoke2.', 'Two Managed ASGs: one per VNet that holds members.'],
+    [V('Version 1', () => asgWorld(['web', ['api', { posture: 'strict' }], 'db'], { 'asg-web': asg('web-servers', ['nic-web1', 'nic-api1']) }, [R(1, 'web servers to db', ['asg-web'], ['zone:db'], ['sql'])]),
+      { checks: [['two NSG rules on db', (S, D) => of(D, 'db', 'in', 1).length === 2], ['IP fallback 10.2.1.4', (S, D) => of(D, 'db', 'in', 1).some(r => r.src.fallback && r.src.prefixes.join() === '10.2.1.4')], ['api outbound uses spoke2 ASG', (S, D) => of(D, 'api', 'out', 1)[0].src.asgs.join() === 'asg-web-servers-spoke2']] })]);
+
+  add('ASGs', 'asg-pg', 'An ASG object on a PostgreSQL flexible server Zone',
+    'pg holds a PostgreSQL flexible server, which takes no ASGs in NSG rules. Rule: web-servers → pg postgres.',
+    ['pg inbound uses the member IPs of every member, also of the member in its own VNet (spoke2).'],
+    [V('Version 1', () => asgWorld(['web', 'api', 'pg'], { 'asg-web': asg('web-servers', ['nic-web1', 'nic-api1']) }, [R(1, 'web servers to postgres', ['asg-web'], ['zone:pg'], ['pgsql'])]),
+      { checks: [['only IPs on pg', (S, D) => of(D, 'pg', 'in', 1).length === 1 && of(D, 'pg', 'in', 1)[0].src.prefixes.join() === '10.1.1.4,10.2.1.4']] })]);
+
+  add('ASGs', 'ext-asg', 'An External ASG object with scale-set members',
+    'The API team\'s IaC owns the Unmanaged ASG asg-vmss-api; its scale-set instances in Zone api are members. The tool reads them and never writes. api is strict.',
+    ['db inbound (spoke1): the instances\' IPs.', 'api outbound (spoke2): the Unmanaged ASG by its own name.', 'No Managed ASG.'],
+    [V('Version 1', () => asgWorld([['api', { posture: 'strict' }], 'db'], { 'vmss-api': { kind: 'extasg', asgName: 'asg-vmss-api', vnet: 'spoke2', name: 'vmss-api (External)', members: ['nic-vmss0', 'nic-vmss1'] } }, [R(1, 'api scale set to db', ['vmss-api'], ['zone:db'], ['sql'])]),
+      { checks: [['IPs on db', (S, D) => of(D, 'db', 'in', 1)[0].src.prefixes.join() === '10.2.1.10,10.2.1.11'], ['Unmanaged ASG on api', (S, D) => of(D, 'api', 'out', 1)[0].src.asgs.join() === 'asg-vmss-api'], ['no Managed ASG', (S, D) => !Object.keys(D.out.asgs).length]] })]);
+
+  add('ASGs', 'asg-outside', 'An ASG member outside every Zone',
+    'ASG object jump-hosts has one member in hub/mgmt, a subnet that is not a Zone. Rule: jump-hosts → web ssh.',
+    ['The object covers no Zone, so no outbound NSG rule anywhere.', 'web inbound uses the member IP (another VNet).', 'The Managed ASG asg-jump-hosts-hub still exists, because the member is written into it.'],
+    [V('Version 1', () => asgWorld(['web'], { 'asg-jump': asg('jump-hosts', ['nic-jump1']) }, [R(1, 'jump hosts ssh to web', ['asg-jump'], ['zone:web'], ['ssh'])]),
+      { checks: [['IP on web', (S, D) => of(D, 'web', 'in', 1)[0].src.prefixes.join() === '10.0.9.4'], ['Managed ASG in hub', (S, D) => !!D.out.asgs['asg-jump-hosts-hub']]] })]);
+
+  add('ASGs', 'asg-empty', 'An empty ASG object',
+    'ASG object batch-servers has no members yet.',
+    ['No NSG rule, the Rule is marked "no effect", no Managed ASG.'],
+    [V('Version 1', () => asgWorld(['db'], { 'asg-batch': asg('batch-servers', []) }, [R(1, 'batch to db', ['asg-batch'], ['zone:db'], ['sql'])]),
+      { checks: [['no effect', (S, D) => D.out.noEffect.includes(1)], ['no Managed ASG', (S, D) => !Object.keys(D.out.asgs).length]] })]);
+
+  add('ASGs', 'asg-delete', 'IP fallback: a deleted member\'s IP leaves allow Rules on its own',
+    'web-servers has members in spoke1 and spoke2; db (spoke1) holds the spoke2 member\'s IP. The VM in spoke2 is deleted in Azure. The tool removes its IP from allow Rules without Approval (issue 27, point 14). Step 3 repeats it with the object also in a deny Rule.',
+    ['Step 2: the tool\'s Change set removes the member; db loses one NSG rule; it only closes, so no Approval.', 'Step 3/4: the same object is also in "deny web-servers → app ssh". Removing the member closes on the allow Rule and opens on the deny Rule (the IP leaves a deny). A member belongs to the object, not to one Rule, so the tool cannot remove it from the allow Rule only. Open question.'],
+    [V('Version 1', () => asgWorld(['web', 'api', 'db'], { 'asg-web': asg('web-servers', ['nic-web1', 'nic-api1']) }, [R(1, 'web servers to db', ['asg-web'], ['zone:db'], ['sql'])])),
+     C('Azure: vm-api1 is deleted; the tool prepares the removal', (I, S) => { delete I.nics['nic-api1']; I.objects['asg-web'].members = ['nic-web1']; S.note = 'Change set prepared by the tool, Author: the tool. ' + E.rulesUsing(S.committed.inst, 'asg-web').map(r => `Rule ${r.id} (${r.action}): removing the member ${r.action === 'allow' ? 'only closes' : 'opens'}`).join('; ') + '.'; },
+      { checks: [['IP partition gone from db', (S, D) => of(D, 'db', 'in', 1).length === 1], ['only closes', (S, D) => E.rulesUsing(S.committed.inst, 'asg-web').every(r => r.action === 'allow')]] }),
+     V('Version 1b: the object is also in a deny Rule', () => asgWorld(['web', 'api', 'app', 'db'], { 'asg-web': asg('web-servers', ['nic-web1', 'nic-api1']) }, [R(2, 'web servers no ssh to app', ['asg-web'], ['zone:app'], ['ssh'], 'deny'), R(1, 'web servers to db', ['asg-web'], ['zone:db'], ['sql'])])),
+     C('Azure: vm-api1 is deleted again', (I, S) => { delete I.nics['nic-api1']; I.objects['asg-web'].members = ['nic-web1']; S.note = E.rulesUsing(S.committed.inst, 'asg-web').map(r => `Rule ${r.id} (${r.action}): removing the member ${r.action === 'allow' ? 'closes' : 'opens (the IP leaves a deny Rule)'}`).join('; ') + '. Not automatic as one member removal.'; },
+      { checks: [['one allow and one deny use the object', (S, D) => E.rulesUsing(S.committed.inst, 'asg-web').map(r => r.action).sort().join() === 'allow,deny']] })]);
+
+  add('ASGs', 'asg-tf-dual', 'A dual-stack ASG member in a Terraform Environment',
+    'spoke3 belongs to a Terraform Environment. ASG object dual-servers has one VM with an IPv4 and an IPv6 address. The azurerm association writes ASG membership on IPv4 IP configurations only, so the IPv6 address goes through the IP fallback, also inside the ASG\'s VNet.',
+    ['dual2 inbound: the Managed ASG (IPv4 and IPv6 destination) plus one NSG rule with the member\'s IPv6 address.', 'Step 2 (ARM): no IPv6 fallback; whether ARM needs it waits for the empirical check.'],
+    [V('Version 1', () => world(['dual', 'dual2'], { objects: { 'asg-dual': asg('dual-servers', ['nic-dual1']) }, rules: [R(1, 'dual servers to dual2', ['asg-dual'], ['zone:dual2'], ['https'])], edit: I => { I.vnets.spoke3.env = 'tf'; } }),
+      { checks: [['IPv6 fallback present', (S, D) => of(D, 'dual2', 'in', 1).some(r => r.src.fallback && r.src.prefixes.join() === 'fd00:3:0:1::4')]] }),
+     C('Change set: the same in an ARM Environment', I => { I.vnets.spoke3.env = 'prod'; }, { checks: [['no fallback', (S, D) => !of(D, 'dual2', 'in', 1).some(r => r.src.fallback)]] })]);
+
+  // ======================= Write order =======================
+  add('Write order', 'no-edge', 'An everyday Change set needs no order',
+    'web is strict; db has the Inherited default "inbound from VirtualNetwork". The Change set replaces "allow web → db https" by "allow web → db ssh" (the case that the first form of ADR 0018 rejected).',
+    ['No Crossing flow: db lets web in on both ports in both states, so db neither closes nor opens.', 'One step, both NSGs in parallel.'],
+    [V('Version 1', () => world([['web', { posture: 'strict' }], ['db', { inherit: { inVNet: true } }]], { rules: [R(1, 'web to db https', ['zone:web'], ['zone:db'], ['https'])] })),
+     C('Change set: https becomes ssh', I => { I.rules = [R(2, 'web to db ssh', ['zone:web'], ['zone:db'], ['ssh'])]; }, { checks: [['no edges', (S, D) => !edgesOf(D).length], ['one step', (S, D) => D.plan.levels.length === 1]] })]);
+
+  const tagWorld = rules => world([['web', { posture: 'strict' }], ['api', { posture: 'strict' }]], { rules });
+  add('Write order', 'crossing', 'A Crossing flow: the closing NSG goes first',
+    'Imported Rules with the VirtualNetwork tag land on one side only. Old: "web → VirtualNetwork ssh" opens web outbound. New: it is gone, and "VirtualNetwork → api ssh" opens api inbound. Both Versions deny web → api ssh, because web and api are strict. Written in the wrong order (api first), the flow would be open.',
+    ['One edge: NSG of web before NSG of api.', 'The witness flow and the tag case under which it crosses: web and api are in spokes that are not peered, so the engine does not know whether VirtualNetwork holds the other spoke. With a UDR to the hub firewall it does, because Azure adds UDR prefixes to the tag.'],
+    [V('Version 1', () => tagWorld([R(1, 'web ssh to vnet', ['zone:web'], ['tag-vnet'], ['ssh'])])),
+     C('Change set', I => { I.rules = [R(2, 'vnet ssh to api', ['tag-vnet'], ['zone:api'], ['ssh'])]; }, { checks: [['edge web before api', (S, D) => edgesOf(D).join() === 'web>api'], ['two steps', (S, D) => D.plan.levels.length === 2]] })]);
+
+  add('Write order', 'tag-both', 'A service tag evaluated both ways',
+    'api has the Inherited default "inbound from VirtualNetwork". Old: web is destination-enforced and "deny web → api" closes the flow on api. New: the deny is gone and web becomes strict, so web\'s Deny-all closes it. Whether api lets web in now depends on whether api\'s VirtualNetwork tag contains web (spoke1), which the engine cannot read.',
+    ['The engine evaluates both cases and unites the edges: NSG of web before NSG of api.', 'An engine that assumed "the tag does not contain web" would find no edge, and writing api first would open web → api.'],
+    [V('Version 1', () => world(['web', ['api', { inherit: { inVNet: true } }]], { rules: [R(1, 'web may not reach api', ['zone:web'], ['zone:api'], ['any'], 'deny')] })),
+     C('Change set: drop the deny, web becomes strict', I => { I.rules = []; I.zones.web.posture = 'strict'; }, { checks: [['edge web before api', (S, D) => edgesOf(D).join() === 'web>api'], ['found under the case "contains"', (S, D) => D.plan.edges.find(e => e.kind === 'crossing').witness.cases.some(c => /VirtualNetwork contains/.test(c))]] })]);
+
+  add('Write order', 'cycle', 'A cycle fails validation, and the split',
+    'The Change set swaps one-sided tag Rules in both directions: ssh from web to api, and rdp from api to web. Each flow crosses, in opposite directions.',
+    ['Step 2: edges web → api and api → web: a cycle. Validation fails and the Preview names both flows.', 'Step 3/4: split into a closing Commit and an opening Commit; neither has a cycle.'],
+    [V('Version 1', () => tagWorld([R(1, 'web ssh to vnet', ['zone:web'], ['tag-vnet'], ['ssh']), R(2, 'api rdp to vnet', ['zone:api'], ['tag-vnet'], ['rdp'])])),
+     C('Change set (unsplit)', I => { I.rules = [R(3, 'vnet ssh to api', ['tag-vnet'], ['zone:api'], ['ssh']), R(4, 'vnet rdp to web', ['tag-vnet'], ['zone:web'], ['rdp'])]; }, { checks: [['cycle error', (S, D) => errKinds(D).includes('cycle')]] }),
+     C('Split, Commit 1: only the closing part', I => { I.rules = []; }, { checks: [['no cycle', (S, D) => !errKinds(D).includes('cycle')]] }),
+     K('Commit (Version 2)'),
+     C('Split, Commit 2: the opening part', I => { I.rules = [R(3, 'vnet ssh to api', ['tag-vnet'], ['zone:api'], ['ssh']), R(4, 'vnet rdp to web', ['tag-vnet'], ['zone:web'], ['rdp'])]; }, { checks: [['no cycle', (S, D) => !errKinds(D).includes('cycle')]] })]);
+
+  const memberObjs = () => ({ 'asg-admin': asg('admins', ['nic-web1']), 'asg-batch': asg('batch', ['nic-web2']) });
+  const memberRules = () => [R(1, 'admins rdp to db', ['asg-admin'], ['zone:db'], ['rdp']), R(2, 'batch to db', ['asg-batch'], ['zone:db'], ['sql'])];
+  add('Write order', 'members', 'The three ASG member steps',
+    'ASG objects admins (vm-web1) and batch (vm-web2) are allowed into db. The Change set removes vm-web1 from admins, adds vm-app1 to batch, and adds a new Rule on db.',
+    ['Step 1: vm-web1 leaves admins (it only closes under the Deployed NSG contents).', 'Step 2: the NSG of db.', 'Step 3: vm-app1 joins batch (it only opens under the target).', 'Step 3 of this example: vm-web2 moves from batch to admins in one network interface write, and vm-app1 joins batch. No NSG changes. The move closes sql and opens rdp, so it fits neither step and the Change set fails validation, although the write is atomic and no NSG write can mix with it. Open question.'],
+    [V('Version 1', () => world(['web', 'app', 'db'], { objects: memberObjs(), rules: memberRules() })),
+     C('Change set', I => { I.objects['asg-admin'].members = []; I.objects['asg-batch'].members.push('nic-app1'); I.rules.push(R(3, 'web https to db', ['zone:web'], ['zone:db'], ['https'])); },
+      { checks: [['vm-web1 in step 1, vm-app1 in step 3', (S, D) => D.plan.members.find(m => m.nic === 'nic-web1').step === 1 && D.plan.members.find(m => m.nic === 'nic-app1').step === 3], ['three levels', (S, D) => D.plan.levels.length === 3]] }),
+     C('Other Change set on Version 1: vm-web2 moves to admins, vm-app1 joins batch', (I, S) => { S.inst = E.clone(S.committed.inst); I = S.inst; I.objects['asg-batch'].members = ['nic-app1']; I.objects['asg-admin'].members.push('nic-web2'); },
+      { checks: [['fails validation', (S, D) => errKinds(D).includes('member')], ['no NSG write', (S, D) => !D.plan.writes.some(w => w.kind === 'nsg')]] })]);
+
+  add('Write order', 'failed', 'A failed write delays only the writes with an edge from it',
+    'The Change set of "A Crossing flow" plus unrelated changes on db and app. One edge: web before api.',
+    ['Step 3: the NSG of web fails. api waits; db and app are written. There is no hold on Affected Zones.', 'Step 4: the NSG of db fails instead. Nothing waits.', 'Step 5: a newer Version is committed while web still has its old content. Its Deployment plans from the Deployed state, so api still waits for web.'],
+    [V('Version 1', () => world([['web', { posture: 'strict' }], ['api', { posture: 'strict' }], 'app', 'db'], { rules: [R(1, 'web ssh to vnet', ['zone:web'], ['tag-vnet'], ['ssh'])] })),
+     C('Change set', I => { I.rules = [R(2, 'vnet ssh to api', ['tag-vnet'], ['zone:api'], ['ssh']), R(3, 'any https to db', ['any'], ['zone:db'], ['https']), R(4, 'onprem to app', ['onprem'], ['zone:app'], ['rdp'])]; }),
+     X('Deployment: the NSG of web fails', S => { S.failed = ['nsg:web']; }, { checks: [['only api waits', (S, D) => D.waiting.join() === 'nsg:api']] }),
+     X('Instead: the NSG of db fails', S => { S.failed = ['nsg:db']; }, { checks: [['nothing waits', (S, D) => !D.waiting.length]] }),
+     X('Next Version while web still fails', S => {
+       const v1 = S.committed.out; commit(S); S.failed = null; // Version 2 was committed; its Deployment is the one that failed
+       const dep = { inst: S.committed.inst, out: E.clone(S.committed.out) }; dep.out.nsgs.web = v1.nsgs.web; dep.out.nsgs.api = v1.nsgs.api; // db and app were written
+       S.deployed = dep; S.inst = E.clone(S.inst); S.inst.rules.push(R(5, 'web https to app', ['zone:web'], ['zone:app'], ['https'])); S.pending = true;
+       S.note = 'Deployed state: web and api still old (web failed, api waited), db and app new. The new Deployment delivers the rest.'; },
+      { checks: [['edge web before api remains', (S, D) => edgesOf(D).includes('web>api')]] })]);
+
+  add('Write order', 'retire', 'Zone removal and its Retired NSG',
+    'Zone web is removed. Its NSG becomes a Retired NSG (Platform exceptions and Deny-all only), and "deny web → db" goes, because it names web. "allow 10.0.0.0/8 → db" stays.',
+    ['Old: db denies web. New: the Retired NSG denies outbound. Written in the wrong order (db first), old web lets internal traffic out and new db lets 10.0.0.0/8 in.', 'Edge: NSG of web (retire) before NSG of db.'],
+    [V('Version 1', () => world(['web', 'db'], { rules: [R(1, 'web may not reach db', ['zone:web'], ['zone:db'], ['any'], 'deny'), R(2, 'internal to db', ['net10'], ['zone:db'], ['any'])] })),
+     C('Change set: remove Zone web', I => { I.zones.web.state = 'retired'; I.rules = I.rules.filter(r => r.id !== 1); }, { checks: [['edge web before db', (S, D) => edgesOf(D).join() === 'web>db']] })]);
+
+  add('Write order', 'legacy', 'First Commit of an NSG adopted in place',
+    'db\'s existing NSG has only the Azure default rules; AllowVnetInBound lets the VNet in. db is onboarded in place and its legacy NSG is the Deployed state. In the same Change set web switches from strict to destination-enforced. Step 2 opts db out of Inherited defaults; step 3 keeps the default.',
+    ['Step 2: old web denies web → db, new db denies it. Written web first, new web lets it out and legacy db lets it in. Edge: NSG of db before NSG of web.', 'Step 3 (Inherited defaults kept, the default): db still lets the VNet in, so nothing crosses.'],
+    [V('Deployed state: db with its legacy NSG', () => world([['web', { posture: 'strict' }], ['db', { state: 'legacy', nsg: 'nsg-db-legacy', legacy: { name: 'nsg-db-legacy', in: [], out: [] } }]])),
+     C('Onboarding Change set, db opts out of Inherited defaults', I => { I.zones.db = Object.assign({}, I.zones.db, { state: 'managed', inherit: {}, adopted: true }); delete I.zones.db.legacy; I.zones.web.posture = 'dest'; }, { checks: [['edge db before web', (S, D) => edgesOf(D).join() === 'db>web']] }),
+     C('Same, with Inherited defaults (the Import default)', I => { I.zones.db.inherit = { inVNet: true, outVNet: true, outInternet: true }; }, { checks: [['no edge', (S, D) => !edgesOf(D).length]] })]);
+
+  // ======================= Terraform =======================
+  add('Terraform', 'contract', 'A Data contract for one root module',
+    'spoke3 (subscription sub-app3) belongs to a Terraform Environment. The tool writes one JSON file per root module; the repository\'s HCL reads it.',
+    ['Full rule list per NSG with names and priorities, flush_connection from the Environment, subnet associations, Managed ASGs, network interface memberships.', 'The dual-stack member\'s IPv6 address is in the NSG rules through the IP fallback.'],
+    [V('Version 7', () => world(['dual', 'dual2'], { objects: { 'asg-dual': asg('dual-servers', ['nic-dual1']) }, rules: [R(1, 'dual servers to dual2', ['asg-dual'], ['zone:dual2'], ['https']), R(2, 'any to dual', ['any'], ['zone:dual'], ['https'])], edit: I => { I.vnets.spoke3.env = 'tf'; } }),
+      { panel: (S, D) => [{ title: 'Data contract: envs/sub-app3/nsgfw.json', kind: 'json', value: E.dataContract(S.inst, D.out, 'sub-app3', 'v7') }], checks: [['two NSGs in the contract', (S, D) => Object.keys(E.dataContract(S.inst, D.out, 'sub-app3', 'v7').network_security_groups).length === 2]] })]);
+
+  add('Terraform', 'pr-steps', 'One Deployment with an edge: one pull request per step',
+    'The Crossing-flow Change set in the Terraform Environment: dual and dual2 are strict, and the VirtualNetwork Rules swap sides.',
+    ['Two pull requests: the first changes the NSG of dual (closes), the second the NSG of dual2 (opens). The tool opens the second only after Azure shows the first target.', 'Each pull request carries the whole Data contract, with the later NSG still at its Deployed content.'],
+    [V('Version 1', () => world([['dual', { posture: 'strict' }], ['dual2', { posture: 'strict' }]], { rules: [R(1, 'dual ssh to vnet', ['zone:dual'], ['tag-vnet'], ['ssh'])], edit: I => { I.vnets.spoke3.env = 'tf'; } })),
+     C('Change set', I => { I.rules = [R(2, 'vnet ssh to dual2', ['tag-vnet'], ['zone:dual2'], ['ssh'])]; },
+      { panel: (S, D) => D.plan.prSteps.map((ids, k) => ({ title: `Pull request ${k + 1} of ${D.plan.prSteps.length}`, kind: 'list', value: ids.map(id => D.plan.writes.find(w => w.id === id).label) })), checks: [['two pull requests', (S, D) => D.plan.prSteps.length === 2 && D.plan.prSteps[0].join() === 'nsg:dual']] })]);
+
+  // ======================= Import =======================
+  const legacyBilling = { name: 'nsg-billing', in: [
+    { name: 'allow-web-https', priority: 100, access: 'Allow', proto: 'Tcp', ports: '443', src: '10.1.1.0/24', dst: '*' },
+    { name: 'deny-spoke1-https', priority: 200, access: 'Deny', proto: 'Tcp', ports: '443', src: '10.1.0.0/16', dst: '*' },
+    { name: 'allow-onprem-rdp', priority: 300, access: 'Allow', proto: 'Tcp', ports: '3389', src: '192.168.10.0/24', dst: '*' }],
+    out: [{ name: 'billing-to-db', priority: 100, access: 'Allow', proto: 'Tcp', ports: '1433', src: '*', dst: '10.1.3.0/24' },
+      { name: 'deny-internet', priority: 110, access: 'Deny', proto: '*', ports: '*', src: '*', dst: 'Internet' }] };
+  function doImport(S, zid, legacy, existing, opt) {
+    const I = S.inst, imp = E.importNsg(I, zid, legacy, opt); let n = 100;
+    imp.rules.forEach(r => (r.id = n++));
+    Object.assign(I.objects, imp.newObjects); Object.assign(I.services, imp.newServices);
+    const policies = E.uniq(imp.rules.map(r => r.policy)).map(p => imp.rules.filter(r => r.policy === p));
+    const m = E.constraintMerge(existing || I.rules, policies, I);
+    I.rules = m.order.map(r => { const x = E.clone(r); delete x.policy; return x; });
+    I.zones[zid] = Object.assign({}, I.zones[zid], { state: 'managed', inherit: imp.flags, adopted: true }); delete I.zones[zid].legacy;
+    return { imp, m };
+  }
+  function importPanel(S, D, zid) {
+    const r = S.importResult, rows = [];
+    r.imp.rules.forEach(x => rows.push([`Rule ${x.id}`, x.name, `${x.imported.nsg} ${x.imported.dir} ${x.imported.priority}`, x.src.map(s => E.refLabel(S.inst, s)).join(', ') + ' → ' + x.dst.map(s => E.refLabel(S.inst, s)).join(', ')]));
+    const fc = ['in', 'out'].map(d => ({ d, c: E.zoneFlowChanges(S.committed.out.nsgs[zid], D.out.nsgs[zid], zid, S.inst, d, 6) }));
+    return [{ title: 'Imported Rules and their provenance', kind: 'table', head: ['Rule', 'name', 'from', 'source → destination'], rows },
+      { title: 'Merge constraints', kind: 'list', value: r.m.edges.filter(e => e.kind !== 'order').map(e => `${e.kind === 'deny-first' ? 'deny first' : 'cycle broken'}: Rule ${e.a} before Rule ${e.b}`) },
+      { title: 'Import notes', kind: 'list', value: r.imp.notes.concat(r.m.notes).map(n => `${n.level}: ${n.text}`).concat(fc.flatMap(({ d, c }) => [].concat(c.openCount ? [`warning: ${c.openCount} ${d}bound address pair(s) open against the old NSG, e.g. ${c.opens.slice(0, 3).map(o => o.flow + ' by ' + o.by).join('; ')}`] : [], c.closeCount ? [`info: ${c.closeCount} ${d}bound address pair(s) close against the old NSG, e.g. ${c.closes.slice(0, 3).map(o => o.flow + ' by ' + o.by).join('; ')}`] : []))) },
+      { title: 'Inherited defaults set by Import', kind: 'list', value: Object.entries(r.imp.flags).map(([k, v]) => `${k}: ${v ? 'set' : 'not set'}`) }];
+  }
+  add('Import', 'merge', 'The constraint merge',
+    'Zone billing is onboarded in place. Its legacy NSG has three inbound and two outbound rules. The Rule base already has three Rules. Import makes one Rule per NSG rule and merges them.',
+    ['Each legacy (NSG, direction) keeps its order; the existing Rules keep theirs.', 'Where Rules of different policies overlap with different actions, the deny comes first: the imported "deny spoke1 https" goes above the existing "web to anything https".', 'Imported Rules otherwise go as low as their constraints allow (a prototype choice; the verdict is the same either way).', 'Import notes compare the new NSG of billing with the legacy one: the existing telnet deny now closes telnet into billing.'],
+    [V('Deployed state: Rule base and legacy NSG', () => world(['web', 'db', ['billing', { state: 'legacy', nsg: 'nsg-billing', legacy: legacyBilling }]], { rules: [R(1, 'no telnet', ['any'], ['net10'], ['telnet'], 'deny'), R(2, 'web to anything https', ['zone:web'], ['any'], ['https']), R(3, 'spoke1 sql to db', ['spoke1-net'], ['zone:db'], ['sql'])] })),
+     C('Onboarding Change set with Import', (I, S) => { S.importResult = doImport(S, 'billing', legacyBilling); },
+      { panel: (S, D) => importPanel(S, D, 'billing'), checks: [['order E1, I1, I2, E2, I4, I5, E3, I3', (S, D) => S.inst.rules.map(r => r.id).join() === '1,100,101,2,103,104,3,102'], ['outbound Internet flag not set', (S, D) => !S.importResult.imp.flags.outInternet], ['telnet into billing closes', (S, D) => E.zoneFlowChanges(S.committed.out.nsgs.billing, D.out.nsgs.billing, 'billing', S.inst, 'in').closes.some(c => /Tcp\/23/.test(c.flow))]] })]);
+
+  const legacyCycle = { name: 'nsg-billing', in: [
+    { name: 'allow-app-8080', priority: 100, access: 'Allow', proto: 'Tcp', ports: '8080', src: '10.1.2.0/24', dst: '*' },
+    { name: 'deny-spoke1-8000s', priority: 200, access: 'Deny', proto: 'Tcp', ports: '8000-8100', src: '10.1.0.0/16', dst: '*' }], out: [] };
+  add('Import', 'cycle-break', 'A cycle broken toward closing',
+    'Existing: "allow spoke1 → any 8080" above "deny any → any 8000-8100". Legacy billing: "allow app 8080" above "deny spoke1 8000-8100". The constraints form a cycle.',
+    ['The imported deny moves above the imported allow. That only closes flows: app → billing 8080, which the legacy NSG allowed.', 'A warning Import note lists it.'],
+    [V('Deployed state', () => world(['app', ['billing', { state: 'legacy', nsg: 'nsg-billing', legacy: legacyCycle }]], { rules: [R(1, 'spoke1 to 8080', ['spoke1-net'], ['any'], ['tcp-8080']), R(2, 'no 8000s', ['any'], ['any'], ['tcp-8000s'], 'deny')] })),
+     C('Onboarding Change set with Import', (I, S) => { S.importResult = doImport(S, 'billing', legacyCycle); },
+      { panel: (S, D) => importPanel(S, D, 'billing'), checks: [['cycle broken', (S, D) => S.importResult.m.edges.some(e => e.kind === 'cycle-break')], ['app → billing 8080 closes', (S, D) => !E.flowAllowed(S.inst, D.out, {}, { s: E.ip('10.1.2.9'), d: E.ip('10.1.4.9'), proto: 'Tcp', port: 8080 }, 'app', 'billing').some(x => x)]] })]);
+
+  const legacyHr = { name: 'nsg-hr', in: [
+    { name: 'allow-onprem-rdp', priority: 100, access: 'Allow', proto: 'Tcp', ports: '3389', src: '192.168.10.0/24', dst: '*' },
+    { name: 'deny-all-in', priority: 4000, access: 'Deny', proto: '*', ports: '*', src: '*', dst: '*' }], out: [] };
+  add('Import', 'inherited', 'Inherited defaults in the band 4090–4095, and a merge proposal',
+    'billing (legacy NSG without a custom deny-all) and hr (legacy NSG with "deny-all-in") are onboarded in one Change set. Both have "allow-onprem-rdp".',
+    ['billing gets all three Inherited defaults at 4090/4091; hr gets none inbound, because its custom deny-all shadowed AllowVnetInBound. The custom deny-all is dropped as redundant (info).', 'The two rdp Rules differ only in their own Zone: the Change set proposes one Rule with both Zones, and the merge keeps the order constraints.'],
+    [V('Deployed state', () => world([['billing', { state: 'legacy', nsg: 'nsg-billing', legacy: legacyBilling }], ['hr', { state: 'legacy', nsg: 'nsg-hr', legacy: legacyHr }], 'db', 'web'], { rules: [] })),
+     C('Onboarding Change set with Import of both', (I, S) => {
+       const a = E.importNsg(I, 'billing', legacyBilling), b = E.importNsg(I, 'hr', legacyHr); let n = 100;
+       a.rules.concat(b.rules).forEach(r => (r.id = n++)); [a, b].forEach(x => { Object.assign(I.objects, x.newObjects); Object.assign(I.services, x.newServices); });
+       const pols = E.uniq(a.rules.concat(b.rules).map(r => r.policy)).map(p => a.rules.concat(b.rules).filter(r => r.policy === p));
+       const m = E.constraintMerge([], pols, I); I.rules = m.order.map(r => { const x = E.clone(r); delete x.policy; return x; });
+       I.zones.billing = Object.assign({}, I.zones.billing, { state: 'managed', inherit: a.flags, adopted: true }); I.zones.hr = Object.assign({}, I.zones.hr, { state: 'managed', inherit: b.flags, adopted: true });
+       delete I.zones.billing.legacy; delete I.zones.hr.legacy;
+       S.importBoth = { a, b, m, proposals: E.mergeProposals(a.rules.concat(b.rules), m, I) }; },
+      { panel: (S, D) => [{ title: 'Inherited defaults', kind: 'list', value: [`billing: ${JSON.stringify(S.importBoth.a.flags)}`, `hr: ${JSON.stringify(S.importBoth.b.flags)}`] },
+        { title: 'Import notes', kind: 'list', value: S.importBoth.a.notes.concat(S.importBoth.b.notes).map(n => `${n.level}: ${n.text}`) },
+        { title: 'Merge proposals', kind: 'list', value: S.importBoth.proposals.map(p => `${p.names.join(' + ')} (Rules ${p.rules.join(', ')}): ${p.possible ? 'can merge into one Rule with both Zones' : 'cannot merge'}, ${p.why}`) }],
+        checks: [['hr has no inbound flag', (S, D) => !S.importBoth.b.flags.inVNet], ['billing inbound flag at 4090', (S, D) => D.out.nsgs.billing.in.some(r => r.priority === 4090)], ['rdp merge proposed', (S, D) => S.importBoth.proposals.some(p => p.possible && p.names.every(n => n === 'allow-onprem-rdp'))]] })]);
+
+  const legacyBind = { name: 'nsg-billing', in: [{ name: 'allow-app-half-https', priority: 100, access: 'Allow', proto: 'Tcp', ports: '443', src: '10.1.2.0/25', dst: '*' }], out: [] };
+  add('Import', 'import-binding', 'How Import could use VNet bindings',
+    'billing (spoke1) is onboarded. Its legacy NSG lets 10.1.2.0/25 in on 443. That prefix is part of Zone app (spoke1) and of Zone labapp in the unconnected VNet lab, so Import creates a CIDR object (issue 18). labapp is strict. In lab, 10.1.4.0/24 (billing\'s prefix) is a client subnet that is not a Zone.',
+    ['Step 2 (as decided): the new object covers labapp too, so the imported Rule lands outbound on labapp and opens labapp → lab clients on 443, in a VNet the old NSG could never see.', 'Step 3 (prototype proposal): Import binds the new object to the VNets connected to billing\'s VNet. It then covers only app.'],
+    [V('Deployed state', () => world([['app', { posture: 'strict' }], ['labapp', { posture: 'strict' }], ['billing', { state: 'legacy', nsg: 'nsg-billing', legacy: legacyBind }]], { rules: [] })),
+     C('Import as decided (no binding)', (I, S) => { S.importResult = doImport(S, 'billing', legacyBind); }, { panel: (S, D) => importPanel(S, D, 'billing'), checks: [['lands on labapp', (S, D) => D.out.cost[100].nsgs.includes('labapp')]] }),
+     C('Import with the binding proposal', (I, S) => { S.inst = E.clone(S.committed.inst); S.importResult = doImport(S, 'billing', legacyBind, null, { bindings: 'connected' }); }, { panel: (S, D) => importPanel(S, D, 'billing'), checks: [['not on labapp', (S, D) => !D.out.cost[100].nsgs.includes('labapp')]] })]);
+
+  // ======================= Change workflow =======================
+  add('Change workflow', 'affected', 'Affected Zones under ADR 0016',
+    'web, app and db are destination-enforced, api is strict. The Change set adds three Rules. Step 3 switches app to strict.',
+    ['"any → db": db (destination) and api (strict source); not web or app.', '"web → Internet": the destination reaches outside Zones, so web counts.', '"app → web": only web.', 'Step 3: app\'s posture change makes app affected, and also web, because Rule 3 uses app (a changed Zone). Is web meant to approve that?'],
+    [V('Version 1', () => world(['web', 'app', 'db', ['api', { posture: 'strict' }]], { rules: [] })),
+     C('Change set: three Rules', I => { I.rules = [R(1, 'any to db', ['any'], ['zone:db'], ['sql']), R(2, 'web to internet', ['zone:web'], ['tag-internet'], ['https']), R(3, 'app to web', ['zone:app'], ['zone:web'], ['https'])]; }, { checks: [['api, db, web', (S, D) => affected(D) === 'api,db,web']] }),
+     K('Commit (Version 2)'),
+     C('Change set: app becomes strict', I => { I.zones.app.posture = 'strict'; }, { checks: [['app and web', (S, D) => affected(D) === 'app,web']] })]);
+
+  add('Change workflow', 'rebase', 'Order conflicts at Rebase',
+    'A Change set based on Version 5 inserts Rule 9 "allow app host → db ssh" between Rule 2 and Rule 3. Meanwhile Version 6 was committed.',
+    ['Case A: Version 6 moved the deny Rule 1 (app → db ssh) below Rule 3. Rule 1 overlaps Rule 9 with the other action, and their order changed: conflict.', 'Case B: Version 6 moved Rule 4 (allow on-premises → db ssh) to the top. Same action: clean Rebase, Approvals kept.'],
+    [V('Version 5 and the Change set', S => { const I = world(['web', 'app', 'db'], { objects: { app10: { kind: 'host', value: '10.1.2.10', name: 'app10' } }, rules: [R(1, 'no ssh from app', ['zone:app'], ['zone:db'], ['ssh'], 'deny'), R(2, 'web to db https', ['zone:web'], ['zone:db'], ['https']), R(3, 'spoke1 to db', ['spoke1-net'], ['zone:db'], ['any']), R(4, 'onprem ssh to db', ['onprem'], ['zone:db'], ['ssh']), R(9, 'app10 ssh to db', ['app10'], ['zone:db'], ['ssh'])] });
+       const placed = { id: 9, above: 2, below: 3 };
+       S.rebase = { A: E.rebase([1, 2, 3, 4], placed, [2, 3, 1, 4], I), B: E.rebase([1, 2, 3, 4], placed, [4, 1, 2, 3], I) }; return I; },
+      { panel: S => ['A', 'B'].map(k => ({ title: `Case ${k}`, kind: 'list', value: [`intended order: ${S.rebase[k].intended.join(', ')}`, `after Rebase: ${S.rebase[k].rebased.join(', ')}`, S.rebase[k].conflicts.length ? `conflict with Rule ${S.rebase[k].conflicts.join(', ')}: an author confirms the position` : 'clean Rebase, Approvals kept', S.rebase[k].quiet.length ? `order changed without conflict: Rule ${S.rebase[k].quiet.join(', ')} (same action or no overlap)` : ''].filter(Boolean) })),
+        checks: [['case A conflicts with Rule 1', S => S.rebase.A.conflicts.join() === '1'], ['case B clean', S => !S.rebase.B.conflicts.length && S.rebase.B.quiet.join() === '4']] })]);
+
+  add('Change workflow', 'engine-version', 'The engine version in the output',
+    'Version 12 was translated by engine 0.1.0, which splits IPv4 and IPv6. A tool upgrade brings engine 0.2.0, which (say, after the empirical check) writes both families in one NSG rule. The Rule base does not change.',
+    ['The output carries the engine version.', 'The new engine changes the NSGs for an unchanged Rule base, so the tool prepares a "re-translation" Change set with this Preview instead of changing NSGs with the next Commit and without Approval.'],
+    [V('Version 12 (engine 0.1.0)', () => world(['dual', 'dual2'], { rules: [R(1, 'any to dual', ['any'], ['zone:dual'], ['https']), R(2, 'dual to dual2', ['zone:dual'], ['zone:dual2'], ['tcp-8443'])] })),
+     X('Upgrade: engine 0.2.0', S => { S.opt = { splitFamilies: false, engineVersion: '0.2.0-prototype' }; S.inst = E.clone(S.inst); S.pending = true; S.note = 'Re-translation Change set prepared by the tool; Affected Zones are the Zones whose NSGs change.'; },
+      { checks: [['engine version in output', (S, D) => D.out.engineVersion === '0.2.0-prototype'], ['NSGs change', (S, D) => D.preview.length > 0]] })]);
+
+  // What the prototype asks the map owner to react to (each links to the example that shows it)
+  const QUESTIONS = [
+    { key: 'internal-import', ex: 'merge', text: 'Imported Zones start destination-enforced, so Import opens outbound traffic from the new Zone to every Internal address outside its VirtualNetwork tag. That breaks "behaviour is preserved by default" for outbound. Accept with a warning Import note, or start imported Zones differently?' },
+    { key: 'ipv6-internal', ex: 'dual', text: 'The default Internal address space holds no IPv6 prefix. Between dual-stack Zones, IPv6 then behaves as if every Zone were strict: "any → dual" lands outbound on every dual-stack Zone, which brings back the broad-source cost of ADR 0016 for IPv6. Add unique local addresses (fc00::/7) or the VNets\' IPv6 ranges to the default?' },
+    { key: 'member-delete', ex: 'asg-delete', text: 'A deleted ASG member\'s IP leaves allow Rules on its own (issue 27, point 14). When the same object is also in a deny Rule, removing the member opens there. What does the tool do then?' },
+    { key: 'member-neither', ex: 'members', text: 'A member change that fits neither step fails validation (ADR 0018), even when it is one atomic network interface write and the Deployment writes no NSG it could mix with. Keep the rule, allow that case, or split such a change into two writes?' },
+    { key: 'import-binding', ex: 'import-binding', text: 'Import creates a CIDR object when a prefix matches Zones in unconnected VNets, and the object then lands on Zones in VNets the old NSG never saw. Should Import bind such objects to the VNets connected to the onboarded Zone?' },
+    { key: 'posture-affected', ex: 'affected', text: 'A Zone\'s Egress posture change makes every Rule that uses the Zone "changed through a changed Zone", so the Zones on the far side become Affected Zones although their NSGs and verdicts stay the same. Intended?' },
+    { key: 'internal-cs', ex: 'internal', text: 'Changing the Internal address space changes the outbound NSG of every destination-enforced Zone but has no Affected Zones. Is it a Change set (with the instance default four-eyes), or an admin setting with its own Approval?' },
+    { key: 'egress-band', ex: 'bands', text: 'The egress allow of the destination-enforced posture has no decided priority. The prototype puts it at 4094 (IPv4) and 4095 (IPv6), inside 4090–4095, the band ADR 0011 gives the Inherited defaults. Keep, or move it?' },
+    { key: 'first-spread', ex: 'stable', text: 'The first Commit spreads NSG rules evenly over 120–4079 (911, 1703, 2496, 3288). Keep the plain middle-of-the-gap numbers, or round them (for example to multiples of 10) so they read like a firewall\'s?' },
+    { key: 'sibling-priority', ex: 'names', text: 'New NSG rules of an existing Rule take the middle of the gap (3089–3091), away from their sibling at 2100. Issue 13 says both: one Rule\'s NSG rules take consecutive priorities (point 6), and a new NSG rule takes the middle of the gap (point 4). Place them next to their siblings when the numbers are free?' },
+    { key: 'tag-knowledge', ex: 'crossing', text: 'For Crossing flows the prototype treats addresses of the NSG\'s own VNet and of directly peered VNets as inside VirtualNetwork (documented), and private addresses as outside Azure service tags. Everything else is evaluated both ways. Accept this as engine knowledge?' },
+    { key: 'any-internet', ex: 'internet', text: 'Observation: "web → any" opens web to every Zone, because any covers every Zone. Should the Rule editor warn when any is a destination next to a Zone source and offer the Internet tag?' },
+    { key: 'pods-shared', ex: 'pods-twice', text: 'Observation: with the same Extra prefix on two Zones, a Rule between them also matches the destination cluster\'s own pods. Warn in the object editor?' }
+  ];
+
+  root.Examples = { EX, QUESTIONS, derive, runTo, world, R, commit };
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>// PROTOTYPE, throwaway. Page shell: renders the state of a worked example as HTML strings. The logic lives in engine.js.
+(function (root) {
+  'use strict';
+  const E = root.Engine, X = root.Examples;
+  const esc = s => String(s === undefined || s === null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const groups = E.uniq(X.EX.map(e => e.group));
+  const cur = { group: groups[0], key: X.EX[0].key, step: 0, S: null, free: false };
+
+  function load(key, step) {
+    const ex = X.EX.find(e => e.key === key);
+    cur.group = ex.group; cur.key = key; cur.step = Math.min(step || 0, ex.steps.length - 1); cur.free = false;
+    cur.S = X.runTo(ex, cur.step);
+  }
+  const zoneTxt = (I, id) => id;
+  function sideTxt(S, s) {
+    if (s.kind === 'tag') return `<span class="tag">${esc(s.tag)}</span>`;
+    if (s.kind === 'asgs') return s.asgs.map(a => `<span class="asg">${esc(a)}</span>`).join(' ');
+    const p = s.prefixes, t = esc(p.length > 4 ? p.slice(0, 4).join(', ') + ` … +${p.length - 4}` : p.join(', '));
+    return s.fallback ? `${t} <span class="muted">(member IPs of ${esc((S.inst.objects[s.fallback] || S.committed.inst.objects[s.fallback] || {}).name || s.fallback)})</span>` : t;
+  }
+  const svcTxt = r => (r.proto === '*' ? 'any' : r.proto + (r.ports.join() === '*' ? '' : ' ' + r.ports.join(', ')));
+  const refs = (I, l) => l.map(r => esc(E.refLabel(I, r))).join(', ');
+  const svcs = (I, l) => l.map(r => esc(E.svcLabel(I, r))).join(', ');
+
+  function ruleTable(S, D) {
+    const I = S.inst, rows = I.rules.slice(0, 12).map((r, i) => {
+      const c = D.out.cost[r.id], lands = r.enabled === false ? '<span class="muted">disabled</span>' : !c || !c.nsgRules ? '<span class="warn">no effect</span>' : `${c.nsgs.length} NSG${c.nsgs.length > 1 ? 's' : ''} (${esc(c.nsgs.join(', '))}), ${c.nsgRules} NSG rule${c.nsgRules > 1 ? 's' : ''}`;
+      return `<tr class="${r.enabled === false ? 'off' : ''}"><td>${i + 1}</td><td>${r.id}</td><td>${esc(r.name)}${r.imported ? ` <span class="muted">(imported: ${esc(r.imported.nsg)} ${r.imported.dir} ${r.imported.priority})</span>` : ''}</td><td>${refs(I, r.src)}</td><td>${refs(I, r.dst)}</td><td>${svcs(I, r.svc)}</td><td class="${r.action === 'deny' ? 'bad' : 'ok'}">${r.action}</td><td>${lands}</td>
+        <td class="nowrap"><button data-act="up" data-id="${r.id}" title="move up">↑</button><button data-act="down" data-id="${r.id}" title="move down">↓</button><button data-act="toggle" data-id="${r.id}">${r.enabled === false ? 'enable' : 'disable'}</button></td></tr>`;
+    }).join('');
+    const more = I.rules.length > 12 ? `<tr><td colspan="9" class="muted">… ${I.rules.length - 12} more Rules</td></tr>` : '';
+    return `<table><tr><th>#</th><th>Rule ID</th><th>Name</th><th>Source</th><th>Destination</th><th>Service</th><th>Action</th><th>Lands on</th><th></th></tr>${rows || '<tr><td colspan="9" class="muted">no Rules</td></tr>'}${more}</table>`;
+  }
+  function zoneTable(S) {
+    const I = S.inst;
+    return `<table><tr><th>Zone</th><th>VNet</th><th>Prefixes</th><th>Extra prefixes</th><th>Egress posture</th><th>Inherited defaults</th><th>Kind / state</th><th></th></tr>${Object.entries(I.zones).map(([id, z]) => {
+      const inh = Object.entries(z.inherit || {}).filter(([, v]) => v).map(([k]) => ({ inVNet: 'in from VirtualNetwork', outVNet: 'out to VirtualNetwork', outInternet: 'out to Internet' }[k])).join(', ');
+      const env = I.envs[I.vnets[z.vnet].env];
+      return `<tr><td><b>${esc(id)}</b></td><td>${esc(z.vnet)} <span class="muted">(${esc(env.mode === 'terraform' ? 'Terraform' : 'ARM')})</span></td><td>${esc(z.prefixes.join(', '))}</td><td>${esc((z.extra || []).join(', '))}</td><td>${z.kind === 'appgw' ? 'outbound open (Application Gateway v2)' : z.posture === 'strict' ? 'strict' : 'destination-enforced'}</td><td>${esc(inh)}</td><td>${esc([z.kind && z.kind !== 'normal' ? { pgflex: 'PostgreSQL flexible server', appgw: 'Application Gateway v2' }[z.kind] : '', z.state !== 'managed' ? z.state + ' NSG' : ''].filter(Boolean).join(', '))}</td>
+        <td>${z.state === 'managed' && z.kind !== 'appgw' ? `<button data-act="posture" data-zone="${esc(id)}">make ${z.posture === 'strict' ? 'destination-enforced' : 'strict'}</button>` : ''}</td></tr>`;
+    }).join('')}</table><p class="muted small">Internal address space: ${esc(I.internal.join(', '))}</p>`;
+  }
+  function objectTable(S, D) {
+    const I = S.inst, used = E.uniq(I.rules.flatMap(r => r.src.concat(r.dst)).filter(r => r !== 'any' && !r.startsWith('zone:')));
+    if (!used.length) return '';
+    if (used.length > 20) return `<p class="muted">${used.length} Address objects in use.</p>`;
+    const val = o => o.kind === 'group' ? (o.members.length > 6 ? `${o.members.length} members` : o.members.map(m => esc(E.refLabel(I, m))).join(', ')) : o.kind === 'asg' || o.kind === 'extasg' ? (o.members.length ? o.members.map(n => I.nics[n] ? `${esc(I.nics[n].name)} (${esc(I.nics[n].ips.join(', '))}, ${esc(I.nics[n].vnet)}/${esc(I.nics[n].subnet)})` : `${esc(n)} (deleted)`).join('; ') : '<span class="warn">no members</span>') : o.kind === 'subnet' ? esc(I.subnets[o.subnet].prefixes.join(', ')) : o.kind === 'vnet' ? esc(I.vnets[o.vnet].space.join(', ')) : esc(o.value);
+    const kind = o => ({ host: 'single IP', cidr: 'CIDR range', tag: 'service tag', subnet: 'subnet (not a Zone)', vnet: 'VNet', asg: 'ASG object', extasg: `External ASG object (${o.asgName})`, group: 'Address group' }[o.kind]);
+    return `<table><tr><th>Address object</th><th>Kind</th><th>Value / members</th><th>VNet binding</th><th>Coverage</th></tr>${used.map(id => { const o = I.objects[id]; const cov = E.coverage(id, I);
+      return `<tr><td>${esc(o.name)}</td><td>${esc(kind(o))}</td><td>${val(o)}</td><td>${esc((o.bind || []).join(', '))}</td><td>${cov.length ? esc(cov.join(', ')) : '<span class="muted">no Zone</span>'}</td></tr>`; }).join('')}</table>`;
+  }
+  function changedNames(D) {
+    const m = {}; (D.preview || []).forEach(p => { p.added.forEach(r => (m[p.zone + r.name] = 'added')); p.changed.forEach(c => (m[p.zone + c.after.name] = 'changed')); p.renumbered.forEach(c => (m[p.zone + c.after.name] = 'renumbered')); }); return m;
+  }
+  function nsgCard(S, D, z, n, marks) {
+    const I = S.inst, label = { platform: 'Platform exception', intra: 'Intra-zone default', inherited: 'Inherited default', egress: 'Egress posture', denyall: 'Deny-all rule', legacy: 'legacy NSG rule' };
+    const prevN = S.committed && S.pending ? S.committed.out.nsgs[z] : null;
+    const tbl = (dir) => {
+      const list = n[dir], rows = list.slice(0, 14).map(r => {
+        const mk = marks[z + r.name], old = mk === 'renumbered' && prevN ? prevN[dir].find(x => x.name === r.name) : null;
+        const from = r.ruleId ? `Rule ${r.ruleId}` : label[r.kind] || r.kind;
+        return `<tr class="${r.kind === 'rule' ? '' : 'posture'} ${mk ? 'mk-' + mk : ''}"><td>${r.priority}${old ? ` <span class="muted">(was ${old.priority})</span>` : ''}</td><td><code>${esc(r.name)}</code></td><td>${sideTxt(S, r.src)}</td><td>${sideTxt(S, r.dst)}</td><td>${esc(svcTxt(r))}</td><td class="${r.access === 'Deny' ? 'bad' : 'ok'}">${r.access}</td><td>${esc(from)}</td></tr>`;
+      }).join('');
+      const more = list.length > 14 ? `<tr><td colspan="7" class="muted">… ${list.length - 14} more NSG rules</td></tr>` : '';
+      const az = E.azureDefaults(dir).map(r => `${r.priority} ${r.name}`).join(', ');
+      return `<h4>${dir === 'in' ? 'Inbound' : 'Outbound'}</h4><table><tr><th>Priority</th><th>Name</th><th>Source</th><th>Destination</th><th>Service</th><th>Access</th><th>From</th></tr>${rows || '<tr><td colspan="7" class="muted">none</td></tr>'}${more}</table><p class="muted small">Azure default rules (read-only): ${esc(az)}</p>`;
+    };
+    const L = D.out.limits[z];
+    const drop = n.dropped.length ? `<p class="small"><b>Left out on this destination-enforced Zone:</b> ${n.dropped.map(d => `Rule ${d.rule.ruleId} (${esc(svcTxt(d.rule))} to ${sideTxt(S, d.rule.dst)}): ${esc(d.why)}`).join('; ')}</p>` : '';
+    const win = n.windows.length ? `<p class="small warn">Window rebalance ${n.windows.map(w => `${w.from}–${w.to}: ${w.renumbered.length} NSG rule(s) renumbered`).join('; ')}</p>` : '';
+    const stateTxt = n.state === 'managed' ? '' : ` <span class="pill">${esc(n.state === 'legacy' ? 'legacy NSG (Deployed state)' : n.state + ' NSG')}</span>`;
+    return `<div class="card nsg"><h3>${esc(n.name)} <span class="muted">· Zone ${esc(z)}</span>${stateTxt}</h3>${tbl('in')}${tbl('out')}${drop}${win}<p class="muted small">Limits: ${L.rules} of ${E.LIMITS.rules} NSG rules, ${L.srcPrefixes}/${L.dstPrefixes} of ${E.LIMITS.prefixesPerSide} prefixes per side, ${L.asgs} of ${E.LIMITS.asgsPerNsg} ASGs</p></div>`;
+  }
+  function previewHtml(S, D) {
+    if (!D.preview) return '';
+    if (!D.preview.length) return '<p class="muted">No NSG changes.</p>';
+    return D.preview.map(p => `<p><b>${esc(p.nsg)}</b>${p.state ? ` (${esc(p.state)})` : ''}: ${[p.added.length && `${p.added.length} added`, p.removed.length && `${p.removed.length} removed`, p.changed.length && `${p.changed.length} changed`, p.renumbered.length && `${p.renumbered.length} renumbered only`].filter(Boolean).join(', ') || 'no rule change'}
+      <span class="muted small">${[...p.added.map(r => '+ ' + r.name), ...p.removed.map(r => '− ' + r.name), ...p.changed.map(c => '~ ' + c.after.name)].slice(0, 8).map(esc).join(' · ')}</span></p>`).join('');
+  }
+  function affectedHtml(D) {
+    if (!D.affected) return '';
+    const z = Object.keys(D.affected);
+    return z.length ? `<table><tr><th>Affected Zone</th><th>Why</th></tr>${z.map(k => `<tr><td><b>${esc(k)}</b></td><td>${D.affected[k].map(esc).join('<br>')}</td></tr>`).join('')}</table>` : '<p class="muted">No Affected Zones: the instance default (four-eyes) applies.</p>';
+  }
+  function planHtml(S, D) {
+    const P = D.plan; if (!P) return '';
+    const w = id => P.writes.find(x => x.id === id), waiting = new Set(D.waiting || []), failed = new Set(S.failed || []);
+    const status = id => failed.has(id) ? ' <span class="bad">failed, retried on its own</span>' : waiting.has(id) ? ' <span class="warn">waits</span>' : '';
+    const failBtn = id => w(id).kind === 'nsg' || w(id).kind === 'member' ? ` <button data-act="fail" data-write="${esc(id)}">${failed.has(id) ? 'undo fail' : 'fail this write'}</button>` : '';
+    const steps = P.levels ? P.levels.map((l, i) => `<li><b>Step ${i + 1}</b>${l.length > 1 ? ' (in parallel)' : ''}: ${l.map(id => esc(w(id).label) + status(id) + failBtn(id)).join('; ')}</li>`).join('') : '';
+    const crossing = P.edges.filter(e => e.kind === 'crossing').map(e => `<li><b>${esc(w(e.from).label.replace('write ', ''))}</b> before <b>${esc(w(e.to).label.replace('write ', ''))}</b>: Crossing flow ${esc(e.witness.flow)}${e.count > 1 ? ` <span class="muted">(${e.count} flow samples)</span>` : ''}. Closes: ${esc(e.witness.closes)}; opens: ${esc(e.witness.opens)}.${e.witness.cases.length ? `<br><span class="muted small">Tag case: ${esc(e.witness.cases.join('; '))}</span>` : ''}</li>`).join('');
+    const mem = P.members.map(m => `<li>${esc((S.inst.nics[m.nic] || S.committed.inst.nics[m.nic]).name)}: ${esc(m.before.join(', ') || '—')} → ${esc(m.after.join(', ') || '—')} · ${m.step === 1 ? 'step 1, only closes under the Deployed contents' : m.step === 3 ? 'last step, only opens under the target' : '<span class="bad">fits neither step</span>'}${m.effect && (m.effect.opens.length || m.effect.closes.length) ? `<br><span class="muted small">${m.effect.closes.length ? 'closes e.g. ' + esc(m.effect.closes[0]) : ''} ${m.effect.opens.length ? 'opens e.g. ' + esc(m.effect.opens[0]) : ''}</span>` : ''}</li>`).join('');
+    const errs = P.errors.map(e => `<div class="verdict bad">${esc(e.text)}${e.flows ? `<br><span class="small">Flows: ${e.flows.map(esc).join('; ')}</span>` : ''}</div>`).join('');
+    return `${errs}${steps ? `<ol class="plain">${steps}</ol>` : P.writes.length ? '' : '<p class="muted">Nothing to write.</p>'}${crossing ? `<h4>Order from Crossing flows</h4><ul>${crossing}</ul>` : P.writes.length ? '<p class="muted small">No Crossing flow: apart from dependencies, the writes run in any order.</p>' : ''}${mem ? `<h4>ASG member changes</h4><ul>${mem}</ul>` : ''}`;
+  }
+  function panelHtml(p) {
+    if (p.kind === 'json') return `<details open><summary>${esc(p.title)}</summary><pre>${esc(JSON.stringify(p.value, null, 2))}</pre></details>`;
+    if (p.kind === 'table') return `<h4>${esc(p.title)}</h4><table><tr>${p.head.map(h => `<th>${esc(h)}</th>`).join('')}</tr>${p.rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table>`;
+    if (p.kind === 'list') return `<h4>${esc(p.title)}</h4>${p.value.length ? `<ul>${p.value.map(v => `<li>${esc(v)}</li>`).join('')}</ul>` : '<p class="muted">none</p>'}`;
+    return `<h4>${esc(p.title)}</h4><p>${esc(p.value)}</p>`;
+  }
+
+  function view() {
+    const ex = X.EX.find(e => e.key === cur.key), S = cur.S, D = X.derive(S), st = ex.steps[cur.step];
+    const gTabs = groups.map(g => `<button class="${g === cur.group ? 'on' : ''}" data-act="group" data-group="${esc(g)}">${esc(g)}</button>`).join('');
+    const eTabs = X.EX.filter(e => e.group === cur.group).map(e => `<button class="${e.key === cur.key ? 'on' : ''}" data-act="ex" data-key="${e.key}">${esc(e.title)}</button>`).join('');
+    const steps = ex.steps.map((s, i) => `<button class="${i === cur.step && !cur.free ? 'primary' : i < cur.step ? 'done' : ''}" data-act="step" data-i="${i}">${i + 1}. ${esc(s.label)}</button>`).join('');
+    let checks = '';
+    if (cur.free) checks = '<p class="warn">Free play: you changed the state by hand, so the checks of this step no longer apply. Click a step to return.</p>';
+    else if (st.checks) checks = `<ul class="checks">${st.checks.map(([l, f]) => { let ok = false; try { ok = f(S, D); } catch (e) { ok = false; } return `<li class="${ok ? 'ok' : 'bad'}">${ok ? '✓' : '✗'} ${esc(l)}</li>`; }).join('')}</ul>`;
+    const marks = changedNames(D);
+    const panels = !cur.free && st.panel ? st.panel(S, D).map(panelHtml).join('') : '';
+    const status = S.pending ? `<span class="pill">Change set on Version ${S.version} (not committed)</span>` : `<span class="pill ok">Version ${S.version} committed and deployed</span>`;
+    const errs = D.out.errors.map(e => `<div class="verdict bad">Blocked: ${esc(e.text)}</div>`).join('') + D.out.warnings.map(w => `<div class="verdict warnbg">Warning: ${esc(w.text)}</div>`).join('');
+    const noEff = D.out.noEffect.length ? `<p class="warn small">No effect (covers no Zone or resolves to nothing): ${D.out.noEffect.map(id => 'Rule ' + id).join(', ')}</p>` : '';
+    return `
+      <div class="tabs">${gTabs}</div><div class="tabs sub">${eTabs}</div>
+      <div class="card"><h2>${esc(ex.title)}</h2><p>${esc(ex.text)}</p><p class="muted"><b>Watch for</b></p><ul>${ex.watch.map(w => `<li>${esc(w)}</li>`).join('')}</ul>
+        <div class="steps">${steps}</div>${checks}${S.note ? `<p class="note">${esc(S.note)}</p>` : ''}</div>
+      <p>${status} <button data-act="commit">Commit this state</button> <button data-act="reset">Reset this step</button> <span class="muted small">engine ${esc(D.out.engineVersion)}</span></p>
+      ${errs}${panels ? `<div class="card">${panels}</div>` : ''}
+      <h2>Rule base in</h2><div class="scroll">${zoneTable(S)}${objectTable(S, D)}${ruleTable(S, D)}</div>${noEff}
+      ${D.plan ? `<div class="grid2"><div class="card"><h3>Preview</h3>${previewHtml(S, D)}</div><div class="card"><h3>Affected Zones</h3>${affectedHtml(D)}</div></div><div class="card"><h3>Deployment plan</h3>${planHtml(S, D)}</div>` : ''}
+      <h2>NSG rules out</h2><p class="muted small">Highlighted: <span class="mk-added">added</span> <span class="mk-changed">changed</span> <span class="mk-renumbered">renumbered only</span> against the last committed Version. Grey rows belong to no Rule.</p>
+      <div class="scroll">${Object.entries(D.out.nsgs).map(([z, n]) => nsgCard(S, D, z, n, marks)).join('')}</div>`;
+  }
+  function questionsHtml() {
+    return `<ol>${X.QUESTIONS.map(q => `<li>${esc(q.text)} <button data-act="ex" data-key="${q.ex}">show</button></li>`).join('')}</ol>`;
+  }
+
+  // free play: thin actions on the current state
+  function act(a, el) {
+    const S = cur.S, I = () => { S.inst = E.clone(S.inst); S.pending = true; cur.free = true; return S.inst; };
+    if (a === 'group') { const ex = X.EX.find(e => e.group === el.dataset.group); load(ex.key, 0); }
+    else if (a === 'ex') { load(el.dataset.key, 0); if (root.scrollTo) root.scrollTo(0, document.getElementById('app').offsetTop - 10); }
+    else if (a === 'step') load(cur.key, +el.dataset.i);
+    else if (a === 'reset') load(cur.key, cur.step);
+    else if (a === 'commit') { X.commit(S); S.failed = null; S.deployed = null; cur.free = true; }
+    else if (a === 'up' || a === 'down') { const inst = I(), i = inst.rules.findIndex(r => r.id === +el.dataset.id), j = a === 'up' ? i - 1 : i + 1; if (j >= 0 && j < inst.rules.length) { const t = inst.rules[i]; inst.rules[i] = inst.rules[j]; inst.rules[j] = t; } }
+    else if (a === 'toggle') { const r = I().rules.find(x => x.id === +el.dataset.id); r.enabled = r.enabled === false; }
+    else if (a === 'posture') { const z = I().zones[el.dataset.zone]; z.posture = z.posture === 'strict' ? 'dest' : 'strict'; }
+    else if (a === 'fail') { const id = el.dataset.write, f = new Set(S.failed || []); if (f.has(id)) f.delete(id); else f.add(id); S.failed = [...f]; cur.free = true; }
+    render();
+  }
+  function render() {
+    const app = document.getElementById('app');
+    try { app.innerHTML = view(); } catch (e) { app.innerHTML = `<div class="verdict bad">The prototype hit an error: ${esc(e.message)}</div>`; if (root.console) console.error(e); }
+  }
+  function start() {
+    document.getElementById('questions').innerHTML = questionsHtml();
+    document.addEventListener('click', ev => { const b = ev.target.closest('button[data-act]'); if (b) act(b.dataset.act, b); });
+    load(cur.key, 0); render();
+  }
+  root.Page = { view, load, questionsHtml, cur, start };
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>Page.start();</script>
+</body>
+</html>
