@@ -1,0 +1,183 @@
+# Empirical checks of undocumented Azure behaviour
+
+Ticket: [Task: Empirical checks of undocumented Azure behaviour](https://github.com/mfgAkilae/nsgfw/issues/24). Run on 2026-11-10 in a dedicated test subscription, region North Europe.
+
+## Question
+
+Which Azure behaviours that Microsoft documentation leaves open does the design depend on, and what does a dedicated test subscription show for them?
+
+## Scope (decided with the map owner on 2026-11-10)
+
+The ticket collects about 60 open points from eight research tickets and seven grilling tickets. Almost all of them already have a conservative default in the design. A positive result could only enable behaviour that also runs as a nightly integration test and has a fallback (map Notes, "Documentation before tests"). Checking them now would not change the design package.
+
+Only [ADR 0018](../adr/0018-write-order-from-dominance-gaps.md) has no fallback. Its guarantee assumes four things. These are the design-deciding checks, run now:
+
+| Check | Question | Source |
+|---|---|---|
+| T1 | Is priority uniqueness per direction or per NSG? Can one NSG PUT swap, rotate or shift priorities? What does a colliding child-rule PUT return? | NSG/ASG research U3, ARM research U3 |
+| T2 | Does one whole-NSG PUT take effect as a whole on the data plane, or rule by rule? | ARM research U2 |
+| T3 | Does a failed NSG PUT apply nothing? | ARM research U2 |
+| T4 | Is a change in effect on the data plane once the long-running operation reports `Succeeded`? (measured inside T2 and T5) | NSG/ASG research U15 |
+| T5 | Does one network interface PUT that changes ASG membership take effect as a whole, on the source and the destination side? | [Grilling: Review round on placement, egress posture and MVP shape](https://github.com/mfgAkilae/nsgfw/issues/27) |
+| T6 | Does MSAL Node redeem an authorization code with a user-assigned managed identity token as client assertion in Container Apps? | [ADR 0013](../adr/0013-backend-sign-in-and-separate-directory-and-azure-principals.md) ("verify before the increment plan") |
+
+Every other point moves to the backlog as a nightly integration test. The design keeps its current default until then (see [Deferred checks](#deferred-checks-nightly-integration-tests)).
+
+## Checklist for the human
+
+What the map owner provided or should provide:
+
+- [x] A dedicated test subscription with no production workloads and no deny policies on networking. The brief requires one for integration tests.
+- [x] A service principal with Owner on that subscription only: `az ad sp create-for-rbac --name nsgfw-empirical-checks --role Owner --scopes /subscriptions/<test-subscription>`. The agent needs Owner because the prober VM gets a role assignment on its own resource group. The credential stays outside the repo.
+- [ ] Recommended: a cost budget with an alert on the test subscription.
+- [ ] After the checks, delete the service principal or its credential: `az ad sp delete --id <appId>`.
+- [ ] T6 only: an app registration in the tenant and one interactive sign-in in the browser (steps in [T6](#t6-msal-node-with-a-managed-identity-as-federated-credential)).
+
+The test subscription does not accept new resources in West Europe: "The selected region is currently not accepting new customers" (`RequestDisallowedByAzure`). The checks use North Europe, plus Sweden Central for one resource in another region. The subscription has a quota of 0 cores for the Basv2 family and 10 for the BS family per region, so the VMs are `Standard_B1s`.
+
+## Cost
+
+Retail list prices in EUR from the [Azure Retail Prices API](https://prices.azure.com/api/retail/prices), retrieved 2026-11-10. Billing rules from the pricing pages, retrieved 2026-11-10.
+
+| Resource | Price | Billing rule |
+|---|---|---|
+| VM `Standard_B1s`, Linux, North Europe | 0.0101 €/h (`Standard_B2ats_v2`: 0.0092 €/h, but the subscription has no Basv2 quota) | "We charge for the number of full minutes your virtual machine is running" ([Linux VM pricing](https://azure.microsoft.com/en-us/pricing/details/virtual-machines/linux/)) |
+| OS disk Standard SSD E4 | 2.15 €/month | "billed on an hourly basis" ([Managed disks pricing](https://azure.microsoft.com/en-us/pricing/details/managed-disks/)); the disk keeps billing while the VM is deallocated |
+| Standard public IPv4 (prober only, for its ARM calls) | 0.0045 €/h | |
+| Storage account (results only, a few KB) | negligible | |
+| VNet, NSG, ASG, NIC, user-assigned identity, Run Command | no meter | The price API returns no meter for Run Command. |
+| Azure Bastion: not used | Basic 0.1706 €/h, Standard 0.2603 €/h, Premium 0.4040 €/h, Developer free | "billed hourly from the moment the resource is deployed until the resource is deleted, regardless of outbound data usage" ([Bastion pricing](https://azure.microsoft.com/en-us/pricing/details/azure-bastion/)). Neither page says whether a partial hour counts as a full hour. |
+| Container Apps, Consumption (T6) | free grant: 180,000 vCPU-seconds, 360,000 GiB-seconds and 2 million requests "per subscription per month" ([Container Apps billing](https://learn.microsoft.com/en-us/azure/container-apps/billing)) | The management meter "applies to the Dedicated plan, private endpoint, and planned maintenance". T6 uses none of them. |
+
+One run of T1 to T5 keeps three VMs and one public IP for about one hour, so it costs about 0.05 €. Resources left behind after a failed teardown cost about 32 € per month. The script deletes the resource group in a `finally` block, and the group carries an `expiresOn` tag.
+
+## Setup
+
+[run.py](empirical-checks/run.py) runs on the agent's machine and uses only the Python standard library. It creates `rg-nsgfw-checks-<timestamp>`, deploys an ARM template that the script builds itself, starts [checker.py](empirical-checks/checker.py) on `vm-a` through Run Command, waits for the results in the storage account, downloads them, and deletes the resource group. Before saving, it replaces every subscription, tenant and principal ID with `<redacted>`.
+
+```
+vnet-checks 10.90.0.0/16
+├─ src 10.90.1.0/24, nsg-src (no custom rules)
+│   └─ vm-a 10.90.1.10: prober and controller, user-assigned identity with Network Contributor
+│      on the resource group, public IP for outbound ARM calls (no inbound rule allows anything)
+└─ dst 10.90.2.0/24, nsg-dst (the NSG under test)
+    ├─ vm-b 10.90.2.10: TCP listeners on 5001–5006
+    └─ vm-c 10.90.2.11: TCP listeners on 5001–5006
+nsg-scratch: not associated, for T1
+asg-x, asg-y, asg-d1, asg-d2 (North Europe), asg-other (Sweden Central)
+```
+
+`vm-a` does everything that needs a timestamp: the ARM writes, the polling of the async operation every 0.25 s, and the TCP probes. All times therefore come from one clock. The prober runs four staggered workers per target and port. Each worker opens a new TCP connection every 80 ms (one probe every 20 ms per pair) with a 100 ms timeout, and closes with RST. A dropped SYN, which is what an NSG deny looks like, counts as closed. Every probe is a new flow, so `flushConnection` (off) does not matter.
+
+`nsg-dst` always ends with `deny-probe-ports` (priority 4000, deny TCP 5001–5006 from any). Its other rules depend on the check.
+
+## Results
+
+Two runs on 2026-11-10, both in North Europe on `Standard_B1s`: a full run (T1, T2, T3, T5 with 10 swaps per side) and a second run of T5 with 20 swaps per side and a per-probe state log. Raw results: [run 1](empirical-checks/results/20261110-011057-results.json) ([log](empirical-checks/results/20261110-011057-checker.log)), [run 2](empirical-checks/results/20261110-012017-results.json) ([log](empirical-checks/results/20261110-012017-checker.log)). A full run takes 12 minutes from resource group creation to deletion.
+
+**Measurement limits.** Probes start every 20 ms per target and port. A probe that starts just before a port opens waits for its 100 ms timeout, so the opening of a port is seen up to about 0.12 s late. A "both closed" gap below about 0.15 s is therefore indistinguishable from a clean switch. A "both open" window is measured to about 20 ms, because a connected probe is never late. Times "relative to Succeeded" use the first poll that returned `Succeeded`. The poll runs every 0.25 s, so the real end of the operation lies up to 0.25 s earlier. No check can prove atomicity. It can only find, or fail to find, a counterexample at this resolution. One region, one VM size, two runs.
+
+### T1: priorities are unique per direction, and one PUT can renumber freely
+
+| Attempt on `nsg-scratch` | Result |
+|---|---|
+| Inbound and outbound rule, both priority 100, one PUT | 200, `Succeeded`; both rules exist |
+| Two inbound rules with priority 100, one PUT | 400 `SecurityRuleConflict`: "Rules cannot have the same Priority and Direction"; NSG unchanged |
+| Swap two priorities (100 and 101) in one PUT | 200, `Succeeded` |
+| Rotate three priorities in one PUT | 200, `Succeeded` |
+| Shift three rules up by one (100–102 to 101–103) in one PUT | 200, `Succeeded` |
+| Child-rule PUT that takes another inbound rule's priority | 400 `SecurityRuleConflict`; NSG unchanged |
+| Child-rule PUT outbound with the priority of an inbound rule | 201, `Succeeded` |
+
+Uniqueness is per direction, as Azure's error text says (NSG/ASG U3, ARM U3). Every collision is rejected synchronously, so a whole-NSG PUT validates the target list as a whole.
+
+### T2: one NSG PUT took effect as a whole
+
+`nsg-dst` swapped between "only 5001 open" and "only 5002 open" in one whole-NSG PUT. The opening rule came first in the array and the deny rule last.
+
+| Series | Swaps | Observations (2 targets) | Both ports open | Longest "both closed" | LRO duration |
+|---|---|---|---|---|---|
+| 3 rules | 20 | 40 | 0 | 0.15 s (5 above 0.1 s) | 0.47–0.93 s |
+| 302 rules (300 fillers) | 10 | 20 | 0 | 0.12 s (2 above 0.1 s) | 1.04–1.31 s |
+
+No observation showed both ports open, on either host. The longest "both closed" gaps lie within the opening-detection limit. At this resolution, one NSG PUT switched from the old to the new rule set as a whole (ARM U2).
+
+### T3: a rejected NSG PUT applied nothing
+
+From "only 5001 open", each PUT sent "only 5002 open" plus one defect. A partial apply would have opened 5002.
+
+| Defect | Response | NSG after 20 s | 5002 opened |
+|---|---|---|---|
+| Duplicate priority | 400 `SecurityRuleConflict` | unchanged, `Succeeded` | no |
+| Invalid prefix `10.90.300.0/24` | 400 `SecurityRuleInvalidAddressPrefix` | unchanged, `Succeeded` | no |
+| Reference to a missing ASG | 400 `InvalidResourceReference` | unchanged, `Succeeded` | no |
+| ASG in another region (Sweden Central) | 400 `InvalidResourceReference` | unchanged, `Succeeded` | no |
+| 2,002 rules | 400 `SecurityRuleCountLimitReached`: "A security group cannot have more than 2000 security rules." | unchanged, `Succeeded` | no |
+
+Every defect was rejected synchronously, before an async operation started. No case produced an accepted PUT that ended `Failed`, so that path stays untested. The design keeps handling it as documented.
+
+### T4: `Succeeded` is not a data-plane barrier
+
+| Write | New state in effect, relative to the observed `Succeeded` | Old allow still connected, at most |
+|---|---|---|
+| NSG PUT (T2, 60 observations) | −0.11 s to +0.25 s | +0.22 s |
+| NIC PUT, ASG membership (T5, 90 observations) | −0.70 s to +0.77 s | +0.75 s |
+
+The data plane switched within about one second of the response in every case. But a closing change could still let traffic through up to 0.22 s (NSG) and 0.75 s (NIC) after the operation reported `Succeeded`. One NIC PUT took 12.5 s to report `Succeeded`, while its data-plane effect came 11 s before that. The operation status is neither an early nor a late bound for the data plane (NSG/ASG U15).
+
+### T5: one NIC PUT that moves an IP configuration between ASGs did not take effect as a whole
+
+`nsg-dst` held allow rules for `asg-x` (source, 5003), `asg-y` (source, 5004), `asg-d1` (destination, 5005) and `asg-d2` (destination, 5006). One NIC PUT replaced the IP configuration's single ASG with the other one. On the source side, `vm-a`'s NIC moved, and the inbound NSG on the hosts of `vm-b` and `vm-c` evaluated it. On the destination side, `vm-b`'s NIC moved, and `vm-c` stayed closed throughout as a control.
+
+| Run | Side | Swaps | Both memberships in effect (both open) | Neither membership in effect (both closed > 0.15 s) |
+|---|---|---|---|---|
+| 1 | source (`nic-a`) | 10 | 2 swaps, one host each, 0.27–0.28 s | 0 |
+| 1 | destination (`nic-b`) | 10 | 7 swaps, 0.29–0.33 s | 3 swaps, 0.35–0.37 s |
+| 2 | source (`nic-a`) | 20 | 1 swap, both hosts, 0.27–0.28 s | 1 swap, both hosts, 0.37–0.44 s |
+| 2 | destination (`nic-b`) | 20 | 0 | 0 |
+
+14 of 60 swaps went through an interim state that lasted 0.27 to 0.44 s. In both directions the state log shows one clean step per port: the interim is steady, not a lost probe. Azure applied the removal of one ASG and the addition of the other as two separate data-plane changes, in either order. In run 1 one host saw the interim and the other did not. The frequency differs between runs, which used different VMs and probably different hosts.
+
+## What this means for the design
+
+These are facts for a design decision. The decision itself belongs to its own ticket.
+
+- **Priorities (T1).** Uniqueness per direction holds, as assumed in [Grilling: Priority assignment and rule packing](https://github.com/mfgAkilae/nsgfw/issues/13). Bands per direction and renumbering in one PUT need no change.
+- **NSG PUT (T2, T3).** ADR 0018's assumption that one NSG PUT takes effect as a whole held in 30 swaps. A rejected PUT applied nothing.
+- **Write order (T4).** ADR 0018 writes the closing NSG "first". `Succeeded` of that write does not mean its change is in effect: traffic it closes passed up to 0.22 s later. A write that waits for it can only start after the closing write has taken effect, not merely after it reports `Succeeded`.
+- **ASG membership (T5).** ADR 0018's assumption that one network interface write takes effect as a whole does not hold when the write removes one ASG and adds another. For up to 0.44 s the IP configuration was in both ASGs or in neither. "Neither" can fall through to rules without ASGs, so it can open traffic that both states deny. The three member steps in ADR 0018 must not rely on several membership changes in one write being applied together.
+
+## T6: MSAL Node with a managed identity as federated credential
+
+Not run yet. It needs an app registration and one interactive sign-in, which only the map owner can do.
+
+## Deferred checks (nightly integration tests)
+
+These points stay open. The design keeps the default in the right column until a nightly integration test shows otherwise. The increment plan turns them into backlog items.
+
+| Open point | Source | Default until tested |
+|---|---|---|
+| Several service tags, or a service tag with CIDRs, in one prefix list | NSG/ASG U6 | One service tag per NSG rule, as documented |
+| ASG mixed with prefixes on one side, several ASGs per side, ASG members in another VNet | NSG/ASG U7, U8, U11 | As documented; member IPs where the ASG's members sit in another VNet |
+| `If-Match` on NSG, subnet and NIC PUTs | ARM U4 | Lost-update check through `resourcechanges` after the Deployment |
+| NSG PUT without `securityRules` | ARM U1 | The tool always sends the full list |
+| 6,000 addresses per rule or per NSG; default rules against the 2,000; port ranges per rule | NSG/ASG U16, U17, U10 | The engine counts conservatively |
+| IPv4 and IPv6 prefixes in one rule; IPv6 IP configurations in ASGs | NSG/ASG U19; ASG grilling | Separate NSG rules per address family; member IPs for IPv6 |
+| Pod IPs on AKS nodes (Azure CNI without overlay) and the node pool's ASG | ASG grilling | No assumption that pod IPs match |
+| AKS with Azure CNI Overlay under Deny-all rules with Extra prefixes | Review round | Documented outbound Rules; onboarding shows a warning |
+| Deny-all and DNS (168.63.129.16) and IMDS (169.254.169.254) | Special subnets 3 | Documented: not filtered unless a service tag targets them |
+| `flushConnection`: are allowed flows kept, how fast are flows re-evaluated | NSG/ASG U14 | Environment setting, off |
+| Deleting an ASG that an NSG rule still references | Deployment grilling | Assumed rejected; the write order does not depend on it |
+| Protocol `*` with a port range matches only TCP and UDP | Import grilling | Import writes tcp and udp Service objects with a warning Import note |
+| ARM response for an NSG on GatewaySubnet, RouteServerSubnet, AzureFirewallSubnet | Special subnets 1 | The tool never onboards these subnets |
+| `checkPolicyRestrictions`: NSG content, child checks, inherited assignments, `DoNotEnforce`, `notScopes`, exemptions; the real `RequestDisallowedByPolicy` payload | Policy 1, 2, 4, 6, 9; Policy grilling | The tool filters itself; a deny at write time is a failed Deployment |
+| Reader reads policy objects on ancestor management groups | Policy grilling | Unknown names show as IDs |
+| Linked access checks (`join` actions) for subnet, NIC and private endpoint PUTs | ARM U10, U15; Hosting grilling | Writer roles without them; the permission self-check names a missing action |
+| Resource Graph actions in a custom role; `permissions/read` for the self-check; Reader polling LRO status of a narrower Writer | ARM U5, U16 | Roles include the actions |
+| Graph `User.ReadBasic.All` and the groups filter permission | Hosting grilling | Sign-in works; the principal picker falls back to object IDs |
+| PostgreSQL Entra token lifetime, connections after expiry, Container Apps Job as schema owner | Hosting U4, U5 | Token refresh per new connection; the migrate step uses its own identity |
+| AVNM security user rules order; outbound order of admin rules relative to NIC NSGs | Security layers 5; Policy grilling | Shown as documented, with a note |
+| Terraform: destroy order of an ASG, `azapi_update_resource` on a foreign-managed subnet, plan of `securityRules` | Terraform grilling | One pull request per write step; foreign-IaC evidence before adopt |
+| Flow-log and Traffic Analytics formats: `AclRule`, truncation, `AclGroup`, subnet IDs, field values, double counting, access modes, token, workspace ID, latency, billing, Resource Graph | Flow logs 1–3; Traffic Analytics 1–13 | Tolerant parser; the Flow view shows "—" where data is missing |
+
+Dropped without a test: outbound deny NSG rules in an Application Gateway v2 subnet. Microsoft documents that they must not be created, so such a Zone keeps outbound open (review round).
