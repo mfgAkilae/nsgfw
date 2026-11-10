@@ -30,8 +30,9 @@ What the map owner provided or should provide:
 - [x] A dedicated test subscription with no production workloads and no deny policies on networking. The brief requires one for integration tests.
 - [x] A service principal with Owner on that subscription only: `az ad sp create-for-rbac --name nsgfw-empirical-checks --role Owner --scopes /subscriptions/<test-subscription>`. The agent needs Owner because the prober VM gets a role assignment on its own resource group. The credential stays outside the repo.
 - [ ] Recommended: a cost budget with an alert on the test subscription.
-- [ ] After the checks, delete the service principal or its credential: `az ad sp delete --id <appId>`.
-- [ ] T6 only: an app registration in the tenant and one interactive sign-in in the browser (steps in [T6](#t6-msal-node-with-a-managed-identity-as-federated-credential)).
+- [x] The service principal stays for the nightly integration tests (map owner, 2026-11-10). Its credential expires after one year, the `create-for-rbac` default. To retire it: `az ad sp delete --id <appId>`.
+- [x] T6: the app registration `nsgfw-t6-msal-check` and one interactive sign-in, both done with [t6-register.sh](empirical-checks/t6-register.sh) (steps in [T6](#t6-msal-node-with-a-managed-identity-as-federated-credential)).
+- [ ] After T6, delete the app registration: `az ad app delete --id <appId>`.
 
 The test subscription does not accept new resources in West Europe: "The selected region is currently not accepting new customers" (`RequestDisallowedByAzure`). The checks use North Europe, plus Sweden Central for one resource in another region. The subscription has a quota of 0 cores for the Basv2 family and 10 for the BS family per region, so the VMs are `Standard_B1s`.
 
@@ -146,10 +147,33 @@ These are facts for a design decision. The decision itself belongs to its own ti
 - **NSG PUT (T2, T3).** ADR 0018's assumption that one NSG PUT takes effect as a whole held in 30 swaps. A rejected PUT applied nothing.
 - **Write order (T4).** ADR 0018 writes the closing NSG "first". `Succeeded` of that write does not mean its change is in effect: traffic it closes passed up to 0.22 s later. A write that waits for it can only start after the closing write has taken effect, not merely after it reports `Succeeded`.
 - **ASG membership (T5).** ADR 0018's assumption that one network interface write takes effect as a whole does not hold when the write removes one ASG and adds another. For up to 0.44 s the IP configuration was in both ASGs or in neither. "Neither" can fall through to rules without ASGs, so it can open traffic that both states deny. The three member steps in ADR 0018 must not rely on several membership changes in one write being applied together.
+- **Sign-in (T6).** The managed identity as federated credential works with MSAL Node in Container Apps, as [ADR 0013](../adr/0013-backend-sign-in-and-separate-directory-and-azure-principals.md) planned. The increment plan can start from it.
 
 ## T6: MSAL Node with a managed identity as federated credential
 
-Not run yet. It needs an app registration and one interactive sign-in, which only the map owner can do.
+**Result: it works.** MSAL Node redeemed an authorization code, and fetched an app-only Graph token, with a user-assigned managed identity token as its only client credential. The app registration held no secret and no certificate. ADR 0013 needs no fallback for Container Apps. Its certificate fallback stays as the documented path, and the nightly integration test covers this flow.
+
+**Setup.** [t6.py](empirical-checks/t6.py) deploys a user-assigned identity `id-nsgfw-t6`, a Consumption-only Container Apps environment without Log Analytics, and the Container App `ca-nsgfw-t6`: `node:22-alpine` with 0.25 vCPU and one replica, running [t6-app.mjs](empirical-checks/t6-app.mjs). The app builds a `ConfidentialClientApplication` whose `clientAssertion` callback fetches a token for `api://AzureADTokenExchange` from the Container Apps identity endpoint (`IDENTITY_ENDPOINT`, header `X-IDENTITY-HEADER`, API version 2019-08-01) for the identity's client ID. Sign-in uses the authorization code flow with PKCE and the scope `User.Read`. `/cc` calls `acquireTokenByClientCredential` for `https://graph.microsoft.com/.default`. `/result` reports outcomes only, never tokens or IDs.
+
+**The human's part.** The map owner ran [t6-register.sh](empirical-checks/t6-register.sh) in Cloud Shell, signed in as themselves. It runs in PowerShell and Bash alike:
+
+```
+curl -sSL https://raw.githubusercontent.com/mfgAkilae/nsgfw/research/empirical-checks/docs/research/empirical-checks/t6-register.sh | bash -s -- <subscription-id> <tenant-id> <managed-identity-object-id> <app-fqdn> <resource-group>
+```
+
+It creates the app registration (single tenant, Web redirect `https://<app-fqdn>/redirect`), adds the federated credential (issuer `https://login.microsoftonline.com/<tenant-id>/v2.0`, subject = the identity's object ID, audience `api://AzureADTokenExchange`), creates the service principal, and sets `CLIENT_ID` on the Container App. Then the map owner signed in once in the browser.
+
+| Observation | Value |
+|---|---|
+| MSAL Node / Node.js | 7.2.1 / v22.23.4 |
+| Authorization code redeemed | yes; token type Bearer, scopes `openid profile User.Read email`, access and ID token |
+| Client credentials (Graph `.default`) | yes, access token |
+| Managed identity token for the assertion | issuer `https://login.microsoftonline.com/<tenant-id>/v2.0`, `aud` a GUID (not the string `api://AzureADTokenExchange`), lifetime 86,700 s (about 24 h) |
+| Assertion callback calls | 2 for 2 token requests: MSAL fetches a fresh assertion per request and caches only the resulting tokens |
+
+Raw result: [20261110-t6-result.json](empirical-checks/results/20261110-t6-result.json). The Container App ran about 15 minutes inside the free grant, so T6 cost nothing.
+
+Two traps for the next run: Cloud Shell opens in PowerShell, where Bash syntax such as `APP_ID=$(…)` fails, hence the shell-neutral `curl … | bash` line. And `az containerapp` needs the `containerapp` extension, which the script installs without a prompt.
 
 ## Deferred checks (nightly integration tests)
 
