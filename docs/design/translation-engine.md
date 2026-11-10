@@ -30,7 +30,7 @@ The Data contract and the order check at Rebase use the same functions and are d
 | Output | Content |
 |---|---|
 | Target content | every Managed NSG and Retired NSG with its NSG rules (name, priority, direction, access, protocol, ports, source, destination, description); every NSG rule from a Rule carries that Rule's ID |
-| ASGs | the Managed ASGs per VNet and the membership of every network interface and private endpoint |
+| ASGs | the Managed ASGs per VNet and the membership of every network interface |
 | Findings | errors and warnings as codes with parameters, limit counts per NSG, Rules without effect, the cost of every Rule |
 | Preview and Affected Zones | the diff against the last Version, and the Zones whose Approval the Change set needs |
 | Write plan | writes, dependency edges, Crossing-flow edges, member steps, or "not orderable" with the flows that cause it |
@@ -103,9 +103,9 @@ On the NSG of Zone Z, the **own side** is the side that placed the Rule there: t
 | single IP, CIDR range | its own value, also when it has a VNet binding |
 | subnet that is not a Zone, VNet | the subnet's prefixes, the VNet's address space |
 | service tag | the tag |
-| ASG object, External ASG object | a reference to its ASG in Z's VNet, if it has ASG members there; on the far side also the private IPs of its ASG members in other VNets (the **IP fallback**, [ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md)) |
+| ASG object, External ASG object | a reference to its ASG in Z's VNet, if it has network interface members there; on the far side also the private IPs of its ASG members in other VNets, and of its private endpoint members everywhere (the **IP fallback**, [ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md)) |
 
-Two more cases use the IP fallback. On a Zone whose service takes no ASGs in NSG rules (PostgreSQL flexible server), every ASG member is written as its IPs. In a Terraform Environment, the IPv6 addresses of an ASG object's members are written as IPs also inside the ASG's VNet, because the Terraform association resource writes membership on IPv4 IP configurations only ([Grilling: Terraform mode workflow][t17], point 13).
+Three more cases use the IP fallback. On a Zone whose service takes no ASGs in NSG rules (PostgreSQL flexible server), every ASG member is written as its IPs. The same holds on every Zone that holds at least one private endpoint, whatever its network policies, because Microsoft documents connection failures above 50 IP configurations in an ASG that the NSG of a private endpoint subnet references ([Grilling: ASG membership of private endpoints and multi-IP network interfaces](https://github.com/mfgAkilae/nsgfw/issues/39)). A network interface member contributes the IPs of all its IP configurations. In a Terraform Environment, the IPv6 addresses of an ASG object's members are written as IPs also inside the ASG's VNet, because the Terraform association resource writes membership on IPv4 IP configurations only ([Grilling: Terraform mode workflow][t17], point 13).
 
 4. **Partition.** Each side is cut into partitions, because Azure does not mix these kinds in one field ([Grilling: Priority assignment and rule packing][t13], point 8):
    - one prefix list, split into an IPv4 list and an IPv6 list;
@@ -413,7 +413,6 @@ The engine counts per Managed NSG, posture NSG rules included, and compares with
 | ASGs per subscription and region | 3,000 | |
 | ASGs per IP configuration | 20 | memberships in Unmanaged ASGs included |
 | IP configurations per ASG | 4,000 | |
-| ASG members per ASG that an NSG on a private endpoint subnet references | 50 | |
 | NSGs per subscription and region | from the limits data file | checked at Zone onboarding |
 
 A breach is a validation error that blocks the whole Change set. The message names the NSG, the limit, the count and the Rules with the most NSG rules there. From 90 % of a limit the Change set and the Zone overview show a warning. More than 10 ASGs on one side is no breach: Step 3 chunks them.
@@ -424,7 +423,7 @@ The engine also reports the cost of every Rule: "lands on N NSGs, M NSG rules".
 
 ### Step 10: Managed ASGs and membership
 
-For every ASG object the engine derives one Managed ASG per VNet that holds ASG members of the object ([ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md)). A new Managed ASG gets its name from the Environment's ASG naming pattern and keeps it; an ASG adopted in place keeps its own name. For every network interface and private endpoint the engine derives the Managed ASGs it belongs to. A Managed ASG without ASG members is deleted once no NSG rule references it. The engine never writes the Unmanaged ASG of an External ASG object.
+For every ASG object the engine derives one Managed ASG per VNet that holds ASG members of the object ([ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md)). A new Managed ASG gets its name from the Environment's ASG naming pattern and keeps it; an ASG adopted in place keeps its own name. For every network interface the engine derives the Managed ASGs it belongs to, the same set on each of its IP configurations. Private endpoint members never join a Managed ASG; they reach NSGs through the IP fallback. A Managed ASG without ASG members is deleted once no NSG rule references it. The engine never writes the Unmanaged ASG of an External ASG object.
 
 #### Example 9: An ASG object across two spokes
 
@@ -508,7 +507,7 @@ A later Change set that sets app to strict affects only app, although two outbou
 
 A Deployment plans from the Deployed state to the target ([ADR 0018](../adr/0018-write-order-from-dominance-gaps.md)). The plan is a set of writes and a set of edges "this write before that write".
 
-**Writes.** One whole-NSG write for every Managed NSG or Retired NSG whose content differs, one write per new or deleted Managed ASG, one subnet write per new association or swap, and one or two writes per network interface or private endpoint whose membership changes, one per member step. A deleted network interface needs no write.
+**Writes.** One whole-NSG write for every Managed NSG or Retired NSG whose content differs, one write per new or deleted Managed ASG, one subnet write per new association or swap, and one or two writes per network interface whose membership changes, one per member step. A deleted network interface needs no write.
 
 **Edges.**
 
@@ -522,7 +521,7 @@ A Deployment plans from the Deployed state to the target ([ADR 0018](../adr/0018
    | any other combination | | | | none |
 
    Each side is evaluated with the function above. Where a tag decides, the engine evaluates both cases per NSG and takes the edges of all cases together.
-3. **Member steps.** The engine plans membership as atoms: one IP configuration, or one private endpoint, joining or leaving one Managed ASG. Azure may apply the atoms of a step in any combination, inside one write and across parallel writes ([Task: Empirical checks of undocumented Azure behaviour][t24], T5). An atom that, applied alone to the Deployed members, only closes traffic under the Deployed NSG contents goes before every NSG write. Every other atom goes after every NSG write. A step is valid only if every combination of its atoms passes: before the NSG writes no combination allows a flow that the Deployed state denies, and after them no combination allows a flow that the target denies. For a flow, only the atoms of its two endpoints count. The atoms of one network interface in one step go into one write. The Crossing flows of point 2 are computed against the members as they are after the first step.
+3. **Member steps.** The engine plans membership as atoms: one network interface joining or leaving one Managed ASG, written on all its IP configurations at once. Azure may apply the atoms of a step in any combination, inside one write and across parallel writes ([Task: Empirical checks of undocumented Azure behaviour][t24], T5). An atom that, applied alone to the Deployed members, only closes traffic under the Deployed NSG contents goes before every NSG write. Every other atom goes after every NSG write. A step is valid only if every combination of its atoms passes: before the NSG writes no combination allows a flow that the Deployed state denies, and after them no combination allows a flow that the target denies. For a flow, only the atoms of its two endpoints count. The atoms of one network interface in one step go into one write. A flow touches one IP of a network interface, so per flow an atom is applied or not, even if Azure applies the IP configurations one by one. The Crossing flows of point 2 are computed against the members as they are after the first step.
 
 **Not orderable.** A cycle among the Crossing-flow edges, or a member step that fails in some combination of its atoms, fails validation. The Preview names the flows, and the fix is to split the Change set into two Commits.
 
@@ -615,7 +614,7 @@ In a Terraform Environment the same target content goes into one JSON file per T
 - the data contract version and a revision value (the prototype also writes the engine version);
 - every Managed NSG of the root module: resource group, location, `flushConnection`, marker tags and the complete list of NSG rules in the ARM shape, the same body as in ARM mode;
 - the NSG of every Zone's subnet;
-- the Managed ASGs with their marker tags, and the membership of every network interface and private endpoint;
+- the Managed ASGs with their marker tags, and the membership of every network interface;
 - import entries for resources that already exist in Azure.
 
 One NSG rule in the prototype's Data contract (prototype key `contract`):
@@ -755,7 +754,7 @@ The prototype is a reference for behaviour, with these known shortcuts:
 
 - It finds Crossing flows by testing sample addresses and ports. That does not scale to the design target; the engine uses delta sets instead ([At the design target](#at-the-design-target)).
 - It puts the deletion of a Managed ASG into the first pull request step. The decided rule is the last pull request ([ADR 0010](../adr/0010-terraform-mode-data-contract-and-azure-observation.md)).
-- It models network interfaces only, no private endpoints.
+- It models network interfaces only, no private endpoints. Since private endpoints reach NSGs only through the IP fallback, this no longer differs from the decided rule for member steps.
 - Its Data contract field names, NSG names and resource groups are placeholders.
 - It checks the member steps with one ASG object per network interface, classifies each network interface's change as a whole with the other network interfaces at their Deployed or target members, and splits a change only as leave first, join last. The decided rule plans single atoms by their own effect and tests every combination of a step's atoms ([ADR 0018](../adr/0018-write-order-from-dominance-gaps.md)). The difference matters only with deny Rules on ASG objects or with several ASG objects per network interface.
 - Its `engine.js` carries three of the four decisions from the status line, since the commit that came with this document: the name hash of 8 characters, the stricter test for a deny that is left out, and `AzureLoadBalancer` as the documented address. The fourth, the HCL rule, has no counterpart in the prototype.
@@ -763,7 +762,7 @@ The prototype is a reference for behaviour, with these known shortcuts:
 ## Open points
 
 - Whether one subnet write that swaps the NSG takes effect as a whole, and the lag and ASG swaps of private endpoint writes: [Task: Empirical check of subnet NSG swaps and private endpoint ASG writes][t33]. The write order and the member steps themselves were decided in [Grilling: Write order under data-plane lag and split ASG membership writes][t32].
-- Deferred checks that can change engine output, each with a nightly integration test and the conservative default described here ([Task: Empirical checks of undocumented Azure behaviour][t24]): IPv4 and IPv6 prefixes in one NSG rule, a service tag inside a prefix list, an ASG on one side with prefixes on the other, the count of prefixes per NSG rule or per NSG, whether the Azure default rules count against 2,000, an outbound deny on an Application Gateway v2 subnet, and ASG membership on IPv6 IP configurations.
+- Deferred checks that can change engine output, each with a nightly integration test and the conservative default described here ([Task: Empirical checks of undocumented Azure behaviour][t24]): IPv4 and IPv6 prefixes in one NSG rule, a service tag inside a prefix list, an ASG on one side with prefixes on the other, the count of prefixes per NSG rule or per NSG, whether the Azure default rules count against 2,000, and an outbound deny on an Application Gateway v2 subnet. Whether Azure accepts ASGs on IPv6 IP configurations, and whether they must match the IPv4 ones, is checked before the design review in [Task: Empirical check of ASGs on dual-stack network interfaces](https://github.com/mfgAkilae/nsgfw/issues/41); until then IPv6 addresses go through the IP fallback.
 - The field names of the Data contract and the data contract version 1: with the Terraform stage of the increment plan.
 
 [t12]: https://github.com/mfgAkilae/nsgfw/issues/12

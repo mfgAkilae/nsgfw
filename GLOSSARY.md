@@ -55,7 +55,7 @@ An Address object that stands for exactly one Unmanaged ASG. Others own that ASG
 _Avoid_: ASG reference (an NSG rule's reference to an ASG)
 
 **ASG member**:
-A network interface or private endpoint that belongs to an ASG object, or any network interface, including scale-set and AKS node interfaces, that belongs to the Unmanaged ASG of an External ASG object.
+A network interface or private endpoint that belongs to an ASG object, or any network interface, including scale-set and AKS node interfaces, that belongs to the Unmanaged ASG of an External ASG object. A network interface is a member as a whole, with all its IP addresses. A private endpoint member counts by its IP addresses and never sits in a Managed ASG.
 _Avoid_: member (on its own: the entries of an Address group)
 
 **Address group**:
@@ -86,7 +86,7 @@ _Avoid_: tool NSG, owned NSG
 Any NSG that is not a Managed NSG, including every NIC-level NSG. Shown read-only.
 
 **Managed ASG**:
-An ASG that the tool created for one ASG object in one VNet, or that an administrator adopted into an ASG object, tagged as managed by the tool. Each Managed ASG belongs to exactly one ASG object.
+An ASG that the tool created for one ASG object in one VNet, or that an administrator adopted into an ASG object, tagged as managed by the tool. It holds only network interfaces. Each Managed ASG belongs to exactly one ASG object.
 _Avoid_: tool ASG
 
 **Unmanaged ASG**:

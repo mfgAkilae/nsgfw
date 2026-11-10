@@ -206,11 +206,10 @@ The first 23 rows come from [Grilling: Hosting, identity and least-privilege rol
 |---|---|
 | `Microsoft.Network/applicationSecurityGroups/write` | create and tag Managed ASGs |
 | `Microsoft.Network/applicationSecurityGroups/delete` | remove unreferenced Managed ASGs |
-| `Microsoft.Network/applicationSecurityGroups/joinIpConfiguration/action` | add a network interface or private endpoint to a Managed ASG |
+| `Microsoft.Network/applicationSecurityGroups/joinIpConfiguration/action` | add a network interface to a Managed ASG |
 | `Microsoft.Network/networkInterfaces/write` | ASG membership of network interfaces |
-| `Microsoft.Network/privateEndpoints/write` | ASG membership of private endpoints |
 
-No role holds Compute writes. Five join actions (route table, NAT gateway, service endpoint, service endpoint policy, subnet join) stay out until [Task: Empirical checks of undocumented Azure behaviour][t24] shows that a subnet, network interface or private endpoint PUT needs them for references it re-sends unchanged. A missing action flags the Environment or Zone and blocks Deployments to the affected Zones before their first write. A missing read stops Drift polling there. A missing policy-name read only falls back to IDs.
+No role holds Compute writes. Five join actions (route table, NAT gateway, service endpoint, service endpoint policy, subnet join) stay out until [Task: Empirical checks of undocumented Azure behaviour][t24] shows that a subnet or network interface PUT needs them for references it re-sends unchanged. A missing action flags the Environment or Zone and blocks Deployments to the affected Zones before their first write. A missing read stops Drift polling there. A missing policy-name read only falls back to IDs.
 
 Terraform Environments get the Reader only. There the Tool identity writes nothing in Azure.
 
