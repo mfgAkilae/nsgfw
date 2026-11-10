@@ -10,6 +10,7 @@ This code is throwaway. It lives only on the branch `prototype/console-ui` and i
 cd prototypes/console-ui
 pnpm install
 pnpm dev          # http://localhost:5199/  (?theme=dark|light, ?lang=de)
+# Deep links (issue 35): ?zone=z0042-web&dir=out&ztab=flows|settings&bands=avnm,nic  ?page=objects  ?obj=x1  ?onboard=c903
 ```
 
 ## History
@@ -25,6 +26,9 @@ pnpm dev          # http://localhost:5199/  (?theme=dark|light, ?lang=de)
 7. Sixth design pass: the side panel becomes a Rule editor. Every field in one place, an inline object picker, where the Rule lands in Azure updating live, and "Before you submit" with what to fix. New Rule opens the editor with the name selected. Commit `21402d6`.
 8. Seventh design pass: Review, the whole Change set on one wide screen before Submit (what was edited, one Rule before and after with what it writes in Azure, write order, Approval, Policy findings, the action). Also a keyboard help in the rail and the Version in the head.
 9. Access, audit, settings and health ([issue 38](https://github.com/mfgAkilae/nsgfw/issues/38)), see the section below.
+
+9. Zone detail, Flow view and object editors ([Prototype: Zone detail, Flow view and object editors](https://github.com/mfgAkilae/nsgfw/issues/35)), see below. Code in `ZoneDetail.tsx`, `ObjectEditor.tsx`, `Onboard.tsx`, `zonedata.ts`, `zone.css`, `i18n-zone.ts`.
+10. After the author: [Prototype: Change set review, conflicts and Version history](https://github.com/mfgAkilae/nsgfw/issues/36). The approver decides on the Review screen, a Rebase with conflicts has a screen of its own, Policy findings come in full with the Pre-check waiver, Commit always opens a short dialog, the Versions page starts Restore and Revert, and the bell leads to the inbox in full. See [Change set review, conflicts and Version history](#change-set-review-conflicts-and-version-history-issue-36).
 
 The map owner called the third pass clearly better and asked for two more, then for Folders and two further passes. The brief for the third pass: much better design, dark and light mode, clear and very pleasant to look at, functional, and as few clicks as possible to the main functions.
 
@@ -77,9 +81,39 @@ Built on top, for review:
 - **Alert channel**: none, e-mail (SMTP or Graph) or webhook (Teams Workflows or generic JSON, URL as a Key Vault secret name), a test alert and the last deliveries.
 - **Review** gets a note when `flushConnection` is off in an Environment the Change set changes: revoked access does not end running sessions.
 
-Prototype controls (flask button) switch the persona (instance admin, Environment admin, approver, editor, viewer of one Zone, no Role), set the sign-in age, trigger the idle warning, the sign-out, the session end and a denied action, and switch to an on-premises runtime or a broken audit chain. URL parameters reach any state directly: `?page=admin&sec=access|audit|health|envs|instance|alert|setup`, `?as=ia|envadmin|approver|editor|viewer|none`.
+Prototype controls (flask button) switch the persona (instance admin, Environment admin, approver, editor, viewer of one Zone, no Role), set the sign-in age, trigger the idle warning, the sign-out, the session end and a denied action, and switch to an on-premises runtime or a broken audit chain. URL parameters reach any state directly: `?page=admin&sec=access|audit|health|envs|instance|alert|setup`, `?as=ia|envadmin|approver|editor|viewer|none`. The published copy takes the same states as #names: `#admin`, `#setup`, `#access`, `#audit`, `#health`, `#environments`, `#instance`, `#alert-channel`, `#as-viewer`, `#as-editor`, `#as-approver`, `#as-env-admin`, `#no-access`, `#zones-as-approver`.
 
 Simplifications: the Change set's Approval still uses one level per Environment, so a level set on a VNet or Zone shows in Access but not yet in the commit bar. The persona switch keeps the Change set, so every persona is its Author. The Objects and Change sets pages are not filtered by Coverage yet.
+
+## Change set review, conflicts and Version history (issue 36)
+
+Decided with the map owner on 2026-11-10 before building: the approver decides on the Review screen; conflicts after a Rebase get a wide screen of their own; the Version history is a page in the rail; the bell leads to the inbox on the Change sets page; Commit always opens a short dialog; in the Emergency Commit dialog each blocking deny finding is ticked for a waiver with the reason prefilled from the Emergency reason; a prototype switch shows the small profile without Folders.
+
+How to try it (the dashed flask in the rail holds the switches):
+
+| What | How |
+| --- | --- |
+| Approve as an approver, with the Preview an earlier approver saw | Bell, then "Review" on kim's request. "Show what changed" in the amber banner. Approve asks for a fresh sign-in. |
+| Approve an Emergency Commit afterwards, or reject it | Bell, "Review" on sam's Emergency Commit. A rejection makes the tool prepare a Revert, which lands in the inbox. |
+| Submit stopped by a deny Policy finding, then waive it | Bell, "Open" on the rejected "Open RDP for vendor", then Submit. Or flask: "Force a deny Policy finding" and Submit your own Change set. |
+| Resolve conflicts after a Rebase | Flask: "kim commits Version 1289 … with conflicts on a Rule, a position and a Folder". Then the red "3 conflicts after the Rebase" in the commit bar. |
+| Approvals that survive a Rebase, and the Commit dialog listing what changed since | Edit a Rule (right click, Disable), Submit, "Approve as kim", then flask: "with a conflict on a Folder only", resolve, "Commit…". |
+| Commit at a chosen time | "Commit…", "At a time I choose". The bar then shows the schedule with Move and Cancel. |
+| A Tool path closes | Flask: "This Change set closes a Tool path", or a deny Rule to app0001-mgmt. Submit, Commit and Emergency Commit ask for a reason. |
+| A Re-translation is open | Flask: "A Re-translation is open in Production". Commits that change Production wait; the bell holds its Approval request. |
+| Revert and Restore | Versions in the rail. 1288 (only Folders, no Approval), 1287 (an Emergency Commit), 1284 (a Folder move, so moves of its Rules), 1281 (a removed Folder that cannot come back: conflict), Restore to 1285. |
+| The small profile | Flask: "Small profile: no Folders yet". Folders disappear from the table, the editor, the Changes list and the Versions. |
+
+What to judge:
+
+1. The approver's view: decision at the top of the right column, Zones per Environment with their status, one Approve for every Zone you hold the approver Role for. Enough per Affected Zone?
+2. The Rebase screen: three columns (base, theirs, yours) per conflict, and two previews of the rebased Rule base to confirm a position.
+3. Policy findings: blocking first, then waived, then information, then "not enforced" and "exempt" folded away. The pre-check result shows only after a run (Submit, on demand, Emergency Commit dialog).
+4. The Commit dialog: what goes out per Environment, now or later, Approvals with what changed since, Folder edits since the Approval, waivers, Tool path.
+5. Versions: one list with Deployment dots per Environment, detail on the right, Revert and Restore as Change sets.
+6. German term proposals: Versionen, Neuübersetzung (Re-translation), Pre-Check-Verzicht (Pre-check waiver), Tool-Pfad, nachträgliche Freigabe, nicht erzwungen, ausgenommen. Rebase, Restore, Revert and Commit stay English.
+
+Code: `flow.tsx` (state of this ticket), `Decide.tsx` (other Change sets on the Review screen), `Rebase.tsx`, `Commit.tsx`, `Policy.tsx`, `Versions.tsx` with `versions36.ts`, `Inbox.tsx`, `app36.css`, `i18n36.ts`. The shared files (`store.tsx`, `Console.tsx`, `ChangeViews.tsx`, `Pages.tsx`, `Review.tsx`, `Editor.tsx`, `RuleGrid.tsx`) carry small, marked changes.
 
 ## The design
 
@@ -129,11 +163,25 @@ Editing never asks to start a Change set first: an edit lands in the current Cha
 5. Rule cost appears in the side panel ("In Azure") and in the Preview, not as a table column. Enough?
 6. German terms (proposals): Regelwerk, Regel, Änderungspaket, Vorschau, Freigabe, Betroffene Zonen, Schreibreihenfolge, Kreuzende Flüsse, Notfall-Commit, Treffer, Dienst, Verantwortlich, Ausgangsverhalten ("Ziel entscheidet" / "strikt"), Plattform-Ausnahmen, Intra-Zonen-Standard, Geerbte Standards.
 
+## Zone detail, Flow view and object editors (issue 35)
+
+The map owner chose, in the session for issue 35:
+
+- The Zone lens becomes the Zone detail: tabs Rules, Flows and Settings in the lens head. Zone picker, Zones page and Ctrl K land there.
+- The Security layers stack as bands in the Rules tab, in evaluation order: AVNM security admin rules above the Platform exceptions; NIC-level NSGs below the Azure default rules inbound and above the Managed NSG outbound; AVNM security user rules last, marked "order not documented". Each layer band opens into its rules, read-only, with the overlap and its severity. The Zone overview and the lens head show "AVNM: n rules" and "NIC NSGs: n".
+- The Flow view is a flat list with "Decided by" (a Rule, a band, an AVNM admin rule or a NIC-level NSG) and chips: allowed, denied, by a Rule, by Inherited defaults, by the Egress posture, by the Deny-all rules, by a Security layer. A window of 24 hours, 7 days or 30 days. The head says how old the newest flow is and that the data is incomplete (ICMP, filtered denied flows). "No flow data" links to the instructions; "No access to flow data" names the missing actions, and the hits column shows "no access" instead of 0.
+- Three helpers from flow data, beyond the brief: New Rule from a flow (at the end of the Rule base, outside Folders, so every deny Rule above still wins; an Internet address becomes a new host object); before switching to strict, the outbound flows that only the open posture let out; before removing a part of the Inherited defaults, the flows that relied on it.
+- Settings: Egress posture, the three parts of the Inherited defaults each on its own, Extra prefixes with checks, DNS (custom DNS servers and whether a Rule covers them), the Managed NSG. Every setting is an edit in the current Change set.
+- One object editor in two places: the detail of the object library, and the Object tab of the side panel when an object is opened from a Rule. ASG objects: one search over VMs, network interfaces and private endpoints (by name, IP or Zone); members grouped by VNet, which is the Managed ASG they land in; Coverage live with the difference to the committed Version; scale-set interfaces are not pickable (External ASG object instead); the missing nsgfw ASG Writer role and the ASG limits block. External ASG objects: the Unmanaged ASG, its owner and its members read-only. IP and CIDR objects: the VNet binding with own, peered and unconnected VNets and the Coverage that results. ASG objects and External ASG objects: the switch "Adopt member changes automatically".
+- Onboarding a candidate proposes the DNS Rule, ticked, when the VNet has custom DNS servers, and says where it lands. A candidate that is not onboardable shows the reason and the evidence (IP forwarding on a named interface, an AKS-managed NSG, SQL MI, a subnet without NSG support, the subnet of nsgfw itself).
+- Rule warnings from Security layers carry their severity: "bypassed by AVNM" is high (red), "blocked by AVNM" and "blocked on n of m interfaces" are medium (amber). A chip "Layer warnings" filters them, and the Rule editor explains the layer.
+
+
 ## Scope
 
-In: Rule base table (10,000 Rules, drag-and-drop, inline editing, filter, clone, disable, bulk actions), Zone lens, Change set list, pending changes with Preview, write order (ADR 0018) including "cannot be ordered", Approval per Affected Zone, Policy findings (rough), Emergency Commit (rough), inbox (rough), Zone overview with limits, candidates and flagged Zones (20,000 Zones), object picker with Azure service tags, English and German, light and dark.
+In: Rule base table (10,000 Rules, drag-and-drop, inline editing, filter, clone, disable, bulk actions), Zone lens, Change set list, pending changes with Preview, write order (ADR 0018) including "cannot be ordered", Approval per Affected Zone, Policy findings (rough), Emergency Commit (rough), inbox (rough), Zone overview with limits, candidates and flagged Zones (20,000 Zones), object picker with Azure service tags, English and German, light and dark. Since issue 35 also: Zone detail with Security layers, Flow view, Zone settings, object editor with ASG members and VNet bindings, the not-onboardable reasons and the DNS Rule at onboarding.
 
-Out (follow-up prototype tickets): Zone detail and Security layers, Flow view, ASG object editor, conflict resolution after a Rebase, Version history with Restore and Revert, Deployment and Drift views, Import, access, audit, settings and health.
+Out (follow-up prototype tickets): Deployment and Drift views, Import, access, audit, settings and health. Issue 35 added the Zone detail with Security layers, the Flow view and the object editors; issue 36 added the approver's view, conflicts after a Rebase, Policy findings in full, the Pre-check waiver, the Commit and Emergency Commit dialogs, the Version history with Restore and Revert, and the inbox in full.
 
 The dashed flask button in the rail holds prototype-only controls: it forces Crossing flows or a Change set that cannot be ordered.
 

@@ -4,16 +4,18 @@ import { rules as initialRules, entries as initialEntries, Rule, Entry, FolderRo
 import { internalSpace as initialSpace } from './access';
 
 export type CsState = 'Open' | 'Submitted' | 'Approved' | 'Committed';
-export interface Edit { seq: number; kind: 'add' | 'edit' | 'move' | 'delete' | 'enable' | 'disable' | 'folder' | 'setting'; ruleId: string; field?: string; before?: string; after?: string; by: string }
+export interface Edit { seq: number; kind: 'add' | 'edit' | 'move' | 'delete' | 'enable' | 'disable' | 'folder' | 'zone' | 'object' | 'setting'; ruleId: string; field?: string; before?: string; after?: string; by: string; via?: string;
+  // Zone and Object edits (issue 35): the Zones whose Managed NSGs they change, and the NSG rule they write there.
+  covers?: string[]; write?: { name: string; dir: 'in' | 'out'; priority: number } }
 export interface St { added?: boolean; deleted?: boolean; moved?: boolean; changed?: Set<string> }
 export interface ChangeSet { id: string; name: string; owner: string; state: CsState; base: number; authors: string[]; edits: number; affected: number; rebase?: boolean; emergency?: boolean; scheduled?: string; mine?: boolean }
 export type Scenario = 'auto' | 'crossing' | 'unorderable';
 
 export const otherSets: ChangeSet[] = [
-  { id: 'cs-2', name: 'Q4 cleanup of expired Rules', owner: 'kim', state: 'Submitted', base: 1288, authors: ['kim'], edits: 41, affected: 63 },
+  { id: 'cs-2', name: 'Q4 cleanup of expired Rules', owner: 'kim', state: 'Submitted', base: 1288, authors: ['kim'], edits: 14, affected: 63 },
   { id: 'cs-3', name: 'Partner VPN access', owner: 'sam', state: 'Approved', base: 1288, authors: ['sam', 'jo'], edits: 6, affected: 4, scheduled: 'today 22:00' },
   { id: 'cs-4', name: 'Onboard vnet-app0107', owner: 'alex', state: 'Open', base: 1286, authors: ['alex'], edits: 88, affected: 20, rebase: true },
-  { id: 'cs-5', name: 'Hotfix: block 203.0.113.0/24', owner: 'sam', state: 'Committed', base: 1287, authors: ['sam'], edits: 1, affected: 1, emergency: true },
+  { id: 'cs-5', name: 'Hotfix: block ext-partner-0339', owner: 'sam', state: 'Committed', base: 1286, authors: ['sam'], edits: 1, affected: 1, emergency: true },
 ];
 // Rules that another open Change set also changes ("also changed in Change set X by Y").
 export const alsoChanged = new Map<string, { set: string; by: string }>([
@@ -23,10 +25,13 @@ export const alsoChanged = new Map<string, { set: string; by: string }>([
 ]);
 
 let nextId = 95000;
+// Zone and Object edits keep their state outside the Rule base; Discard resets it through these hooks (issue 35).
+const discardHooks: (() => void)[] = [];
+export const onDiscard = (f: () => void) => { discardHooks.push(f); };
 const fmt = (v: unknown) => (Array.isArray(v) ? v.map(x => (String(x).startsWith('svc') ? x : ref(String(x)).name)).join(', ') : String(v ?? ''));
 const blockEnd = (es: Entry[], head: number) => { const fid = es[head].id; let end = head + 1; while (end < es.length && !isFolder(es[end]) && (es[end] as Rule).folder === fid) end++; return end; };
 
-function useStoreValue() {
+export function useStoreValue() {
   const base = useRef(new Map(initialRules.map((r, i) => [r.id, { rule: r, pos: i }]))).current;
   const [entries, setEntries] = useState<Entry[]>(initialEntries);
   const rules = useMemo(() => entries.filter((e): e is Rule => !isFolder(e)), [entries]);
@@ -41,13 +46,15 @@ function useStoreValue() {
   const [space, setSpace] = useState<string[]>(initialSpace);
   const seq = useRef(0);
 
-  const log = (e: Omit<Edit, 'seq' | 'by'>[]) => { if (!e.length) return; setEdits(x => [...x, ...e.map(i => ({ ...i, seq: ++seq.current, by: me }))]); if (state !== 'Open') setState('Open'); };
+  // ADR 0021: a Folder edit keeps the state and the Approvals. Every other edit returns the Change set to Open and resets them.
+  const reopen = () => { if (state !== 'Open') setState('Open'); setApprovedBy(a => (Object.keys(a).length ? {} : a)); };
+  const log = (e: Omit<Edit, 'seq' | 'by'>[]) => { if (!e.length) return; setEdits(x => [...x, ...e.map(i => ({ ...i, seq: ++seq.current, by: me }))]); if (e.some(i => i.kind !== 'folder')) reopen(); };
   const mapRules = (fn: (r: Rule) => Rule) => setEntries(es => es.map(e => (isFolder(e) ? e : fn(e))));
 
   const status = useMemo(() => {
     const m = new Map<string, St>();
     for (const e of edits) {
-      if (e.kind === 'folder' || e.kind === 'setting') continue;
+      if (e.kind === 'folder' || e.kind === 'zone' || e.kind === 'object' || e.kind === 'setting') continue;
       const s = m.get(e.ruleId) ?? {};
       if (e.kind === 'add') s.added = true;
       else if (e.kind === 'delete') s.deleted = true;
@@ -76,18 +83,19 @@ function useStoreValue() {
     const placed = moving.map(e => (isFolder(e) || movingFolder ? e : { ...e, folder }));
     return [...rest.slice(0, at), ...placed, ...rest.slice(at)];
   };
-  const logMoves = (before: Entry[], after: Entry[], ids: Set<string>) => {
+  const logMoves = (before: Entry[], after: Entry[], ids: Set<string>, via?: string) => {
     const num = (es: Entry[]) => { const m = new Map<string, number>(); let n = 0; for (const e of es) if (!isFolder(e)) m.set(e.id, ++n); return m; };
     const a = num(before), b = num(after); const fname = (es: Entry[], f?: string) => (f ? (es.find(e => e.id === f) as FolderRow | undefined)?.name ?? '' : '');
     const out: Omit<Edit, 'seq' | 'by'>[] = [];
-    for (const e of after) if (!isFolder(e) && ids.has(e.id)) { const old = before.find(x => x.id === e.id) as Rule; const inF = e.folder !== old.folder ? ` (${e.folder ? `into “${fname(after, e.folder)}”` : `out of “${fname(before, old.folder)}”`})` : ''; if (a.get(e.id) !== b.get(e.id)) out.push({ kind: 'move', ruleId: e.id, before: `#${a.get(e.id)}`, after: `#${b.get(e.id)}${inF}` }); else if (inF) out.push({ kind: 'folder', ruleId: `${e.id}:f`, after: `“${e.name}” ${e.folder ? `moved into “${fname(after, e.folder)}”` : `taken out of “${fname(before, old.folder)}”`}, same position` }); }
+    for (const e of after) if (!isFolder(e) && ids.has(e.id)) { const old = before.find(x => x.id === e.id) as Rule; const inF = e.folder !== old.folder ? ` (${e.folder ? `into “${fname(after, e.folder)}”` : `out of “${fname(before, old.folder)}”`})` : ''; if (a.get(e.id) !== b.get(e.id)) out.push({ kind: 'move', ruleId: e.id, before: `#${a.get(e.id)}`, after: `#${b.get(e.id)}${inF}`, via }); else if (inF) out.push({ kind: 'folder', ruleId: `${e.id}:f`, after: `“${e.name}” ${e.folder ? `moved into “${fname(after, e.folder)}”` : `taken out of “${fname(before, old.folder)}”`}, same position` }); }
     log(out);
   };
   const relocate = (ids: string[], targetId: string | null, where: 'before' | 'after', forceRoot = false) => setEntries(es => {
     const out = place(es, ids, targetId, where, forceRoot); if (out === es) return es;
     const moved = new Set(ids); for (const e of es) if (!isFolder(e) && e.folder && moved.has(e.folder)) moved.add(e.id);
-    logMoves(es, out, moved);
-    const f = es.find(e => isFolder(e) && moved.has(e.id)) as FolderRow | undefined; if (f) log([{ kind: 'folder', ruleId: f.id, after: `Folder “${f.name}” moved with its Rules` }]);
+    const f = es.find(e => isFolder(e) && moved.has(e.id)) as FolderRow | undefined;
+    logMoves(es, out, moved, f?.id);
+    if (f) log([{ kind: 'folder', ruleId: f.id, after: `Folder “${f.name}” moved with its Rules`, via: f.id }]);
     return out;
   });
 
@@ -96,7 +104,7 @@ function useStoreValue() {
     setSpace(next: string[]) {
       const before = initialSpace.join(', '); const after = next.join(', ');
       setSpace(next); setEdits(x => [...x.filter(e => !(e.kind === 'setting' && e.ruleId === 'iasp')), ...(after === before ? [] : [{ seq: ++seq.current, by: me, kind: 'setting' as const, ruleId: 'iasp', field: 'Internal address space', before, after }])]);
-      if (state !== 'Open') setState('Open');
+      reopen();   // a change of the Internal address space is no Folder edit: it resets the Approvals too
     },
     editField(id: string, field: keyof Rule, value: unknown) {
       const r = rules.find(x => x.id === id); if (!r || fmt(r[field]) === fmt(value)) return;
@@ -105,7 +113,7 @@ function useStoreValue() {
       setEdits(x => { const last = x[x.length - 1];
         if (last && last.kind === 'edit' && last.ruleId === id && last.field === field) return last.before === after ? x.slice(0, -1) : [...x.slice(0, -1), { ...last, after }];
         return [...x, { seq: ++seq.current, by: me, kind: 'edit', ruleId: id, field, before: fmt(r[field]), after }]; });
-      if (state !== 'Open') setState('Open');
+      reopen();
       mapRules(x => (x.id === id ? { ...x, [field]: value } : x));
     },
     setEnabled(ids: string[], enabled: boolean) {
@@ -145,8 +153,8 @@ function useStoreValue() {
       setEntries(es => { const out: Entry[] = []; for (const e of es) { out.push(e); if (!isFolder(e) && ids.includes(e.id)) { const c = { ...e, id: `R${++nextId}`, name: `${e.name} (copy)`, hits: null }; out.push(c); added.push({ kind: 'add', ruleId: c.id, after: c.name }); } } return out; });
       setTimeout(() => log(added), 0);
     },
-    addRule(afterId?: string, folderId?: string) {
-      const r: Rule = { id: `R${++nextId}`, name: 'New Rule', src: ['any'], dst: ['any'], svc: ['svc-any'], action: 'deny', enabled: false, comment: '', ticket: '', owner: me, hits: null };
+    addRule(afterId?: string, folderId?: string, init?: Partial<Rule>) {
+      const r: Rule = { id: `R${++nextId}`, name: 'New Rule', src: ['any'], dst: ['any'], svc: ['svc-any'], action: 'deny', enabled: false, comment: '', ticket: '', owner: me, hits: null, ...init };
       setEntries(es => {
         const anchor = folderId ? es.findIndex(e => e.id === folderId) : afterId ? es.findIndex(e => e.id === afterId) : -1; const a = es[anchor];
         return [...es.slice(0, anchor + 1), { ...r, folder: a ? (isFolder(a) ? a.id : a.folder) : undefined }, ...es.slice(anchor + 1)];
@@ -159,15 +167,28 @@ function useStoreValue() {
       if (addedNow.length) { setEntries(es => es.filter(e => !addedNow.includes(e.id))); setEdits(es => es.filter(e => !addedNow.includes(e.ruleId))); }
       log(ids.filter(id => !addedNow.includes(id)).map(id => ({ kind: 'delete' as const, ruleId: id })));
     },
-    discard() { setEntries(initialEntries); setSpace(initialSpace); setEdits([]); setState('Open'); setApprovedBy({}); setEmergency(null); },
+    // A Zone or Object edit. Repeated edits of one field fold into one, and an edit back to the start disappears.
+    note(e: Omit<Edit, 'seq' | 'by'>) {
+      setEdits(x => { const i = x.findIndex(y => y.kind === e.kind && y.ruleId === e.ruleId && y.field === e.field); if (i < 0) return [...x, { ...e, seq: ++seq.current, by: me }];
+        return x[i].before === e.after ? x.filter((_, k) => k !== i) : x.map((y, k) => (k === i ? { ...y, ...e, before: y.before } : y)); });
+      reopen();   // a Zone or Object edit is no Folder edit: it resets the Approvals too
+    },
+    discard() { discardHooks.forEach(f => f()); setEntries(initialEntries); setSpace(initialSpace); setEdits([]); setState('Open'); setApprovedBy({}); setEmergency(null); },
     submit() { setState('Submitted'); },
     approveAs(who: string, envIds: string[]) { setApprovedBy(a => ({ ...a, ...Object.fromEntries(envIds.map(e => [e, who])) })); },
     commit(reason?: string) { setState('Committed'); setVersion(v => v + 1); if (reason) setEmergency(reason); },
+    reject() { setState('Open'); setApprovedBy({}); },
+    // Issue 36: a Rebase onto a newer Version. A resolved Rule conflict resets the Approvals; a resolution that moves no Rule keeps them (ADR 0021).
+    rebaseOnto(v: number, fixEntries: (es: Entry[]) => Entry[], fixEdits: (es: Edit[], next: () => number) => Edit[], keep: boolean, newBase: Rule[] = []) {
+      newBase.forEach(r => base.set(r.id, { rule: r, pos: base.get(r.id)?.pos ?? 1 }));
+      setEntries(fixEntries); setEdits(es => fixEdits(es, () => ++seq.current)); setVersion(v);
+      if (!keep) { setState('Open'); setApprovedBy({}); }
+    },
   };
   return api;
 }
 export type Store = ReturnType<typeof useStoreValue>;
-const Ctx = createContext<Store | null>(null);
+export const Ctx = createContext<Store | null>(null);
 export const StoreProvider = ({ children }: { children: ReactNode }) => <Ctx.Provider value={useStoreValue()}>{children}</Ctx.Provider>;
 export const useStore = () => useContext(Ctx)!;
 
@@ -224,6 +245,8 @@ export function buildPreview(s: Store): Preview {
   }
   // A change of the Internal address space affects every destination-enforced Zone: their egress allow at 4094 changes.
   if (s.edits.some(e => e.kind === 'setting' && e.ruleId === 'iasp')) for (const z of zones) if (z.egress === 'dest') touch(z.id).ops.push({ op: 'change', name: 'nsgfw-egress-internal', dir: 'out', priority: 4094, rule: 'iasp', detail: 'Internal address space' });
+  // Zone and Object edits (issue 35) change the Managed NSGs of the Zones they cover.
+  for (const e of s.edits) if ((e.kind === 'zone' || e.kind === 'object') && e.covers) e.covers.slice(0, 40).forEach(zid => touch(zid).ops.push({ op: 'change', name: e.write?.name ?? `nsgfw-${e.field}`, dir: e.write?.dir ?? 'in', priority: e.write?.priority ?? 0, rule: e.ruleId, detail: e.after ?? '' }));
   if (nsgs.size && !policy.length) policy.push({ assignment: 'Audit NSG flow logging', effect: 'audit', reason: 'No VNet flow log on 2 VNets', rule: '' });
   let unorderable = s.scenario === 'unorderable';
   if (unorderable && crossing.length < 2 && crossing[0]) crossing.push({ ...crossing[0], from: crossing[0].to, to: crossing[0].from, flow: `${crossing[0].to} → ${crossing[0].from} tcp/1433`, closes: crossing[0].opens, opens: crossing[0].closes });

@@ -5,8 +5,9 @@ import { LangProvider } from './i18n';
 import { StoreProvider } from './store';
 import { SessionProvider } from './session';
 import Console from './Console';
+import { FlowProvider } from './flow';
 import './app.css';
 
 createRoot(document.getElementById('root')!).render(
-  <ThemeProvider><LangProvider><StoreProvider><SessionProvider><Console /></SessionProvider></StoreProvider></LangProvider></ThemeProvider>,
+  <ThemeProvider><LangProvider><StoreProvider><FlowProvider><SessionProvider><Console /></SessionProvider></FlowProvider></StoreProvider></LangProvider></ThemeProvider>,
 );

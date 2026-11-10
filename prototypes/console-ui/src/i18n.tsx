@@ -1,6 +1,8 @@
 // PROTOTYPE, throwaway. English is the key; German terms are proposals for review (see README).
 import { createContext, useContext, useState, ReactNode } from 'react';
 import { deAdmin } from './i18n-admin';
+import { de36 } from './i18n36';
+import { deZone } from './i18n-zone';
 
 const de: Record<string, string> = {
   'Rule base': 'Regelwerk', 'Rule': 'Regel', 'Zones': 'Zonen', 'Zone': 'Zone', 'Objects': 'Objekte', 'Change sets': 'Änderungspakete',
@@ -78,7 +80,10 @@ const de: Record<string, string> = {
   'Steps': 'Schritte', 'holds back': 'hält zurück', 'Each Affected Zone needs its Approval level.': 'Jede betroffene Zone braucht ihre Freigabestufe.',
   'drag to reorder': 'zum Umsortieren ziehen', 'Drag is off while sorted or filtered: use Move to…': 'Ziehen ist bei Sortierung oder Filter aus: „Verschieben nach…“ nutzen',
 };
+Object.assign(de, de36);   // issue 36
 
+// Issue 35: Zone detail, Flow view, object editors and onboarding.
+Object.assign(de, deZone);
 type T = (key: string) => string;
 const Ctx = createContext<{ lang: 'en' | 'de'; setLang: (l: 'en' | 'de') => void; t: T }>({ lang: 'en', setLang: () => {}, t: k => k });
 export function LangProvider({ children }: { children: ReactNode }) {
