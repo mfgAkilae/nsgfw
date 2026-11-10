@@ -4,6 +4,8 @@ Ticket: [Task: Empirical checks of undocumented Azure behaviour](https://github.
 
 T7 and T8 come from [Task: Empirical check of subnet NSG swaps and private endpoint ASG writes](https://github.com/mfgAkilae/nsgfw/issues/33), which [Grilling: Write order under data-plane lag and split ASG membership writes](https://github.com/mfgAkilae/nsgfw/issues/32) opened. They ran on 2026-11-10 in the same subscription and region, with the same harness.
 
+T10 comes from [Task: Empirical check of ASGs on dual-stack network interfaces](https://github.com/mfgAkilae/nsgfw/issues/41), which [Grilling: ASG membership of private endpoints and multi-IP network interfaces](https://github.com/mfgAkilae/nsgfw/issues/39) opened. It ran on 2026-11-10 in the same subscription and region, with its own script.
+
 ## Question
 
 Which Azure behaviours that Microsoft documentation leaves open does the design depend on, and what does a dedicated test subscription show for them?
@@ -25,6 +27,7 @@ Only [ADR 0018](../adr/0018-write-order-from-dominance-gaps.md) has no fallback.
 | T7 | Does one subnet PUT that swaps the subnet's NSG for another take effect as a whole, on the source and the destination side, or is the subnet briefly without an NSG? How long after `Succeeded`? | [ADR 0003](../adr/0003-adopt-existing-nsgs-in-place.md) (a shared NSG is swapped), [ADR 0018](../adr/0018-write-order-from-dominance-gaps.md) |
 | T8 | How does one private endpoint PUT that swaps its ASG behave: interim states, and the lag after `Succeeded` against the Settle time? | [ADR 0018](../adr/0018-write-order-from-dominance-gaps.md) (private endpoints are atoms like network interfaces) |
 | T9 | Which rights does a private endpoint PUT need that changes only its ASGs? Added when T8's first write failed. | [ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) (`nsgfw ASG Writer`) |
+| T10 | Does Azure accept ASGs on the IPv6 IP configuration of a dual-stack network interface, and must they match the IPv4 ones? What does the azurerm association write there? | [ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md), [ADR 0018](../adr/0018-write-order-from-dominance-gaps.md), [Grilling: Terraform mode workflow](https://github.com/mfgAkilae/nsgfw/issues/17) point 13 |
 
 Every other point moves to the backlog as a nightly integration test. The design keeps its current default until then (see [Deferred checks](#deferred-checks-nightly-integration-tests)).
 
@@ -39,7 +42,8 @@ What the map owner provided or should provide:
 - [x] T6: the app registration `nsgfw-t6-msal-check` and one interactive sign-in, both done with [t6-register.sh](empirical-checks/t6-register.sh) (steps in [T6](#t6-msal-node-with-a-managed-identity-as-federated-credential)).
 - [x] After T6 the map owner deleted the app registration `nsgfw-t6-msal-check` and its service principal.
 - [x] T7 and T8: the map owner created a new service principal `nsgfw-empirical-checks` with Owner on the test subscription only (same command as above) and handed its credential to the agent through a one-time secret prompt. It never touched the repo or the disk of the run.
-- [ ] After T7 to T9: the map owner decides whether this principal stays for the nightly integration tests or is deleted with its Owner role assignment.
+- [x] T10: the map owner handed over the same principal's credential again through a one-time secret prompt.
+- [ ] After T7 to T10: the map owner decides whether this principal stays for the nightly integration tests or is deleted with its Owner role assignment.
 
 The test subscription does not accept new resources in West Europe: "The selected region is currently not accepting new customers" (`RequestDisallowedByAzure`). The checks use North Europe, plus Sweden Central for one resource in another region. The subscription has a quota of 0 cores for the Basv2 family and 10 for the BS family per region, so the VMs are `Standard_B1s`.
 
@@ -195,7 +199,40 @@ Microsoft documents the approval action only as what makes a new private endpoin
 
 ### ASG membership is per network interface
 
-The first deployment for T8 gave `nic-a` a second IP configuration without ASGs, while the first was in `asg-x`. Azure rejected the network interface synchronously: "All IPConfigurations on a Network Interface should reference the same set of Application Security Groups" (`AllIpConfigurationsOnANicMustBelongToTheSameApplicationSecurityGroups`). Microsoft Learn does not document this rule: the ASG overview, the network interface pages, the NSG overview and the networking limits ("Application security groups per IP configuration, per NIC: 20") say nothing about it (retrieved 2026-11-10). One public bug report shows the same error ([OCPBUGS-5419](https://issues.redhat.com/browse/OCPBUGS-5419)). An ASG member is therefore a whole network interface: a write that joins or leaves an ASG must change every IP configuration of the interface at once.
+The first deployment for T8 gave `nic-a` a second IP configuration without ASGs, while the first was in `asg-x`. Azure rejected the network interface synchronously: "All IPConfigurations on a Network Interface should reference the same set of Application Security Groups" (`AllIpConfigurationsOnANicMustBelongToTheSameApplicationSecurityGroups`). Microsoft Learn does not document this rule: the ASG overview, the network interface pages, the NSG overview and the networking limits ("Application security groups per IP configuration, per NIC: 20") say nothing about it (retrieved 2026-11-10). One public bug report shows the same error ([OCPBUGS-5419](https://issues.redhat.com/browse/OCPBUGS-5419)). An ASG member is therefore a whole network interface: a write that joins or leaves an ASG must change every IP configuration of the interface at once. T10 narrows the rule to one address family: an IPv6 IP configuration may reference other ASGs than the IPv4 ones.
+
+### T10: Azure accepts any ASGs on an IPv6 IP configuration, and the effective view keeps an IPv6 leave
+
+Two runs on 2026-11-10 in North Europe on `Standard_B1s`, network API 2024-05-01, Terraform 1.17.1 with azurerm 5.13.0. Run 1 ([results](empirical-checks/results/20261110-140336-t10-results.json)) sent cases 1 to 4. Run 2 ([results](empirical-checks/results/20261110-141225-t10-results.json)) timed joins and leaves. Script: [t10.py](empirical-checks/t10.py), Terraform: [t10-tf/main.tf](empirical-checks/t10-tf/main.tf). Synchronous control-plane writes and reads only, no probes. The runs kept resources for 7 and 17 minutes, under 0.01 €. Both resource groups are deleted, and after each teardown no group with the checks' tag was left in the subscription.
+
+**Setup.** `vnet-v6` 10.91.0.0/16 and fd00:91::/48, one subnet `dual` (10.91.1.0/24 and fd00:91:0:1::/64) with `nsg-v6`. One VM `vm-v6`, whose only network interface `nic-v6` has `ipconfig-v4` (10.91.1.10, primary) and `ipconfig-v6` (fd00:91:0:1::4), without ASGs at deployment. Two plain ASGs `asg-a` and `asg-b`, as the tool creates a Managed ASG. `nsg-v6` holds `in-5001-to-asg-a` (inbound allow from any to `asg-a`), `out-5002-from-asg-a` (outbound allow from `asg-a` to any) and `in-5003-to-asg-b`. The VM exists only for the effective security rules. Each write is a GET of the network interface, the ASGs set per IP configuration, a PUT and the async operation polled to the end; then a GET and a POST to `effectiveNetworkSecurityGroups`. Between cases, one PUT took both IP configurations out of every ASG.
+
+**How the effective view shows membership.** An ASG rule appears among the network interface's effective security rules only while one of its IP configurations is in the ASG. The any side lists `0.0.0.0/0` for an IPv4 member, `::/0` for an IPv6 member, and both when both are members (in `sourceAddressPrefixes` or `destinationAddressPrefixes`; the singular field shows only the first). The view does not expand an ASG into member IPs. The baseline without ASGs listed none of the three rules. The view also lists one rule collection from an Azure Virtual Network Manager configuration that applies to the test subscription from outside these checks.
+
+| Case | Sent, IPv4 / IPv6 | Response, operation | GET afterwards | Effective view |
+|---|---|---|---|---|
+| 1 | `asg-a` / none | 200, `Succeeded` after 1.2 s | as sent | `asg-a`: `0.0.0.0/0` |
+| 2 | `asg-a` / `asg-a` | 200, `Succeeded` after 7.7 s | as sent | `asg-a`: `0.0.0.0/0`, `::/0` |
+| 3 | none / `asg-a` | 200, `Succeeded` after 7.9 s | as sent | `asg-a`: `::/0` |
+| extra | `asg-a` / `asg-b` | 200, `Succeeded` after 7.9 s | as sent | `asg-a`: `0.0.0.0/0`, `::/0` (IPv6 stale); `asg-b`: `::/0` |
+| 4, azurerm association | the provider's PUT | `terraform apply` exit 0 after 3.9 s | `asg-a` / none | `asg-a`: `0.0.0.0/0`; `asg-b`: `::/0` (stale) |
+
+Azure accepted every combination. `AllIpConfigurationsOnANicMustBelongToTheSameApplicationSecurityGroups` (see above) does not reach across address families: the IPv6 IP configuration may carry no ASG, the same ASGs or other ASGs than the IPv4 one. Whether the rule holds between two IPv6 IP configurations was not checked; `nic-v6` had one. The azurerm association did what its source says ([network_interface.go L90–L139](https://github.com/hashicorp/terraform-provider-azurerm/blob/v5.13.0/internal/services/network/network_interface.go#L90-L139)): it put `asg-a` on the IPv4 IP configuration only and left the IPv6 one as it was. `terraform destroy` removed it again. Writes that touch the IPv6 IP configuration take longer: 5.9 to 7.9 s against 1.2 to 3.4 s for IPv4 alone, over both runs.
+
+The two stale entries came after the reset that took the IPv6 IP configuration out of an ASG. Run 2 timed that. It joined and left `asg-a` with one IP configuration at a time, three rounds per family with the order alternating, and after each `Succeeded` polled the effective view every 2 s (each call took about 3.7 s) for up to 150 s.
+
+| Write | Effective view followed |
+|---|---|
+| IPv4 join | 2 of 3 at the first poll (3.7–3.9 s). The third kept a stale IPv6 entry next to the new IPv4 one for 154 s. |
+| IPv4 leave | 3 of 3 at the first poll (3.7–4.0 s) |
+| IPv6 join | 3 of 3 at the first poll (3.5–3.7 s) |
+| IPv6 leave | 0 of 3: `::/0` stayed in all 27 polls, for 151–152 s |
+
+The GET showed the IPv6 IP configuration without the ASG, but the effective view kept the IPv6 membership until the IPv4 IP configuration left the same ASG: the IPv4 leave of round 2 cleared both entries at the first poll. Run 1 agrees: the reset after the extra case took `asg-a` off the IPv4 IP configuration and cleared the stale IPv6 entry of `asg-a`, but the IPv6 entry of `asg-b`, which the IPv4 IP configuration never held, stayed until the end of the run.
+
+The effective view is the control plane's account of the rules on the network interface. With the ASG on the IPv6 IP configuration it applies the ASG's rules to IPv6 traffic; after an IPv6 leave it goes on applying them. Whether the data plane does the same stays untested. If it does, an IPv6 leave does not take effect within any Settle time.
+
+**Documented in passing.** "While it's possible to create NSG rules for IPv4 and IPv6 within the same NSG, it isn't currently possible to combine an IPv4 subnet with an IPv6 subnet in the same rule when specifying IP prefixes" ([IPv6 for Azure Virtual Network](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/ipv6-overview#limitations), page date 2024-10-16, updated 2026-07-27, retrieved 2026-11-10). This answers NSG/ASG U19: one address family per NSG rule, as the engine writes already. No Microsoft page says anything about ASGs and IPv6: not that one, not the [ASG overview](https://learn.microsoft.com/en-us/azure/virtual-network/application-security-groups) (2025-07-25) and not the [NSG overview](https://learn.microsoft.com/en-us/azure/virtual-network/network-security-groups-overview) (updated 2025-10-23), all retrieved 2026-11-10.
 
 ### Documented: at most 50 IP configurations per ASG on a private endpoint subnet
 
@@ -213,8 +250,9 @@ These are facts for a design decision. The decision itself belongs to its own ti
 - **Subnet NSG swap (T7).** ADR 0018's assumption that one subnet write that swaps the NSG takes effect as a whole held in 60 swaps, on the source and the destination side. Onboarding a subnet whose NSG is shared can keep the swap in one subnet write ([ADR 0003](../adr/0003-adopt-existing-nsgs-in-place.md)). Its lag after `Succeeded` (up to 0.74 s) stays below half the Settle time.
 - **Private endpoint writes (T8).** The data-plane effect came 2 to 131 s before `Succeeded`, and one swap passed through "in both ASGs". The atom model and the Settle time cover private endpoints as decided. Private endpoint writes take 13 s to more than 2 minutes, which lengthens member steps that contain them.
 - **Rights for private endpoint writes (T9).** `nsgfw ASG Writer` as decided in ADR 0014 cannot change the ASGs of a private endpoint whose connection was approved automatically: Azure also checks `…/privateEndpointConnectionsApproval/action` on the linked resource, which belongs to the target service and may sit outside the Environment. Endpoints with manual connections need network rights only. This needs a decision.
-- **ASG members are network interfaces.** Every IP configuration of a network interface must reference the same ASGs. ADR 0018 defines a membership atom as one IP configuration; in Azure it is one network interface, and a write must change all its IP configurations together.
+- **ASG members are network interfaces.** Every IP configuration of a network interface must reference the same ASGs (T10 narrows this to the IPv4 IP configurations). ADR 0018 defines a membership atom as one IP configuration; in Azure it is one network interface, and a write must change all its IP configurations together.
 - **50 members per ASG on private endpoint subnets.** Microsoft documents connection failures above 50 IP configurations per ASG that the NSG of a private endpoint subnet references. The ASG limits that block a Change set ([ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md)) do not include it yet.
+- **Dual-stack network interfaces (T10).** Point 13 of [Grilling: Terraform mode workflow](https://github.com/mfgAkilae/nsgfw/issues/17) stands: Azure accepts the azurerm association on a dual-stack network interface, the association writes the IPv4 IP configurations only, and the IPv6 addresses need the IP fallback. The premise in ADR 0006 and ADR 0018 that every IP configuration must carry the same ASGs holds within IPv4 only, so an ARM-mode membership write could leave the IPv6 IP configurations out as well. An IPv6 leave did not reach the effective view within 150 s in 3 of 3 tries, until the IPv4 IP configuration left the same ASG. Whether ARM mode writes ASGs onto IPv6 IP configurations, and what Adopt does with an ASG that already holds IPv6 IP configurations, needs a decision.
 
 ## T6: MSAL Node with a managed identity as federated credential
 
@@ -253,7 +291,7 @@ These points stay open. The design keeps the default in the right column until a
 | `If-Match` on NSG, subnet and NIC PUTs | ARM U4 | Lost-update check through `resourcechanges` after the Deployment |
 | NSG PUT without `securityRules` | ARM U1 | The tool always sends the full list |
 | 6,000 addresses per rule or per NSG; default rules against the 2,000; port ranges per rule | NSG/ASG U16, U17, U10 | The engine counts conservatively |
-| IPv4 and IPv6 prefixes in one rule; IPv6 IP configurations in ASGs | NSG/ASG U19; ASG grilling | Separate NSG rules per address family; member IPs for IPv6 |
+| Does an ASG on an IPv6 IP configuration match IPv6 traffic, and does an IPv6 leave take effect on the data plane? (T10: Azure accepts the write; the effective view applies the ASG to IPv6 and keeps it after an IPv6 leave) | ASG grilling; T10 | Member IPs for IPv6 |
 | Pod IPs on AKS nodes (Azure CNI without overlay) and the node pool's ASG | ASG grilling | No assumption that pod IPs match |
 | AKS with Azure CNI Overlay under Deny-all rules with Extra prefixes | Review round | Documented outbound Rules; onboarding shows a warning |
 | Deny-all and DNS (168.63.129.16) and IMDS (169.254.169.254) | Special subnets 3 | Documented: not filtered unless a service tag targets them |
@@ -271,4 +309,4 @@ These points stay open. The design keeps the default in the right column until a
 | Terraform: destroy order of an ASG, `azapi_update_resource` on a foreign-managed subnet, plan of `securityRules` | Terraform grilling | One pull request per write step; foreign-IaC evidence before adopt |
 | Flow-log and Traffic Analytics formats: `AclRule`, truncation, `AclGroup`, subnet IDs, field values, double counting, access modes, token, workspace ID, latency, billing, Resource Graph | Flow logs 1–3; Traffic Analytics 1–13 | Tolerant parser; the Flow view shows "—" where data is missing |
 
-Dropped without a test: outbound deny NSG rules in an Application Gateway v2 subnet. Microsoft documents that they must not be created, so such a Zone keeps outbound open (review round).
+Dropped without a test: outbound deny NSG rules in an Application Gateway v2 subnet. Microsoft documents that they must not be created, so such a Zone keeps outbound open (review round). IPv4 and IPv6 prefixes in one NSG rule (NSG/ASG U19): Microsoft documents that this is not possible (see T10), so the engine keeps one address family per NSG rule.

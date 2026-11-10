@@ -1,0 +1,706 @@
+{
+ "check": "T10",
+ "location": "northeurope",
+ "vmSize": "Standard_B1s",
+ "netApi": "2024-05-01",
+ "started": "2026-11-10T14:03:36+00:00",
+ "cases": [
+  {
+   "case": "1 ASG on IPv4 only",
+   "sent": {
+    "ipconfig-v4": [
+     "asg-a"
+    ],
+    "ipconfig-v6": []
+   },
+   "status": 200,
+   "responseSeconds": 0.78,
+   "lro": "Succeeded",
+   "accepted": true,
+   "lroSeconds": 1.21,
+   "after": {
+    "provisioningState": "Succeeded",
+    "ipConfigurations": [
+     {
+      "name": "ipconfig-v4",
+      "version": "IPv4",
+      "privateIPAddress": "10.91.1.10",
+      "primary": true,
+      "applicationSecurityGroups": [
+       "asg-a"
+      ]
+     },
+     {
+      "name": "ipconfig-v6",
+      "version": "IPv6",
+      "privateIPAddress": "fd00:91:0:1::4",
+      "primary": null,
+      "applicationSecurityGroups": []
+     }
+    ]
+   },
+   "effective": {
+    "status": 200,
+    "seconds": 4.0,
+    "value": [
+     {
+      "networkSecurityGroup": "nsg-v6",
+      "association": {
+       "subnet": "dual"
+      },
+      "ruleCount": 8,
+      "rulesUnderTest": [
+       {
+        "name": "securityRules/in-5001-to-asg-a",
+        "protocol": "Tcp",
+        "sourcePortRange": "0-65535",
+        "destinationPortRange": "5001-5001",
+        "sourcePortRanges": [
+         "0-65535"
+        ],
+        "destinationPortRanges": [
+         "5001-5001"
+        ],
+        "sourceAddressPrefix": "0.0.0.0/0",
+        "destinationAddressPrefix": "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a",
+        "sourceAddressPrefixes": [
+         "0.0.0.0/0"
+        ],
+        "destinationAddressPrefixes": [
+         "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a"
+        ],
+        "access": "Allow",
+        "priority": 200,
+        "direction": "Inbound"
+       },
+       {
+        "name": "securityRules/out-5002-from-asg-a",
+        "protocol": "Tcp",
+        "sourcePortRange": "0-65535",
+        "destinationPortRange": "5002-5002",
+        "sourcePortRanges": [
+         "0-65535"
+        ],
+        "destinationPortRanges": [
+         "5002-5002"
+        ],
+        "sourceAddressPrefix": "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a",
+        "destinationAddressPrefix": "0.0.0.0/0",
+        "sourceAddressPrefixes": [
+         "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a"
+        ],
+        "destinationAddressPrefixes": [
+         "0.0.0.0/0"
+        ],
+        "access": "Allow",
+        "priority": 200,
+        "direction": "Outbound"
+       }
+      ],
+      "defaultRulesExpanded": [
+       {
+        "name": "defaultSecurityRules/AllowVnetInBound",
+        "expandedSourceAddressPrefix": null,
+        "expandedDestinationAddressPrefix": null
+       }
+      ]
+     },
+     {
+      "networkSecurityGroup": null,
+      "association": {
+       "networkManager": "<redacted>"
+      },
+      "ruleCount": 1,
+      "rulesUnderTest": [],
+      "defaultRulesExpanded": []
+     }
+    ]
+   }
+  },
+  {
+   "case": "2 ASG on both",
+   "sent": {
+    "ipconfig-v4": [
+     "asg-a"
+    ],
+    "ipconfig-v6": [
+     "asg-a"
+    ]
+   },
+   "status": 200,
+   "responseSeconds": 0.48,
+   "lro": "Succeeded",
+   "accepted": true,
+   "lroSeconds": 7.69,
+   "after": {
+    "provisioningState": "Succeeded",
+    "ipConfigurations": [
+     {
+      "name": "ipconfig-v4",
+      "version": "IPv4",
+      "privateIPAddress": "10.91.1.10",
+      "primary": true,
+      "applicationSecurityGroups": [
+       "asg-a"
+      ]
+     },
+     {
+      "name": "ipconfig-v6",
+      "version": "IPv6",
+      "privateIPAddress": "fd00:91:0:1::4",
+      "primary": null,
+      "applicationSecurityGroups": [
+       "asg-a"
+      ]
+     }
+    ]
+   },
+   "effective": {
+    "status": 200,
+    "seconds": 3.7,
+    "value": [
+     {
+      "networkSecurityGroup": "nsg-v6",
+      "association": {
+       "subnet": "dual"
+      },
+      "ruleCount": 8,
+      "rulesUnderTest": [
+       {
+        "name": "securityRules/in-5001-to-asg-a",
+        "protocol": "Tcp",
+        "sourcePortRange": "0-65535",
+        "destinationPortRange": "5001-5001",
+        "sourcePortRanges": [
+         "0-65535"
+        ],
+        "destinationPortRanges": [
+         "5001-5001"
+        ],
+        "sourceAddressPrefix": "0.0.0.0/0",
+        "destinationAddressPrefix": "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a",
+        "sourceAddressPrefixes": [
+         "0.0.0.0/0",
+         "::/0"
+        ],
+        "destinationAddressPrefixes": [
+         "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a"
+        ],
+        "access": "Allow",
+        "priority": 200,
+        "direction": "Inbound"
+       },
+       {
+        "name": "securityRules/out-5002-from-asg-a",
+        "protocol": "Tcp",
+        "sourcePortRange": "0-65535",
+        "destinationPortRange": "5002-5002",
+        "sourcePortRanges": [
+         "0-65535"
+        ],
+        "destinationPortRanges": [
+         "5002-5002"
+        ],
+        "sourceAddressPrefix": "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a",
+        "destinationAddressPrefix": "0.0.0.0/0",
+        "sourceAddressPrefixes": [
+         "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a"
+        ],
+        "destinationAddressPrefixes": [
+         "0.0.0.0/0",
+         "::/0"
+        ],
+        "access": "Allow",
+        "priority": 200,
+        "direction": "Outbound"
+       }
+      ],
+      "defaultRulesExpanded": [
+       {
+        "name": "defaultSecurityRules/AllowVnetInBound",
+        "expandedSourceAddressPrefix": null,
+        "expandedDestinationAddressPrefix": null
+       }
+      ]
+     },
+     {
+      "networkSecurityGroup": null,
+      "association": {
+       "networkManager": "<redacted>"
+      },
+      "ruleCount": 1,
+      "rulesUnderTest": [],
+      "defaultRulesExpanded": []
+     }
+    ]
+   }
+  },
+  {
+   "case": "3 ASG on IPv6 only",
+   "sent": {
+    "ipconfig-v4": [],
+    "ipconfig-v6": [
+     "asg-a"
+    ]
+   },
+   "status": 200,
+   "responseSeconds": 0.53,
+   "lro": "Succeeded",
+   "accepted": true,
+   "lroSeconds": 7.85,
+   "after": {
+    "provisioningState": "Succeeded",
+    "ipConfigurations": [
+     {
+      "name": "ipconfig-v4",
+      "version": "IPv4",
+      "privateIPAddress": "10.91.1.10",
+      "primary": true,
+      "applicationSecurityGroups": []
+     },
+     {
+      "name": "ipconfig-v6",
+      "version": "IPv6",
+      "privateIPAddress": "fd00:91:0:1::4",
+      "primary": null,
+      "applicationSecurityGroups": [
+       "asg-a"
+      ]
+     }
+    ]
+   },
+   "effective": {
+    "status": 200,
+    "seconds": 3.6,
+    "value": [
+     {
+      "networkSecurityGroup": "nsg-v6",
+      "association": {
+       "subnet": "dual"
+      },
+      "ruleCount": 8,
+      "rulesUnderTest": [
+       {
+        "name": "securityRules/in-5001-to-asg-a",
+        "protocol": "Tcp",
+        "sourcePortRange": "0-65535",
+        "destinationPortRange": "5001-5001",
+        "sourcePortRanges": [
+         "0-65535"
+        ],
+        "destinationPortRanges": [
+         "5001-5001"
+        ],
+        "sourceAddressPrefix": "::/0",
+        "destinationAddressPrefix": "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a",
+        "sourceAddressPrefixes": [
+         "::/0"
+        ],
+        "destinationAddressPrefixes": [
+         "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a"
+        ],
+        "access": "Allow",
+        "priority": 200,
+        "direction": "Inbound"
+       },
+       {
+        "name": "securityRules/out-5002-from-asg-a",
+        "protocol": "Tcp",
+        "sourcePortRange": "0-65535",
+        "destinationPortRange": "5002-5002",
+        "sourcePortRanges": [
+         "0-65535"
+        ],
+        "destinationPortRanges": [
+         "5002-5002"
+        ],
+        "sourceAddressPrefix": "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a",
+        "destinationAddressPrefix": "::/0",
+        "sourceAddressPrefixes": [
+         "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a"
+        ],
+        "destinationAddressPrefixes": [
+         "::/0"
+        ],
+        "access": "Allow",
+        "priority": 200,
+        "direction": "Outbound"
+       }
+      ],
+      "defaultRulesExpanded": [
+       {
+        "name": "defaultSecurityRules/AllowVnetInBound",
+        "expandedSourceAddressPrefix": null,
+        "expandedDestinationAddressPrefix": null
+       }
+      ]
+     },
+     {
+      "networkSecurityGroup": null,
+      "association": {
+       "networkManager": "<redacted>"
+      },
+      "ruleCount": 1,
+      "rulesUnderTest": [],
+      "defaultRulesExpanded": []
+     }
+    ]
+   }
+  },
+  {
+   "case": "extra: different ASGs on IPv4 and IPv6",
+   "sent": {
+    "ipconfig-v4": [
+     "asg-a"
+    ],
+    "ipconfig-v6": [
+     "asg-b"
+    ]
+   },
+   "status": 200,
+   "responseSeconds": 0.53,
+   "lro": "Succeeded",
+   "accepted": true,
+   "lroSeconds": 7.88,
+   "after": {
+    "provisioningState": "Succeeded",
+    "ipConfigurations": [
+     {
+      "name": "ipconfig-v4",
+      "version": "IPv4",
+      "privateIPAddress": "10.91.1.10",
+      "primary": true,
+      "applicationSecurityGroups": [
+       "asg-a"
+      ]
+     },
+     {
+      "name": "ipconfig-v6",
+      "version": "IPv6",
+      "privateIPAddress": "fd00:91:0:1::4",
+      "primary": null,
+      "applicationSecurityGroups": [
+       "asg-b"
+      ]
+     }
+    ]
+   },
+   "effective": {
+    "status": 200,
+    "seconds": 3.7,
+    "value": [
+     {
+      "networkSecurityGroup": "nsg-v6",
+      "association": {
+       "subnet": "dual"
+      },
+      "ruleCount": 9,
+      "rulesUnderTest": [
+       {
+        "name": "securityRules/in-5001-to-asg-a",
+        "protocol": "Tcp",
+        "sourcePortRange": "0-65535",
+        "destinationPortRange": "5001-5001",
+        "sourcePortRanges": [
+         "0-65535"
+        ],
+        "destinationPortRanges": [
+         "5001-5001"
+        ],
+        "sourceAddressPrefix": "0.0.0.0/0",
+        "destinationAddressPrefix": "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a",
+        "sourceAddressPrefixes": [
+         "0.0.0.0/0",
+         "::/0"
+        ],
+        "destinationAddressPrefixes": [
+         "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a"
+        ],
+        "access": "Allow",
+        "priority": 200,
+        "direction": "Inbound"
+       },
+       {
+        "name": "securityRules/in-5003-to-asg-b",
+        "protocol": "Tcp",
+        "sourcePortRange": "0-65535",
+        "destinationPortRange": "5003-5003",
+        "sourcePortRanges": [
+         "0-65535"
+        ],
+        "destinationPortRanges": [
+         "5003-5003"
+        ],
+        "sourceAddressPrefix": "::/0",
+        "destinationAddressPrefix": "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-b",
+        "sourceAddressPrefixes": [
+         "::/0"
+        ],
+        "destinationAddressPrefixes": [
+         "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-b"
+        ],
+        "access": "Allow",
+        "priority": 210,
+        "direction": "Inbound"
+       },
+       {
+        "name": "securityRules/out-5002-from-asg-a",
+        "protocol": "Tcp",
+        "sourcePortRange": "0-65535",
+        "destinationPortRange": "5002-5002",
+        "sourcePortRanges": [
+         "0-65535"
+        ],
+        "destinationPortRanges": [
+         "5002-5002"
+        ],
+        "sourceAddressPrefix": "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a",
+        "destinationAddressPrefix": "0.0.0.0/0",
+        "sourceAddressPrefixes": [
+         "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a"
+        ],
+        "destinationAddressPrefixes": [
+         "0.0.0.0/0",
+         "::/0"
+        ],
+        "access": "Allow",
+        "priority": 200,
+        "direction": "Outbound"
+       }
+      ],
+      "defaultRulesExpanded": [
+       {
+        "name": "defaultSecurityRules/AllowVnetInBound",
+        "expandedSourceAddressPrefix": null,
+        "expandedDestinationAddressPrefix": null
+       }
+      ]
+     },
+     {
+      "networkSecurityGroup": null,
+      "association": {
+       "networkManager": "<redacted>"
+      },
+      "ruleCount": 1,
+      "rulesUnderTest": [],
+      "defaultRulesExpanded": []
+     }
+    ]
+   }
+  },
+  {
+   "case": "4 azurerm association",
+   "steps": [
+    {
+     "cmd": "init -input=false",
+     "exit": 0,
+     "output": "Initializing the backend...\n\nInitializing provider plugins...\n- Reusing version 5.13.0 of hashicorp/azurerm from the dependency lock file\n- Using previously-installed hashicorp/azurerm v5.13.0\n\nTerraform has been successfully initialized!\n"
+    },
+    {
+     "cmd": "apply -auto-approve -input=false",
+     "exit": 0,
+     "output": "\nTerraform used the selected providers to generate the following execution\nplan. Resource actions are indicated with the following symbols:\n  + create\n\nTerraform will perform the following actions:\n\n  # azurerm_network_interface_application_security_group_association.member will be created\n  + resource \"azurerm_network_interface_application_security_group_association\" \"member\" {\n      + application_security_group_id = \"/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a\"\n      + id                            = (known after apply)\n      + network_interface_id          = \"/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/networkInterfaces/nic-v6\"\n    }\n\nPlan: 1 to add, 0 to change, 0 to destroy.\nazurerm_network_interface_application_security_group_association.member: Creating...\nazurerm_network_interface_application_security_group_association.member: Creation complete after 3s [id=/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/networkInterfaces/nic-v6|/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a]\n\nApply complete! Resources: 1 added, 0 changed, 0 destroyed.\n"
+    },
+    {
+     "cmd": "destroy -auto-approve -input=false",
+     "exit": 0,
+     "output": "azurerm_network_interface_application_security_group_association.member: Refreshing state... [id=/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/networkInterfaces/nic-v6|/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a]\n\nTerraform used the selected providers to generate the following execution\nplan. Resource actions are indicated with the following symbols:\n  - destroy\n\nTerraform will perform the following actions:\n\n  # azurerm_network_interface_application_security_group_association.member will be destroyed\n  - resource \"azurerm_network_interface_application_security_group_association\" \"member\" {\n      - application_security_group_id = \"/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a\" -> null\n      - id                            = \"/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/networkInterfaces/nic-v6|/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a\" -> null\n      - network_interface_id          = \"/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/networkInterfaces/nic-v6\" -> null\n    }\n\nPlan: 0 to add, 0 to change, 1 to destroy.\nazurerm_network_interface_application_security_group_association.member: Destroying... [id=/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/networkInterfaces/nic-v6|/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a]\nazurerm_network_interface_application_security_group_association.member: Destruction complete after 3s\n\nDestroy complete! Resources: 1 destroyed.\n"
+    }
+   ],
+   "versions": "{\n  \"format_version\": \"1.0\",\n  \"terraform_version\": \"1.17.1\",\n  \"platform\": \"linux_amd64\",\n  \"provider_selections\": {\n    \"registry.terraform.io/hashicorp/azurerm\": \"5.13.0\"\n  },\n  \"terraform_outdated\": false\n}\n",
+   "applySeconds": 3.9,
+   "accepted": true,
+   "after": {
+    "provisioningState": "Succeeded",
+    "ipConfigurations": [
+     {
+      "name": "ipconfig-v4",
+      "version": "IPv4",
+      "privateIPAddress": "10.91.1.10",
+      "primary": true,
+      "applicationSecurityGroups": [
+       "asg-a"
+      ]
+     },
+     {
+      "name": "ipconfig-v6",
+      "version": "IPv6",
+      "privateIPAddress": "fd00:91:0:1::4",
+      "primary": null,
+      "applicationSecurityGroups": []
+     }
+    ]
+   },
+   "effective": {
+    "status": 200,
+    "seconds": 4.0,
+    "value": [
+     {
+      "networkSecurityGroup": "nsg-v6",
+      "association": {
+       "subnet": "dual"
+      },
+      "ruleCount": 9,
+      "rulesUnderTest": [
+       {
+        "name": "securityRules/in-5001-to-asg-a",
+        "protocol": "Tcp",
+        "sourcePortRange": "0-65535",
+        "destinationPortRange": "5001-5001",
+        "sourcePortRanges": [
+         "0-65535"
+        ],
+        "destinationPortRanges": [
+         "5001-5001"
+        ],
+        "sourceAddressPrefix": "0.0.0.0/0",
+        "destinationAddressPrefix": "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a",
+        "sourceAddressPrefixes": [
+         "0.0.0.0/0"
+        ],
+        "destinationAddressPrefixes": [
+         "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a"
+        ],
+        "access": "Allow",
+        "priority": 200,
+        "direction": "Inbound"
+       },
+       {
+        "name": "securityRules/in-5003-to-asg-b",
+        "protocol": "Tcp",
+        "sourcePortRange": "0-65535",
+        "destinationPortRange": "5003-5003",
+        "sourcePortRanges": [
+         "0-65535"
+        ],
+        "destinationPortRanges": [
+         "5003-5003"
+        ],
+        "sourceAddressPrefix": "::/0",
+        "destinationAddressPrefix": "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-b",
+        "sourceAddressPrefixes": [
+         "::/0"
+        ],
+        "destinationAddressPrefixes": [
+         "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-b"
+        ],
+        "access": "Allow",
+        "priority": 210,
+        "direction": "Inbound"
+       },
+       {
+        "name": "securityRules/out-5002-from-asg-a",
+        "protocol": "Tcp",
+        "sourcePortRange": "0-65535",
+        "destinationPortRange": "5002-5002",
+        "sourcePortRanges": [
+         "0-65535"
+        ],
+        "destinationPortRanges": [
+         "5002-5002"
+        ],
+        "sourceAddressPrefix": "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a",
+        "destinationAddressPrefix": "0.0.0.0/0",
+        "sourceAddressPrefixes": [
+         "/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/applicationSecurityGroups/asg-a"
+        ],
+        "destinationAddressPrefixes": [
+         "0.0.0.0/0"
+        ],
+        "access": "Allow",
+        "priority": 200,
+        "direction": "Outbound"
+       }
+      ],
+      "defaultRulesExpanded": [
+       {
+        "name": "defaultSecurityRules/AllowVnetInBound",
+        "expandedSourceAddressPrefix": null,
+        "expandedDestinationAddressPrefix": null
+       }
+      ]
+     },
+     {
+      "networkSecurityGroup": null,
+      "association": {
+       "networkManager": "<redacted>"
+      },
+      "ruleCount": 1,
+      "rulesUnderTest": [],
+      "defaultRulesExpanded": []
+     }
+    ]
+   },
+   "afterDestroy": {
+    "provisioningState": "Succeeded",
+    "ipConfigurations": [
+     {
+      "name": "ipconfig-v4",
+      "version": "IPv4",
+      "privateIPAddress": "10.91.1.10",
+      "primary": true,
+      "applicationSecurityGroups": []
+     },
+     {
+      "name": "ipconfig-v6",
+      "version": "IPv6",
+      "privateIPAddress": "fd00:91:0:1::4",
+      "primary": null,
+      "applicationSecurityGroups": []
+     }
+    ]
+   }
+  }
+ ],
+ "baseline": {
+  "after": {
+   "provisioningState": "Succeeded",
+   "ipConfigurations": [
+    {
+     "name": "ipconfig-v4",
+     "version": "IPv4",
+     "privateIPAddress": "10.91.1.10",
+     "primary": true,
+     "applicationSecurityGroups": []
+    },
+    {
+     "name": "ipconfig-v6",
+     "version": "IPv6",
+     "privateIPAddress": "fd00:91:0:1::4",
+     "primary": null,
+     "applicationSecurityGroups": []
+    }
+   ]
+  },
+  "effective": {
+   "status": 200,
+   "seconds": 3.7,
+   "value": [
+    {
+     "networkSecurityGroup": "nsg-v6",
+     "association": {
+      "subnet": "dual"
+     },
+     "ruleCount": 6,
+     "rulesUnderTest": [],
+     "defaultRulesExpanded": [
+      {
+       "name": "defaultSecurityRules/AllowVnetInBound",
+       "expandedSourceAddressPrefix": null,
+       "expandedDestinationAddressPrefix": null
+      }
+     ]
+    },
+    {
+     "networkSecurityGroup": null,
+     "association": {
+      "networkManager": "<redacted>"
+     },
+     "ruleCount": 1,
+     "rulesUnderTest": [],
+     "defaultRulesExpanded": []
+    }
+   ]
+  }
+ }
+}
