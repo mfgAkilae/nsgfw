@@ -84,7 +84,7 @@ Group memberships are resolved through Graph at sign-in and every 15 minutes per
 
 ### The Translation engine boundary
 
-`packages/engine` is pure. The same inputs give the same outputs, and it does no I/O. It runs wherever the server needs it: for the Preview, at validation, and when a Deployment plans its writes.
+`packages/engine` is pure. The same inputs give the same outputs, and it does no I/O. It runs wherever the server needs it: for the Preview, at validation, and when a Deployment plans its writes. The algorithm, step by step and with worked examples, is in [Translation engine](translation-engine.md).
 
 In:
 
@@ -357,7 +357,7 @@ Terraform mode ([ADR 0010](../adr/0010-terraform-mode-data-contract-and-azure-ob
 - Azure observation decides success. After the merge the tool reads every resource; a match updates the Deployed state. No match within the apply timeout means "merged, not applied".
 - The tool never reads Terraform state, never runs Terraform and writes nothing to Azure.
 
-Default HCL, rough shape of the two rules every replacement must keep (one resource holds an NSG's complete rule list; the subnet's NSG is set in one subnet write), with the `locks` correction from [Grilling: Review round on placement, egress posture and MVP shape][t27]:
+Default HCL, rough shape of the three rules every replacement must keep (one resource holds an NSG's complete rule list; the subnet's NSG is set in one subnet write; the NSG resource depends on the Managed ASG resources), with the `locks` correction from [Grilling: Review round on placement, egress posture and MVP shape][t27]:
 
 ```hcl
 locals {
@@ -377,6 +377,9 @@ resource "azapi_resource" "nsg" {
       flushConnection = each.value.flushConnection
     }
   }
+  # The contract names ASGs by resource ID, so Terraform needs this to create a
+  # Managed ASG before an NSG rule references it, and to destroy it only after.
+  depends_on = [azurerm_application_security_group.asg]
 }
 
 resource "azapi_update_resource" "subnet_nsg" {
