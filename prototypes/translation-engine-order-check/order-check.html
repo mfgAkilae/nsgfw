@@ -259,7 +259,8 @@ var Engine = (function () {
     return { trials:trials, changeSetsThatOpen:hits, versionsWithGaps:gapVersions, example:example };
   }
   return { POINTS:POINTS, PT_LABEL:PT_LABEL, ZONES:ZONES, PORTS:PORTS, OBJ:OBJ, FLOWS:FLOWS, translate:translate, evalFlow:evalFlow,
-           stateFor:stateFor, checkMixes:checkMixes, dominanceGaps:dominanceGaps, randomCheck:randomCheck, allMixes:allMixes, clone:clone };
+           stateFor:stateFor, checkMixes:checkMixes, dominanceGaps:dominanceGaps, randomCheck:randomCheck, allMixes:allMixes, clone:clone,
+           sample:function (f, trials, seed) { var r = rng(seed), out = []; for (var t = 0; t < trials; t++) { var v = genVersion(r, f); out.push([v, mutate(r, v, f)]); } return out; } };
 })();
 if (typeof module !== 'undefined') module.exports = Engine;
 </script>
