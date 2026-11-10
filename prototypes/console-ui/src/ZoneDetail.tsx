@@ -228,7 +228,7 @@ export function ZoneSettings({ z, here, onNewRule, onRule, onAddRule }: { z: Zon
     if (extra.includes(p)) return { level: 'red', text: 'Already an Extra prefix of this Zone.' };
     if (overlaps(p, z.prefix)) return { level: 'red', text: 'Already part of the subnet.' };
     const sub = zones.find(x => x.id !== z.id && overlaps(p, x.prefix)); const shared = zones.filter(x => x.id !== z.id && x.extra?.includes(p));
-    if (sub) return { level: 'amber', text: `Overlaps the subnet of Zone ${sub.name}. Rules for ${sub.name} would also land on this Zone.` };
+    if (sub) return { level: 'amber', text: `Overlaps the subnet of Zone ${sub.name}, for example a load balancer frontend there. Address objects that overlap it then cover both Zones, and the Intra-zone default of this Zone counts these addresses as its own.` };
     if (shared.length) return { level: 'info', text: `Also an Extra prefix of ${shared.length} other ${shared.length === 1 ? 'Zone' : 'Zones'}. Allowed, but a Rule between these Zones also allows each Zone's own copy of the range.` };
     return { level: 'ok', text: 'Objects that overlap this prefix will cover this Zone. The Preview lists the Rules that then land here.' }; })();
   const setExtra = (next: string[]) => { const orig = remember(z); z.extra = next.length ? next : undefined;

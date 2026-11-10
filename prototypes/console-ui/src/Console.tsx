@@ -65,7 +65,11 @@ export default function Console() {
   const newRuleFrom = (init: Partial<Rule>) => { const last = s.rules[s.rules.length - 1]; const id = s.addRule(last?.id, undefined, init); setFresh(id); setZtab('rules'); setTimeout(() => { grid.current?.reveal(id); openRule(id); }, 120); };
   const openObject = (id: string) => { setObjId(id); setDock(d => ({ ...d, open: true, tab: 'obj' })); };
   // Prototype deep links (issue 35): ?zone=z0042-web&dir=out&ztab=flows|settings&bands=avnm,nic, ?page=zones|objects|sets
-  useEffect(() => { const p = new URLSearchParams(location.search); const zid = p.get('zone'); const pg = p.get('page'); const zt = p.get('ztab'); const b = p.get('bands');
+  // The same views as #names, for the published copy, which passes only a plain hash.
+  const HASH: Record<string, string> = { 'zone-rules': 'zone=z0042-web&bands=avnm,nic', 'zone-rules-out': 'zone=z0042-web&dir=out&bands=avnm,nic', 'zone-flows': 'zone=z0042-web&ztab=flows',
+    'zone-flows-out': 'zone=z0042-web&dir=out&ztab=flows', 'flows-no-access': 'zone=z0700-web&ztab=flows', 'flows-no-data': 'zone=z0950-web&ztab=flows', 'zone-settings': 'zone=z0042-web&ztab=settings',
+    'objects': 'page=objects', 'external-asg': 'zone=z0042-web&obj=x1', 'onboard': 'onboard=c903', 'not-onboardable': 'onboard=c901' };
+  useEffect(() => { const p = new URLSearchParams(HASH[location.hash.slice(1)] ?? location.search); const zid = p.get('zone'); const pg = p.get('page'); const zt = p.get('ztab'); const b = p.get('bands');
     if (zid && zoneById.has(zid)) { openZone(zid); if (p.get('dir') === 'out') setLens({ zid, dir: 'out' }); if (zt === 'flows' || zt === 'settings') setTimeout(() => setZtab(zt), 0); if (b) setTimeout(() => setOpenBands(new Set(b.split(',').map(x => `sys-${x}`))), 0); }
     if (pg === 'zones' || pg === 'objects' || pg === 'sets') setPage(pg);
     const oc = candidates.find(c => c.id === p.get('onboard')); if (oc) { setPage('zones'); setOnb(oc); }
