@@ -39,7 +39,7 @@ A named single IP, CIDR range, Azure service tag, subnet that is not a Zone, VNe
 _Avoid_: host, network object
 
 **VNet binding**:
-An optional limit on a single IP or CIDR range Address object: it then covers only Zones in the named VNets. It keeps an address apart from the same address in an unconnected VNet.
+An optional limit on a single IP or CIDR range Address object: it then covers only Zones in the named VNets. It keeps an address apart from the same address in an unconnected VNet. Import sets one on a new object whose prefix also matches Zones in VNets that the onboarded Zone is not connected to: the Zone's VNet and its peered VNets.
 _Avoid_: VNet scope (Scope is reserved for access), object scope
 
 **ASG object**:
@@ -112,7 +112,7 @@ A Zone setting that says who decides outbound traffic to the Internal address sp
 _Avoid_: outbound mode, egress policy
 
 **Internal address space**:
-The instance-wide list of prefixes that count as internal, by default the private IPv4 ranges. A Zone with the destination-enforced Egress posture lets outbound traffic to it pass.
+The instance-wide list of prefixes that count as internal, by default the private IPv4 ranges and the IPv6 unique local addresses (fc00::/7). A Zone with the destination-enforced Egress posture lets outbound traffic to it pass. It changes through a Change set.
 _Avoid_: VirtualNetwork (the service tag), private space
 
 **Inherited defaults**:
@@ -160,7 +160,7 @@ Moving an open Change set onto the latest Version after another Commit. It confl
 _Avoid_: merge, sync, update
 
 **Affected Zones**:
-The Zones a Change set touches for Approval. For every Rule it changes directly or through a changed Object or Zone, before and after the change, they are the Coverage of the destination, and from the Coverage of the source the Zones with a strict Egress posture, or all of them when the destination reaches outside Zones. To these come the Zones of added or removed ASG members and the Zones it onboards, removes or changes.
+The Zones a Change set touches for Approval. For every Rule it changes directly or through a changed Object or Zone, before and after the change, they are the Coverage of the destination, and from the Coverage of the source the Zones with a strict Egress posture, or all of them when the destination reaches outside Zones. To these come the Zones of added or removed ASG members and the Zones it onboards, removes or changes. A change of a Zone's Egress posture or Inherited defaults affects only that Zone, and a change of the Internal address space affects every destination-enforced Zone.
 _Avoid_: blast radius, impacted NSGs
 
 **Preview**:
@@ -228,7 +228,7 @@ A flag on an imported Rule where the NSG rule did not map cleanly, naming the so
 A difference between Azure and the Deployed state, caused outside the tool, for example in the portal, the CLI or other IaC. A resource that a Deployment has not reached yet is pending, not drifted. Drift is resolved by Adopt or Overwrite.
 
 **Adopt**:
-Resolving Drift, or another change in Azure such as a new subnet prefix, by changing the Rule base to match Azure, through a Change set that the tool prepares. For a changed ASG member, the tool adopts on its own what only closes traffic, and every change of an Object that an admin set to adopt automatically.
+Resolving Drift, or another change in Azure such as a new subnet prefix, by changing the Rule base to match Azure, through a Change set that the tool prepares. The tool adopts on its own what only closes traffic, a deleted ASG member, a changed IP of an ASG member, and every change of an Object that an admin set to adopt automatically.
 _Avoid_: accept, import, adopt in place (taking over a resource)
 
 **Overwrite**:

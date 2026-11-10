@@ -1,6 +1,6 @@
 # Zones carry Extra prefixes, and IP objects can be bound to VNets
 
-Status: accepted (2026-11-09, [Grilling: Review round on placement, egress posture and MVP shape](https://github.com/mfgAkilae/nsgfw/issues/27)). Amends [ADR 0004](0004-place-rules-by-coverage.md).
+Status: accepted (2026-11-09, [Grilling: Review round on placement, egress posture and MVP shape](https://github.com/mfgAkilae/nsgfw/issues/27)). Amends [ADR 0004](0004-place-rules-by-coverage.md). Amended on 2026-11-10 by [Prototype: Translation engine worked examples](https://github.com/mfgAkilae/nsgfw/issues/22): how Import uses VNet bindings.
 
 [ADR 0004](0004-place-rules-by-coverage.md) derives Coverage from prefixes: an IP or CIDR range covers every Zone whose subnet prefixes it overlaps. Two assumptions behind that do not hold.
 
@@ -25,4 +25,5 @@ We decided:
 - Coverage now depends on what administrators declare, not only on Azure. A wrong Extra prefix places Rules on a Zone that never sees the traffic. A missing one leaves the traffic to the Deny-all rules. The onboarding warning for a subnet with AKS nodes asks for the pod range. Whether the tool reads it from the cluster needs one more read action and is open.
 - An object without a VNet binding behaves as before and covers every Zone its prefix overlaps. The object editor shows the Coverage, so an administrator sees Zones in VNets they did not mean.
 - The two new kinds of subnet are detected with reads the Reader already has: `enableIPForwarding` on network interfaces, and the managed resource group or the writer of the NSG.
-- How Import uses VNet bindings for prefixes that match Zones in several unconnected VNets is open for [Prototype: Translation engine worked examples](https://github.com/mfgAkilae/nsgfw/issues/22).
+- Import binds a new single IP or CIDR range object to the onboarded Zone's VNet and its peered VNets when the prefix also matches Zones in VNets that the Zone is not connected to ([ADR 0011](0011-import-preserves-behaviour.md), decided 2026-11-10 after the worked examples).
+- The same Extra prefix on two Zones also matches the destination's own addresses: in the worked examples, a Rule from one AKS cluster's Zone to another's allowed the destination cluster's own pods too, because both carry 10.244.0.0/16 and pod traffic leaves a cluster through the node IPs.

@@ -74,7 +74,7 @@ Jobs go through a durable queue in PostgreSQL (pg-boss behind the tool's own job
 | Permission check | at Environment onboarding, at Zone onboarding, daily, before the first write of every Deployment | [ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) |
 | Rule expiry | notice to the owner 14 days ahead; at expiry the tool's own Commit disables the allow Rule | [Grilling: Change sets, concurrency and approval][t15] |
 | Prepared Change sets | regenerated when Azure changes: Coverage changes, stale member IPs, External ASG object members, expired deny Rules | [Grilling: Change sets, concurrency and approval][t15] |
-| Member IP removal | removes the IP of a deleted or changed ASG member from allow Rules on IP-fallback NSGs, without Approval | [Grilling: Review round on placement, egress posture and MVP shape][t27] |
+| Member IP adoption | removes a deleted ASG member from its object, deny Rules included, and adopts a changed member IP, on IP-fallback NSGs and without Approval | [Grilling: Review round on placement, egress posture and MVP shape][t27], [Prototype: Translation engine worked examples][t22] |
 | Lost-update check | after membership writes, Resource Graph `resourcechanges` for another writer between GET and PUT, unless `If-Match` works | [Grilling: Deployment execution and failure handling][t16] |
 | Audit chain verify | reports a broken hash chain | [Grilling: Access, roles and audit][t19] |
 | Flow data | aggregated, cached queries against the Environment's workspace for the Flow view and hits | [Research: Traffic Analytics access for the Flow view and hits][t28] |
@@ -498,6 +498,7 @@ Questions this draft found. Two were settled in [Prototype: Architecture proposa
 [t19]: https://github.com/mfgAkilae/nsgfw/issues/19
 [t20]: https://github.com/mfgAkilae/nsgfw/issues/20
 [t21]: https://github.com/mfgAkilae/nsgfw/issues/21
+[t22]: https://github.com/mfgAkilae/nsgfw/issues/22
 [t24]: https://github.com/mfgAkilae/nsgfw/issues/24
 [t26]: https://github.com/mfgAkilae/nsgfw/issues/26
 [t27]: https://github.com/mfgAkilae/nsgfw/issues/27
