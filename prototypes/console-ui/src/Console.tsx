@@ -7,11 +7,11 @@ import { Add16Regular, Search16Regular, Dismiss16Regular, PanelRight20Regular, T
   Checkmark12Filled, Dismiss12Filled, Flash16Regular, ChevronDown12Regular, TextLineSpacing20Regular, LockClosed16Regular, Warning16Filled, ShieldError16Filled, PeopleSwap16Regular, LayerDiagonal16Regular } from '@fluentui/react-icons';
 import { RuleGrid, RuleGridHandle, FilterKey, countFilters, systemTop, systemBottom, SysRow, compact } from './RuleGrid';
 import { ZoneGrid, Bar, LIMITS, EgressBadge, Flags } from './ZoneGrid';
-import { ObjectPicker } from './ObjectPicker';
 import { Glyph } from './Glyph';
-import { ChangesList, PreviewView, WriteOrderView, ApprovalView, PolicyView, ChangeSetList, InboxButton, MoveDialog, EmergencyDialog, usePreview, useApproval } from './ChangeViews';
+import { ChangesList, PreviewView, WriteOrderView, ApprovalView, PolicyView, InboxButton, MoveDialog, EmergencyDialog, usePreview, useApproval } from './ChangeViews';
 import { Brand, useDebounced, reportReady } from './bits';
 import { ProtoButton } from './Proto';
+import { ObjectLibrary, ChangeSetsPage, Track } from './Pages';
 import { useStore, placement, cost, alsoChanged } from './store';
 import { zones, zoneById, envs, ref, svcById } from './data';
 import { useT } from './i18n';
@@ -29,7 +29,7 @@ export default function Console() {
   const [dense, setDense] = useState(false); const [bands, setBands] = useState(true);
   const [sel, setSel] = useState<string[]>([]); const [focused, setFocused] = useState<string | null>(null);
   const [dock, setDock] = useState<{ open: boolean; tab: 'rule' | 'cs'; cs: CsTab; auto: boolean }>({ open: false, tab: 'rule', cs: 'preview', auto: true });
-  const [palette, setPalette] = useState<false | 'all' | 'zone'>(false); const [moveIds, setMoveIds] = useState<string[] | null>(null); const [objSel, setObjSel] = useState<string[]>([]);
+  const [palette, setPalette] = useState<false | 'all' | 'zone'>(false); const [moveIds, setMoveIds] = useState<string[] | null>(null);
   const grid = useRef<RuleGridHandle>(null); const search = useRef<HTMLInputElement>(null);
 
   const z = lens ? zoneById.get(lens.zid)! : null;
@@ -138,8 +138,8 @@ export default function Console() {
             </>}
 
             {page === 'zones' && <><header className="phead"><h1>{t('Zones')}</h1><span className="sub">{t('Every Managed NSG against its Azure limits. Click a Zone to see the Rules that land on it.')}</span></header><ZoneGrid onOpen={x => openZone(x.id)} /></>}
-            {page === 'objects' && <><header className="phead"><h1>{t('Objects')}</h1><span className="sub">{t('Zones, addresses, Azure service tags, ASG objects and groups.')}</span></header><div className="sheet pad"><ObjectPicker value={objSel} onChange={setObjSel} mode="addr" tall /></div></>}
-            {page === 'sets' && <><header className="phead"><h1>{t('Change sets')}</h1></header><div className="sheet pad" style={{ maxWidth: 760, flex: 'none' }}><ChangeSetList /></div></>}
+            {page === 'objects' && <><header className="phead"><h1>{t('Objects')}</h1><span className="sub">{t('Every object and where it is used.')}</span></header><ObjectLibrary onZone={openZone} onShowRules={name => { setPage('rules'); setLens(null); setFilter('all'); setQ(name); }} /></>}
+            {page === 'sets' && <><header className="phead"><h1>{t('Change sets')}</h1><span className="sub">{t('What waits for you, and where every Change set stands.')}</span></header><ChangeSetsPage onFilter={k => { setPage('rules'); setLens(null); setFilter(k); }} onReview={() => { setPage('rules'); openDock('cs', 'preview'); }} /></>}
           </section>
 
           {dock.open && (
@@ -179,7 +179,7 @@ function CommitBar({ onOpen }: { onOpen: (tab: CsTab) => void }) {
   return (
     <footer className={`cbar ${pv.unorderable || deny ? 'blocked' : ''}`}>
       <b>CHG-5120</b>
-      <ol className="track" aria-label="Change set progress">{['Edit', 'Submit', 'Approval', 'Commit'].map((l, i) => { const idx = ap.eff === 'Approved' ? 3 : s.state === 'Submitted' ? 2 : 0; return <li key={l} className={i < idx ? 'done' : i === idx ? 'on' : ''}><i>{i < idx ? <Checkmark12Filled /> : i + 1}</i><span>{t(l)}</span></li>; })}</ol>
+      <Track at={ap.eff === 'Approved' ? 3 : s.state === 'Submitted' ? 2 : 0} />
       <button onClick={() => onOpen('changes')}><b>{s.edits.length}</b>{t('edits')}</button>
       <button onClick={() => onOpen('preview')}><b>{pv.nsgs.length}</b>{t('Managed NSGs change')}</button>
       <button onClick={() => onOpen('order')} className={pv.unorderable ? 'bad' : ''}>{pv.unorderable ? <><Warning16Filled />{t('Cannot be ordered')}</> : <><b>{Math.max(1, pv.steps.length)}</b>{t(pv.steps.length > 1 ? 'write steps' : 'write step')}</>}</button>
@@ -204,10 +204,10 @@ function Inspector({ id, onMoveTo, onZone }: { id: string | null; onMoveTo: (ids
   if (!r) return <div className="empty"><b>{t('No Rule selected')}</b><p>{t('Click a Rule to see its objects in full and what it becomes in Azure.')}</p></div>;
   const pl = placement(r); const c = cost(r); const also = alsoChanged.get(r.id); const del = s.status.get(r.id)?.deleted;
   const side = (ids: string[], svc?: boolean) => ids.map(x => { const o = svc ? { name: svcById.get(x)?.name ?? x, kind: 'svc' as const, value: svcById.get(x)?.value ?? '', cov: [] as string[] } : ref(x); return (
-    <div key={x} className={`orow t-${o.kind}`}><Glyph kind={o.kind} /><b>{o.name}</b><span className="mono">{o.value}</span>
+    <div key={x} className={`orow t-${o.kind}`}><Glyph kind={o.kind} /><b>{o.name}</b><span className="mono">{o.kind === 'vnet' || o.kind === 'group' ? '' : o.value}</span>
       {!svc && (o.kind === 'zone' ? <a className="link" onClick={() => onZone(x.slice(5))}>{t('open Zone')}</a> : <span className="cov">{o.cov.length ? `${o.cov.length} ${t(o.cov.length === 1 ? 'Zone' : 'Zones')}` : t('outside every Zone')}</span>)}</div>); });
-  const nsg = (zid: string, dir: string) => <div key={zid + dir} className="nrow"><span className={`dir ${dir}`}>{t(dir === 'in' ? 'Inbound' : 'Outbound')}</span><span className="mono">{zoneById.get(zid)!.nsg}</span></div>;
-  const whyOut = !pl.src.length ? null : r.action === 'deny' ? 'Deny Rules land on both sides.' : pl.dst.length ? 'Outbound too, where the source Zone has a strict Egress posture.' : 'Outbound on the source Zones, because the destination lies outside every Zone.';
+  const srcCov = [...new Set(r.src.flatMap(x => ref(x).cov))];
+  const whyOut = !pl.src.length ? null : r.action === 'deny' ? 'Deny Rules land on both sides.' : pl.dst.length ? 'These Zones have a strict Egress posture.' : 'The destination lies outside every Zone, so the source side decides.';
   return (
     <div className="insp">
       <div className="insp-h"><span className="no">{s.numbers.get(r.id) ?? '—'}</span><h2>{r.name}</h2></div>
@@ -222,9 +222,17 @@ function Inspector({ id, onMoveTo, onZone }: { id: string | null; onMoveTo: (ids
 
       <h3>{t('In Azure')}</h3>
       <p className="lead">{c.nsgRules ? <><b>{c.nsgRules} {t(c.nsgRules === 1 ? 'NSG rule' : 'NSG rules')}</b> {t('on')} <b>{c.nsgs} {t(c.nsgs === 1 ? 'Managed NSG' : 'Managed NSGs')}</b></> : t('No NSG rule: neither side covers a Zone.')}</p>
-      {pl.dst.slice(0, 4).map(zid => nsg(zid, 'in'))}{pl.src.slice(0, 4).map(zid => nsg(zid, 'out'))}
-      {pl.dst.length + pl.src.length > 8 && <p className="muted">{pl.dst.length + pl.src.length - Math.min(4, pl.dst.length) - Math.min(4, pl.src.length)} {t('more NSGs')}</p>}
-      {whyOut && <p className="muted">{whyOut}</p>}
+      <div className="landing">
+        <div className={`side ${pl.src.length ? 'writes' : ''}`}><span className="lbl">{t('Source side')}</span>
+          <b>{!srcCov.length ? t('outside every Zone') : `${srcCov.length} ${t(srcCov.length === 1 ? 'Zone' : 'Zones')}`}</b>
+          <span className="verdict">{!srcCov.length ? t('Nothing to write.') : !pl.src.length ? t('No NSG rule here. Outbound is open, the destination decides.') : `${t('Outbound NSG rule on')} ${pl.src.length} ${t('of')} ${srcCov.length}. ${t(whyOut ?? '')}`}</span>
+          {pl.src.slice(0, 3).map(zid => <span key={zid} className="mono">{zoneById.get(zid)!.nsg}</span>)}{pl.src.length > 3 && <span className="muted">{pl.src.length - 3} {t('more')}</span>}</div>
+        <ArrowRight12Filled className="flow" />
+        <div className={`side ${pl.dst.length ? 'writes' : ''}`}><span className="lbl">{t('Destination side')}</span>
+          <b>{!pl.dst.length ? t('outside every Zone') : `${pl.dst.length} ${t(pl.dst.length === 1 ? 'Zone' : 'Zones')}`}</b>
+          <span className="verdict">{pl.dst.length ? t('Inbound NSG rule on each. This side decides.') : t('Nothing to write.')}</span>
+          {pl.dst.slice(0, 3).map(zid => <span key={zid} className="mono">{zoneById.get(zid)!.nsg}</span>)}{pl.dst.length > 3 && <span className="muted">{pl.dst.length - 3} {t('more')}</span>}</div>
+      </div>
 
       {(r.policy || r.importNote || r.layerWarn || also) && <><h3>{t('Needs attention')}</h3>
         {r.policy && <div className="note red"><ShieldError16Filled />{r.policy}</div>}

@@ -23,9 +23,14 @@ export const EgressBadge = ({ e }: { e: Zone['egress'] }) => { const { t } = use
 
 export function ZoneGrid({ onOpen }: { onOpen?: (z: Zone) => void }) {
   const { t, lang } = useT();
-  const [tab, setTab] = useState<'zones' | 'cand' | 'flag'>('zones');
-  const [q, setQ] = useState('');
-  const flagged = useMemo(() => zones.filter(z => z.flags.length), []);
+  const [tab, setTab] = useState<'zones' | 'cand'>('zones');
+  const [q, setQ] = useState(''); const [zf, setZf] = useState('all');
+  const zfilters = useMemo(() => { const f: [string, string, string, (z: Zone) => boolean][] = [
+    ['all', 'All', '', () => true], ['flagged', 'Flagged', 'c-deny', z => z.flags.length > 0], ['limit', 'Near a limit', 'c-expiring', z => z.flags.includes('limit')], ['drift', 'Drift', 'c-deny', z => z.flags.includes('drift')],
+    ['policy', 'Policy finding', 'c-findings', z => z.flags.includes('policy')], ['perm', 'Missing permission', 'c-findings', z => z.flags.includes('perm')], ['import', 'Import notes', 'c-expiring', z => z.flags.includes('import')],
+    ['strict', 'Strict egress', 'c-disabled', z => z.egress === 'strict'], ['inherited', 'Inherited defaults', 'c-disabled', z => z.inherited]];
+    return f.map(([k, label, cls, fn]) => ({ k, label, cls, fn, n: zones.filter(fn).length })); }, []);
+  const shown = useMemo(() => (zf === 'all' ? zones : zones.filter(zfilters.find(x => x.k === zf)!.fn)), [zf, zfilters]);
   const subUse = useMemo(() => { const m = new Map<string, number>(); zones.forEach(z => m.set(`${z.sub} · ${z.region}`, (m.get(`${z.sub} · ${z.region}`) ?? 0) + 1)); return [...m].sort((a, b) => b[1] - a[1])[0]; }, []);
   const zcols = useMemo<ColDef<Zone>[]>(() => [
     { field: 'name', headerName: t('Zone'), width: 180, pinned: 'left', cellRenderer: (x: ICellRendererParams<Zone>) => <a className="link" style={{ fontWeight: 600 }} onClick={() => onOpen?.(x.data!)}>{x.value}</a> },
@@ -54,16 +59,16 @@ export function ZoneGrid({ onOpen }: { onOpen?: (z: Zone) => void }) {
         <div className="seg2" role="tablist">
           <button className={tab === 'zones' ? 'on' : ''} onClick={() => setTab('zones')}>{t('Zones')} {zones.length.toLocaleString()}</button>
           <button className={tab === 'cand' ? 'on' : ''} onClick={() => setTab('cand')}>{t('Candidates')} {candidates.length}</button>
-          <button className={tab === 'flag' ? 'on' : ''} onClick={() => setTab('flag')}>{t('Flagged')} {flagged.length}</button>
         </div>
-        <Input contentBefore={<Search16Regular />} placeholder={t('Search Zones…')} value={q} onChange={(_, d) => setQ(d.value)} style={{ width: 280 }} />
+        <Input className="search" contentBefore={<Search16Regular />} placeholder={t('Search Zones…')} value={q} onChange={(_, d) => setQ(d.value)} />
         <span className="sp" />
         <span className="muted">{t('Highest use per subscription and region')}: NSGs <Bar v={subUse[1]} max={LIMITS.nsgPerSubRegion} /> ASGs <Bar v={212} max={LIMITS.asgPerSubRegion} /></span>
       </div>
+      {tab === 'zones' && <div className="chipbar">{zfilters.map(f => <button key={f.k} className={`chip ${f.cls} ${zf === f.k ? 'on' : ''}`} aria-pressed={zf === f.k} onClick={() => setZf(f.k)}>{t(f.label)}<i>{f.n.toLocaleString()}</i></button>)}</div>}
       <div className="sheet"><div className="gridbox">
         {tab === 'cand'
-          ? <AgGridReact theme={gridTheme} rowData={candidates} columnDefs={ccols} quickFilterText={q} rowHeight={40} />
-          : <AgGridReact<Zone> theme={gridTheme} rowData={tab === 'flag' ? flagged : zones} columnDefs={zcols} quickFilterText={q} getRowId={x => x.data.id} rowHeight={40} />}
+          ? <AgGridReact theme={gridTheme} containerStyle={{ flex: 1, minWidth: 0, height: '100%' }} rowData={candidates} columnDefs={ccols} quickFilterText={q} rowHeight={42} />
+          : <AgGridReact<Zone> theme={gridTheme} containerStyle={{ flex: 1, minWidth: 0, height: '100%' }} rowData={shown} columnDefs={zcols} quickFilterText={q} getRowId={x => x.data.id} rowHeight={42} />}
       </div></div>
     </>
   );

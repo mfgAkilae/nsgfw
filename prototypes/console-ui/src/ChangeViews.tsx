@@ -71,25 +71,22 @@ export function PreviewView({ pv }: { pv: Preview }) {
 
 export function WriteOrderView({ pv }: { pv: Preview }) {
   const { t } = useT();
+  const Node = ({ nsg, role }: { nsg: string; role: 'closes' | 'opens' }) => <div className={`wnode ${role}`}><span>{t(role === 'closes' ? 'closes the flow' : 'opens the flow')}</span><b className="mono">{nsg}</b></div>;
   if (pv.unorderable) return (
-    <MessageBar intent="error" layout="multiline"><MessageBarBody><MessageBarTitle>{t('This Change set cannot be ordered')}</MessageBarTitle>
-      <div>{t('Crossing flows')}:</div><ul>{pv.crossing.map((c, i) => <li key={i}><b>{c.flow}</b>: closes on <span className="mono">{c.closes}</span>, opens on <span className="mono">{c.opens}</span></li>)}</ul>
-      <div>{t('Split it into two Change sets, one per direction of the flow.')}</div></MessageBarBody></MessageBar>
+    <div>
+      <MessageBar intent="error" layout="multiline"><MessageBarBody><MessageBarTitle>{t('This Change set cannot be ordered')}</MessageBarTitle>{t('Two Crossing flows need opposite orders.')} {t('Split it into two Change sets, one per direction of the flow.')}</MessageBarBody></MessageBar>
+      {pv.crossing.map((c, i) => <div key={i} className="wflow bad"><div className="wf-h">{c.flow}</div><div className="wf-d"><Node nsg={c.closes} role="closes" /><span className="wf-a">{t('before')}</span><Node nsg={c.opens} role="opens" /></div></div>)}
+    </div>
   );
-  if (!pv.steps.length || !pv.steps[0].length) return <p className="muted">{t('No edits yet. Edit a cell, drag a Rule or use the toolbar.')}</p>;
+  const all = pv.steps.flat(); if (!all.length) return <p className="muted">{t('No edits yet. Edit a cell, drag a Rule or use the toolbar.')}</p>;
+  const inFlow = new Set(pv.crossing.flatMap(c => [c.closes, c.opens])); const free = all.filter(w => !inFlow.has(w.nsg));
   return (
     <div>
-      <p className="muted" style={{ marginTop: 0 }}>{pv.crossing.length ? `${pv.crossing.length} ${t('Crossing flows')}: the NSG that closes a flow is written before the NSG that opens it.` : 'No Crossing flows: every write can go in any order.'}</p>
-      <div className="steps">
-        {pv.steps.map((step, i) => (
-          <div key={i} className="stepx"><span className="n">{i + 1}</span>
-            <div className="h">{step.length} NSGs{i === 0 && pv.steps.length > 1 ? ' first' : i > 0 ? ' after that' : ''}</div>
-            {step.slice(0, 12).map(w => <div key={w.nsg} className="w"><span className="mono">{w.nsg}</span><span className="why">{w.why}</span>
-              {w.waitsFor && <div className="wait">{t('waits for')} <span className="mono">{w.waitsFor}</span>{w.holdsBack ? `, ${w.holdsBack}` : ''}</div>}</div>)}
-            {step.length > 12 && <div className="muted" style={{ paddingTop: 4 }}>{step.length - 12} more</div>}
-          </div>
-        ))}
-      </div>
+      <p className="muted" style={{ marginTop: 0, lineHeight: 1.5 }}>{pv.crossing.length ? t('The NSG that closes a Crossing flow is written before the NSG that opens it, so no traffic opens that both Versions deny.') : t('No Crossing flows: every write can go in any order.')}</p>
+      {pv.crossing.map((c, i) => <div key={i} className="wflow"><div className="wf-h">{c.flow}</div><div className="wf-d"><Node nsg={c.closes} role="closes" /><span className="wf-a">{t('then')}</span><Node nsg={c.opens} role="opens" /></div>
+        <div className="muted">{t('The second NSG waits as a whole, also with its other changes.')}</div></div>)}
+      {free.length > 0 && <details className="nsg" open={!pv.crossing.length}><summary><span className="sum-main"><b>{free.length} NSGs</b><span className="muted">{t('in any order')}</span></span><span /></summary>
+        {free.slice(0, 14).map(w => <div key={w.nsg} className="w"><span className="mono">{w.nsg}</span></div>)}{free.length > 14 && <p className="muted">{free.length - 14} {t('more')}</p>}</details>}
     </div>
   );
 }

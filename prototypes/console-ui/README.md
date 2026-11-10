@@ -18,7 +18,10 @@ pnpm dev          # http://localhost:5199/  (?theme=dark|light, ?lang=de)
 2. Second pass: the same three shells with a new coat of paint. Still not good enough. Commit `2513ff4`.
 3. Third pass (current): one console, redesigned from the layout up, in light and dark. It takes the best part of each shell: the classic Rule base as home, the live consequence of a Change set, and the Zone view as a lens on the Rule base. The three shells stay in the two commits above for comparison.
 
-The map owner's brief for the third pass: much better design, dark and light mode, clear and very pleasant to look at, functional, and as few clicks as possible to the main functions.
+4. Fourth pass: overview and reach in the Rule base. An overview ruler beside the table marks where changed and flagged Rules sit among the 10,000 and jumps there on a click. A right click opens an own context menu. Flags are words in the meta line, not icons. A Zone picker in the head opens the lens, and the commit bar shows the workflow as a track. Commit `9d11e1b`.
+5. Fifth pass: the other pages at the same level. Zones filter by chips with counts (flagged, near a limit, Drift, strict egress). Objects are a library with "used in N Rules", unused objects, members, Coverage and one click to the Rules that use an object. Change sets show what waits for you first, then every Change set on the workflow track. The write order is a diagram of the Crossing flows, and the side panel draws on which side a Rule lands in Azure.
+
+The map owner called the third pass clearly better and asked for two more. The brief for the third pass: much better design, dark and light mode, clear and very pleasant to look at, functional, and as few clicks as possible to the main functions.
 
 ## The design
 
@@ -46,7 +49,11 @@ The map owner's brief for the third pass: much better design, dark and light mod
 | See what the pending edits mean | Nothing: the commit bar shows edits, Managed NSGs, write steps and Approvals | 0 |
 | Review the Preview, write order, Approval or Policy findings | Click that part of the commit bar | 1 |
 | Submit | "Submit for Approval" in the commit bar | 1 |
-| See the Rules that land on one Zone | Click the Zone on the Zones page, in the side panel or in `Ctrl K` | 1 |
+| See the Rules that land on one Zone | Zone picker in the head, or click the Zone on the Zones page, in the side panel or in `Ctrl K` | 1 |
+| Anything about one Rule | Right click: details, disable, clone, new Rule below, move to top or bottom, delete | 2 |
+| See the Rules that use an object | Right click the cell, "Rules with …"; or "Show these Rules" in the object library | 2 |
+| Jump to the changed or flagged Rules far down the list | Click the mark in the overview ruler | 1 |
+| See what waits for me | Change sets page, "Waiting for you" | 1 |
 | Switch light and dark, English and German | Rail | 1 |
 
 Editing never asks to start a Change set first: an edit lands in the current Change set.
@@ -74,7 +81,8 @@ Measured in headless Chromium on the dev machine, dev build:
 
 - 10,000 Rules: first render 100–240 ms; quick filter about 110 ms per keystroke after the debounce; scrolling to Rule 10,000 is smooth. 20,000 Zones render without delay.
 - Works in Community: row virtualisation, unmanaged row dragging including several selected rows, inline editing with `readOnlyEdit` (the grid reports the new value, the Change set store records the edit), popup cell editors (the object picker), checkbox selection, quick filter and external filter (the chips), pinned full-width rows (the bands), flex columns, row and cell class rules.
-- Enterprise only, so not used: right-click context menu (replaced by row buttons), row grouping, set filters with value lists, range selection and clipboard, rich select editor, master/detail, Excel export.
+- The `cellContextMenu` event is in Community, so an own context menu works; only the built-in menu is Enterprise.
+- Enterprise only, so not used: the built-in context menu (replaced by row buttons and an own menu), row grouping, set filters with value lists, range selection and clipboard, rich select editor, master/detail, Excel export.
 - One grid theme serves light and dark when every Theming API colour is a CSS variable. Border parameters need an explicit style and width, and the variables must exist before the grid mounts, or the grid warns that it cannot measure its borders.
 - Grid option objects and callbacks need a stable identity. If the console re-renders between two clicks with new option objects, the grid rebuilds its columns and swallows the double click that starts editing. The same holds for `redrawRows`: mark the focused row with a style rule instead.
 - Never set `position` on a cell class: cells are absolutely positioned, and one relative cell pushes the rest of the row down.
