@@ -45,10 +45,10 @@ const Ops = ({ c, ch, d }: { c: number; ch: number; d: number }) => (
   <span className="sum-ops"><span className={`op create ${c ? '' : 'zeroop'}`}>+{c}</span><span className={`op change ${ch ? '' : 'zeroop'}`}>~{ch}</span><span className={`op delete ${d ? '' : 'zeroop'}`}>−{d}</span></span>
 );
 export function PreviewView({ pv }: { pv: Preview }) {
-  const { t } = useT();
+  const { t } = useT(); const s = useStore();
   const ops = pv.nsgs.flatMap(n => n.ops); const ren = pv.nsgs.reduce((a, n) => a + n.renumbered, 0);
   const c = (o: string) => ops.filter(x => x.op === o).length;
-  if (!pv.nsgs.length) return <p className="muted">{t('No edits yet. Edit a cell, drag a Rule or use the toolbar.')}</p>;
+  if (!pv.nsgs.length) return <p className="muted">{s.edits.length ? t('Nothing changes in Azure. This Change set only organises the Rule base.') : t('No edits yet. Edit a cell, drag a Rule or use the toolbar.')}</p>;
   return (
     <div>
       <div className="counts">
@@ -72,7 +72,7 @@ export function PreviewView({ pv }: { pv: Preview }) {
 }
 
 export function WriteOrderView({ pv }: { pv: Preview }) {
-  const { t } = useT();
+  const { t } = useT(); const s = useStore();
   const Node = ({ nsg, role }: { nsg: string; role: 'closes' | 'opens' }) => <div className={`wnode ${role}`}><span>{t(role === 'closes' ? 'closes the flow' : 'opens the flow')}</span><b className="mono">{nsg}</b></div>;
   if (pv.unorderable) return (
     <div>
@@ -80,7 +80,7 @@ export function WriteOrderView({ pv }: { pv: Preview }) {
       {pv.crossing.map((c, i) => <div key={i} className="wflow bad"><div className="wf-h">{c.flow}</div><div className="wf-d"><Node nsg={c.closes} role="closes" /><span className="wf-a">{t('before')}</span><Node nsg={c.opens} role="opens" /></div></div>)}
     </div>
   );
-  const all = pv.steps.flat(); if (!all.length) return <p className="muted">{t('No edits yet. Edit a cell, drag a Rule or use the toolbar.')}</p>;
+  const all = pv.steps.flat(); if (!all.length) return <p className="muted">{s.edits.length ? t('Nothing changes in Azure. This Change set only organises the Rule base.') : t('No edits yet. Edit a cell, drag a Rule or use the toolbar.')}</p>;
   const inFlow = new Set(pv.crossing.flatMap(c => [c.closes, c.opens])); const free = all.filter(w => !inFlow.has(w.nsg));
   return (
     <div>
@@ -95,7 +95,7 @@ export function WriteOrderView({ pv }: { pv: Preview }) {
 
 export function ApprovalView({ pv }: { pv: Preview }) {
   const s = useStore(); const { t } = useT(); const a = useApproval(pv);
-  if (!a.byEnv.length) return <p className="muted">{t('No edits yet. Edit a cell, drag a Rule or use the toolbar.')}</p>;
+  if (!a.byEnv.length) return <p className="muted">{s.edits.length ? t('No Approval needed: this Change set changes no Managed NSG.') : t('No edits yet. Edit a cell, drag a Rule or use the toolbar.')}</p>;
   return (
     <div>
       <p className="muted" style={{ marginTop: 0 }}>{t('Each Affected Zone needs its Approval level.')}</p>
@@ -122,7 +122,7 @@ export function PolicyView({ pv }: { pv: Preview }) {
 
 export function CsActions({ pv, compact }: { pv: Preview; compact?: boolean }) {
   const s = useStore(); const { t } = useT(); const a = useApproval(pv); const [em, setEm] = useState(false);
-  const denyFinding = pv.policy.some(p => p.effect === 'deny');
+  const denyFinding = pv.policy.some(p => p.effect === 'deny'); const needs = a.byEnv.some(x => x.env.level !== 'none');
   if (s.state === 'Committed') return (
     <MessageBar intent="success" layout="multiline"><MessageBarBody><MessageBarTitle>{t('Committed as Version')} {s.version}</MessageBarTitle>
       {t('Deployments started')}: Production (ARM) is writing. Non-production (Terraform) has its pull request for {t('step')} 1 {t('of')} {Math.max(1, pv.steps.length)}.{s.emergency ? <div><Flash16Regular /> {t('Emergency Commit')}, {t('awaiting approval afterwards')}</div> : null}
@@ -134,8 +134,8 @@ export function CsActions({ pv, compact }: { pv: Preview; compact?: boolean }) {
       <span style={{ flex: 1 }} />
       <Button size="small" appearance="subtle" onClick={s.discard} disabled={!s.edits.length}>{t('Discard')}</Button>
       <Button size="small" icon={<Flash16Regular />} disabled={!s.edits.length || pv.unorderable} onClick={() => setEm(true)}>{t('Emergency Commit')}</Button>
-      {s.state === 'Open' && <Button size="small" icon={<Send16Regular />} appearance="primary" disabled={!s.edits.length || pv.unorderable || denyFinding} onClick={s.submit} title={denyFinding ? 'A deny Policy finding blocks Submit' : undefined}>{t('Submit')}</Button>}
-      {s.state !== 'Open' && <Button size="small" appearance="primary" disabled={!a.done || pv.unorderable} onClick={() => s.commit()}>{t('Commit')}</Button>}
+      {s.state === 'Open' && needs && <Button size="small" icon={<Send16Regular />} appearance="primary" disabled={!s.edits.length || pv.unorderable || denyFinding} onClick={s.submit} title={denyFinding ? 'A deny Policy finding blocks Submit' : undefined}>{t('Submit')}</Button>}
+      {(s.state !== 'Open' || !needs) && <Button size="small" appearance="primary" disabled={!s.edits.length || !a.done || pv.unorderable || denyFinding} onClick={() => s.commit()}>{t('Commit')}</Button>}
       <EmergencyDialog open={em} onClose={() => setEm(false)} />
     </div>
   );

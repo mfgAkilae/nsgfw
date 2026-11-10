@@ -29,17 +29,22 @@ The map owner called the third pass clearly better and asked for two more, then 
 
 ## Folders (new, not in the brief)
 
-The map owner asked for Folders in the Rule base, to sort Rules into and to collapse. The prototype assumes:
+The map owner asked for Folders in the Rule base, to sort Rules into and to collapse, and decided on 2026-11-10:
 
-- A Folder is a named, contiguous run of Rules. It has to be contiguous, because the order of Rules decides (first match wins).
-- One level, no nesting. Rules may stand outside Folders, between them.
-- A Folder only organises. The Translation engine never sees it, and renaming one changes nothing in Azure.
-- Creating, renaming, removing a Folder and moving Rules in or out are edits in the Change set. Moving a Rule changes its position, so it can change NSG priorities like any move.
+- One level, no nesting.
+- A Folder carries only its name.
+- A Folder edit that changes no Managed NSG needs no Approval.
+
+The prototype adds what follows from the order of Rules and from the Change set model:
+
+- A Folder is a contiguous run of Rules, because the order decides (first match wins). Rules may stand outside Folders, between them.
+- A Folder only organises. The Translation engine never sees it.
+- Creating, renaming, removing a Folder and moving Rules in or out are edits in the Change set. A Change set that only does this shows "Nothing changes in Azure" and "No Approval needed", commits directly and starts no Deployment. A Rule that changes its position is a move like any other.
 - Collapsing is a view setting of the person, not an edit.
 
 In the table a Folder row shows its Rules, the allow and deny mix, and how many are changed or flagged. It renames in place (double click), moves with its Rules by the grip, and takes Rules by drop, from the selection bar ("Move to Folder…") or the context menu. A filter shows the matching Rules under their Folders ("44 of 801 Rules"); a sorted table has no Folders. With the Folders closed, 10,000 Rules fit on one screen.
 
-Open, to decide before the data model: nesting or one level; whether a Folder carries more than a name (comment, owner, enable or disable all); whether Folder edits that change no NSG need Approval; where imported Rules land; how a Rebase treats two people who move the same Folder.
+Still open, for their own design ticket: where imported Rules land, how a Rebase treats two people who change the same Folder, and how a Version stores Folders.
 
 ## The design
 

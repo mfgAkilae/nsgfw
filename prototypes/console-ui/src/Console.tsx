@@ -193,24 +193,24 @@ function CommitBar({ onOpen, onReview }: { onOpen: (tab: CsTab) => void; onRevie
   const need = ap.byEnv.filter(x => x.env.level !== 'none'); const got = need.filter(x => s.approvedBy[x.env.id]).length;
   const deny = pv.policy.filter(p => p.effect === 'deny').length;
   if (s.state === 'Committed') return (
-    <footer className="cbar done"><Checkmark12Filled /><b>{t('Committed as Version')} {s.version}</b><span>{t('Deployments started')}: Production (ARM), Non-production (Terraform, {t('step')} 1 {t('of')} {Math.max(1, pv.steps.length)})</span>{s.emergency && <span className="tag amber">{t('Emergency Commit')}: {t('awaiting approval afterwards')}</span>}<span className="sp" /><Button size="small" className="proto" onClick={s.discard}>Reset prototype</Button></footer>
+    <footer className="cbar done"><Checkmark12Filled /><b>{t('Committed as Version')} {s.version}</b><span>{pv.nsgs.length ? <>{t('Deployments started')}: Production (ARM), Non-production (Terraform, {t('step')} 1 {t('of')} {Math.max(1, pv.steps.length)})</> : t('Nothing to deploy: no Managed NSG changes.')}</span>{s.emergency && <span className="tag amber">{t('Emergency Commit')}: {t('awaiting approval afterwards')}</span>}<span className="sp" /><Button size="small" className="proto" onClick={s.discard}>Reset prototype</Button></footer>
   );
   return (
     <footer className={`cbar ${pv.unorderable || deny ? 'blocked' : ''}`}>
       <b>CHG-5120</b>
       <Track at={ap.eff === 'Approved' ? 3 : s.state === 'Submitted' ? 2 : 0} />
-      <button onClick={() => onOpen('changes')}><b>{s.edits.length}</b>{t('edits')}</button>
-      <button onClick={() => onOpen('preview')}><b>{pv.nsgs.length}</b>{t('Managed NSGs change')}</button>
-      <button onClick={() => onOpen('order')} className={pv.unorderable ? 'bad' : ''}>{pv.unorderable ? <><Warning16Filled />{t('Cannot be ordered')}</> : <><b>{Math.max(1, pv.steps.length)}</b>{t(pv.steps.length > 1 ? 'write steps' : 'write step')}</>}</button>
+      <button onClick={() => onOpen('changes')}><b>{s.edits.length}</b>{t(s.edits.length === 1 ? 'edit' : 'edits')}</button>
+      <button onClick={() => onOpen('preview')}>{pv.nsgs.length ? <><b>{pv.nsgs.length}</b>{t('Managed NSGs change')}</> : t('Nothing changes in Azure')}</button>
+      {pv.nsgs.length > 0 && <button onClick={() => onOpen('order')} className={pv.unorderable ? 'bad' : ''}>{pv.unorderable ? <><Warning16Filled />{t('Cannot be ordered')}</> : <><b>{Math.max(1, pv.steps.length)}</b>{t(pv.steps.length > 1 ? 'write steps' : 'write step')}</>}</button>}
       <button onClick={() => onOpen('approval')}>{need.length ? <><b>{got}/{need.length}</b>{t('Approvals')}</> : t('No Approval needed')}</button>
       {deny > 0 && <button className="bad" onClick={() => onOpen('policy')}><ShieldError16Filled /><b>{deny}</b>{t('Policy finding blocks')}</button>}
       <span className="sp" />
-      <Button size="small" appearance="subtle" icon={<Flash16Regular />} disabled={pv.unorderable} onClick={() => setEm(true)}>{t('Emergency Commit')}</Button>
+      {need.length > 0 && <Button size="small" appearance="subtle" icon={<Flash16Regular />} disabled={pv.unorderable} onClick={() => setEm(true)}>{t('Emergency Commit')}</Button>}
       <Button size="small" appearance="subtle" onClick={s.discard}>{t('Discard')}</Button>
       <Button size="small" onClick={onReview}>{t('Review')}</Button>
-      {s.state === 'Open' && <Button size="small" appearance="primary" icon={<Send16Regular />} disabled={pv.unorderable || deny > 0} onClick={s.submit}>{t('Submit for Approval')}</Button>}
+      {s.state === 'Open' && need.length > 0 && <Button size="small" appearance="primary" icon={<Send16Regular />} disabled={pv.unorderable || deny > 0} onClick={s.submit}>{t('Submit for Approval')}</Button>}
       {s.state === 'Submitted' && !ap.done && <Button size="small" className="proto" onClick={() => s.approveAs('kim', ap.byEnv.map(x => x.env.id))}>{t('Approve as kim (prototype)')}</Button>}
-      {s.state !== 'Open' && <Button size="small" appearance="primary" disabled={!ap.done || pv.unorderable} onClick={() => s.commit()}>{t('Commit')}</Button>}
+      {(s.state !== 'Open' || !need.length) && <Button size="small" appearance="primary" disabled={!ap.done || pv.unorderable || deny > 0} onClick={() => s.commit()}>{t('Commit')}</Button>}
       <EmergencyDialog open={em} onClose={() => setEm(false)} />
     </footer>
   );

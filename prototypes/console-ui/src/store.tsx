@@ -77,7 +77,7 @@ function useStoreValue() {
     const num = (es: Entry[]) => { const m = new Map<string, number>(); let n = 0; for (const e of es) if (!isFolder(e)) m.set(e.id, ++n); return m; };
     const a = num(before), b = num(after); const fname = (es: Entry[], f?: string) => (f ? (es.find(e => e.id === f) as FolderRow | undefined)?.name ?? '' : '');
     const out: Omit<Edit, 'seq' | 'by'>[] = [];
-    for (const e of after) if (!isFolder(e) && ids.has(e.id)) { const old = before.find(x => x.id === e.id) as Rule; const inF = e.folder !== old.folder ? ` (${e.folder ? `into “${fname(after, e.folder)}”` : `out of “${fname(before, old.folder)}”`})` : ''; if (a.get(e.id) !== b.get(e.id) || inF) out.push({ kind: 'move', ruleId: e.id, before: `#${a.get(e.id)}`, after: `#${b.get(e.id)}${inF}` }); }
+    for (const e of after) if (!isFolder(e) && ids.has(e.id)) { const old = before.find(x => x.id === e.id) as Rule; const inF = e.folder !== old.folder ? ` (${e.folder ? `into “${fname(after, e.folder)}”` : `out of “${fname(before, old.folder)}”`})` : ''; if (a.get(e.id) !== b.get(e.id)) out.push({ kind: 'move', ruleId: e.id, before: `#${a.get(e.id)}`, after: `#${b.get(e.id)}${inF}` }); else if (inF) out.push({ kind: 'folder', ruleId: `${e.id}:f`, after: `“${e.name}” ${e.folder ? `moved into “${fname(after, e.folder)}”` : `taken out of “${fname(before, old.folder)}”`}, same position` }); }
     log(out);
   };
   const relocate = (ids: string[], targetId: string | null, where: 'before' | 'after', forceRoot = false) => setEntries(es => {
