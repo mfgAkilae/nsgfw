@@ -19,7 +19,7 @@ The identifier a Rule gets when it is created. It never changes when the Rule is
 _Avoid_: rule number (the Rule's current position in the Rule base)
 
 **Folder**:
-A named, contiguous run of Rules in the Rule base that administrators use to keep it in order. Folders are one level deep, a Rule belongs to at most one Folder, and a Rule may stand outside every Folder. A Folder carries only its name and never changes how a Rule is evaluated or translated. Creating, renaming, moving or removing one is an edit in a Change set, and it needs no Approval while it changes no Managed NSG.
+A named, contiguous run of Rules in the Rule base that administrators use to keep it in order. Folders are one level deep, a Rule belongs to at most one Folder, and a Rule may stand outside every Folder. A Folder carries only its name and has no effect on how a Rule is evaluated or translated. Creating, renaming, moving or removing one is an edit in a Change set, and it needs no Approval while it changes no Managed NSG.
 _Avoid_: section, group (Address group and Service group hold Objects), tag
 
 **Intra-zone default**:
