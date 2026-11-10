@@ -3,16 +3,16 @@ import { createContext, useContext, useMemo, useRef, useState, ReactNode } from 
 import { rules as initialRules, entries as initialEntries, Rule, Entry, FolderRow, isFolder, ref, zoneById, envs, Level, me, versions } from './data';
 
 export type CsState = 'Open' | 'Submitted' | 'Approved' | 'Committed';
-export interface Edit { seq: number; kind: 'add' | 'edit' | 'move' | 'delete' | 'enable' | 'disable' | 'folder'; ruleId: string; field?: string; before?: string; after?: string; by: string }
+export interface Edit { seq: number; kind: 'add' | 'edit' | 'move' | 'delete' | 'enable' | 'disable' | 'folder'; ruleId: string; field?: string; before?: string; after?: string; by: string; via?: string }
 export interface St { added?: boolean; deleted?: boolean; moved?: boolean; changed?: Set<string> }
 export interface ChangeSet { id: string; name: string; owner: string; state: CsState; base: number; authors: string[]; edits: number; affected: number; rebase?: boolean; emergency?: boolean; scheduled?: string; mine?: boolean }
 export type Scenario = 'auto' | 'crossing' | 'unorderable';
 
 export const otherSets: ChangeSet[] = [
-  { id: 'cs-2', name: 'Q4 cleanup of expired Rules', owner: 'kim', state: 'Submitted', base: 1288, authors: ['kim'], edits: 41, affected: 63 },
+  { id: 'cs-2', name: 'Q4 cleanup of expired Rules', owner: 'kim', state: 'Submitted', base: 1288, authors: ['kim'], edits: 14, affected: 63 },
   { id: 'cs-3', name: 'Partner VPN access', owner: 'sam', state: 'Approved', base: 1288, authors: ['sam', 'jo'], edits: 6, affected: 4, scheduled: 'today 22:00' },
   { id: 'cs-4', name: 'Onboard vnet-app0107', owner: 'alex', state: 'Open', base: 1286, authors: ['alex'], edits: 88, affected: 20, rebase: true },
-  { id: 'cs-5', name: 'Hotfix: block 203.0.113.0/24', owner: 'sam', state: 'Committed', base: 1287, authors: ['sam'], edits: 1, affected: 1, emergency: true },
+  { id: 'cs-5', name: 'Hotfix: block ext-partner-0339', owner: 'sam', state: 'Committed', base: 1286, authors: ['sam'], edits: 1, affected: 1, emergency: true },
 ];
 // Rules that another open Change set also changes ("also changed in Change set X by Y").
 export const alsoChanged = new Map<string, { set: string; by: string }>([
@@ -25,7 +25,7 @@ let nextId = 95000;
 const fmt = (v: unknown) => (Array.isArray(v) ? v.map(x => (String(x).startsWith('svc') ? x : ref(String(x)).name)).join(', ') : String(v ?? ''));
 const blockEnd = (es: Entry[], head: number) => { const fid = es[head].id; let end = head + 1; while (end < es.length && !isFolder(es[end]) && (es[end] as Rule).folder === fid) end++; return end; };
 
-function useStoreValue() {
+export function useStoreValue() {
   const base = useRef(new Map(initialRules.map((r, i) => [r.id, { rule: r, pos: i }]))).current;
   const [entries, setEntries] = useState<Entry[]>(initialEntries);
   const rules = useMemo(() => entries.filter((e): e is Rule => !isFolder(e)), [entries]);
@@ -38,7 +38,9 @@ function useStoreValue() {
   const [emergency, setEmergency] = useState<string | null>(null);
   const seq = useRef(0);
 
-  const log = (e: Omit<Edit, 'seq' | 'by'>[]) => { if (!e.length) return; setEdits(x => [...x, ...e.map(i => ({ ...i, seq: ++seq.current, by: me }))]); if (state !== 'Open') setState('Open'); };
+  // ADR 0021: a Folder edit keeps the state and the Approvals. Every other edit returns the Change set to Open and resets them.
+  const reopen = () => { if (state !== 'Open') setState('Open'); setApprovedBy(a => (Object.keys(a).length ? {} : a)); };
+  const log = (e: Omit<Edit, 'seq' | 'by'>[]) => { if (!e.length) return; setEdits(x => [...x, ...e.map(i => ({ ...i, seq: ++seq.current, by: me }))]); if (e.some(i => i.kind !== 'folder')) reopen(); };
   const mapRules = (fn: (r: Rule) => Rule) => setEntries(es => es.map(e => (isFolder(e) ? e : fn(e))));
 
   const status = useMemo(() => {
@@ -73,18 +75,19 @@ function useStoreValue() {
     const placed = moving.map(e => (isFolder(e) || movingFolder ? e : { ...e, folder }));
     return [...rest.slice(0, at), ...placed, ...rest.slice(at)];
   };
-  const logMoves = (before: Entry[], after: Entry[], ids: Set<string>) => {
+  const logMoves = (before: Entry[], after: Entry[], ids: Set<string>, via?: string) => {
     const num = (es: Entry[]) => { const m = new Map<string, number>(); let n = 0; for (const e of es) if (!isFolder(e)) m.set(e.id, ++n); return m; };
     const a = num(before), b = num(after); const fname = (es: Entry[], f?: string) => (f ? (es.find(e => e.id === f) as FolderRow | undefined)?.name ?? '' : '');
     const out: Omit<Edit, 'seq' | 'by'>[] = [];
-    for (const e of after) if (!isFolder(e) && ids.has(e.id)) { const old = before.find(x => x.id === e.id) as Rule; const inF = e.folder !== old.folder ? ` (${e.folder ? `into “${fname(after, e.folder)}”` : `out of “${fname(before, old.folder)}”`})` : ''; if (a.get(e.id) !== b.get(e.id)) out.push({ kind: 'move', ruleId: e.id, before: `#${a.get(e.id)}`, after: `#${b.get(e.id)}${inF}` }); else if (inF) out.push({ kind: 'folder', ruleId: `${e.id}:f`, after: `“${e.name}” ${e.folder ? `moved into “${fname(after, e.folder)}”` : `taken out of “${fname(before, old.folder)}”`}, same position` }); }
+    for (const e of after) if (!isFolder(e) && ids.has(e.id)) { const old = before.find(x => x.id === e.id) as Rule; const inF = e.folder !== old.folder ? ` (${e.folder ? `into “${fname(after, e.folder)}”` : `out of “${fname(before, old.folder)}”`})` : ''; if (a.get(e.id) !== b.get(e.id)) out.push({ kind: 'move', ruleId: e.id, before: `#${a.get(e.id)}`, after: `#${b.get(e.id)}${inF}`, via }); else if (inF) out.push({ kind: 'folder', ruleId: `${e.id}:f`, after: `“${e.name}” ${e.folder ? `moved into “${fname(after, e.folder)}”` : `taken out of “${fname(before, old.folder)}”`}, same position` }); }
     log(out);
   };
   const relocate = (ids: string[], targetId: string | null, where: 'before' | 'after', forceRoot = false) => setEntries(es => {
     const out = place(es, ids, targetId, where, forceRoot); if (out === es) return es;
     const moved = new Set(ids); for (const e of es) if (!isFolder(e) && e.folder && moved.has(e.folder)) moved.add(e.id);
-    logMoves(es, out, moved);
-    const f = es.find(e => isFolder(e) && moved.has(e.id)) as FolderRow | undefined; if (f) log([{ kind: 'folder', ruleId: f.id, after: `Folder “${f.name}” moved with its Rules` }]);
+    const f = es.find(e => isFolder(e) && moved.has(e.id)) as FolderRow | undefined;
+    logMoves(es, out, moved, f?.id);
+    if (f) log([{ kind: 'folder', ruleId: f.id, after: `Folder “${f.name}” moved with its Rules`, via: f.id }]);
     return out;
   });
 
@@ -97,7 +100,7 @@ function useStoreValue() {
       setEdits(x => { const last = x[x.length - 1];
         if (last && last.kind === 'edit' && last.ruleId === id && last.field === field) return last.before === after ? x.slice(0, -1) : [...x.slice(0, -1), { ...last, after }];
         return [...x, { seq: ++seq.current, by: me, kind: 'edit', ruleId: id, field, before: fmt(r[field]), after }]; });
-      if (state !== 'Open') setState('Open');
+      reopen();
       mapRules(x => (x.id === id ? { ...x, [field]: value } : x));
     },
     setEnabled(ids: string[], enabled: boolean) {
@@ -155,11 +158,18 @@ function useStoreValue() {
     submit() { setState('Submitted'); },
     approveAs(who: string, envIds: string[]) { setApprovedBy(a => ({ ...a, ...Object.fromEntries(envIds.map(e => [e, who])) })); },
     commit(reason?: string) { setState('Committed'); setVersion(v => v + 1); if (reason) setEmergency(reason); },
+    reject() { setState('Open'); setApprovedBy({}); },
+    // Issue 36: a Rebase onto a newer Version. A resolved Rule conflict resets the Approvals; a resolution that moves no Rule keeps them (ADR 0021).
+    rebaseOnto(v: number, fixEntries: (es: Entry[]) => Entry[], fixEdits: (es: Edit[], next: () => number) => Edit[], keep: boolean, newBase: Rule[] = []) {
+      newBase.forEach(r => base.set(r.id, { rule: r, pos: base.get(r.id)?.pos ?? 1 }));
+      setEntries(fixEntries); setEdits(es => fixEdits(es, () => ++seq.current)); setVersion(v);
+      if (!keep) { setState('Open'); setApprovedBy({}); }
+    },
   };
   return api;
 }
 export type Store = ReturnType<typeof useStoreValue>;
-const Ctx = createContext<Store | null>(null);
+export const Ctx = createContext<Store | null>(null);
 export const StoreProvider = ({ children }: { children: ReactNode }) => <Ctx.Provider value={useStoreValue()}>{children}</Ctx.Provider>;
 export const useStore = () => useContext(Ctx)!;
 

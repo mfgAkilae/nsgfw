@@ -1,0 +1,108 @@
+/* PROTOTYPE, throwaway. Issue 36: approver's view, Rebase, Policy findings, Commit dialog, Versions, inbox. Same tokens as app.css. */
+
+/* ---------- banners on the Review screen */
+.rv-banner { display: flex; flex-direction: column; gap: 8px; margin: -4px 0 12px; }
+.bn { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.5; background: var(--sunken); color: var(--ink2); }
+.bn > svg { flex-shrink: 0; margin-top: 2px; }
+.bn.ok { background: var(--allow-tint); color: var(--ink); } .bn.ok > svg { color: var(--allow); }
+.bn.amber { background: var(--amber-tint); color: var(--ink); } .bn.amber > svg { color: var(--amber); }
+.bn.red { background: var(--deny-tint); color: var(--ink); } .bn.red > svg { color: var(--deny); }
+.bn.info > svg { color: var(--accent-text); }
+.bn table.mini { margin: 8px 0 0; background: var(--surface); border-radius: 8px; }
+.bn table.mini td, .bn table.mini th { padding-left: 8px; }
+.accent { color: var(--accent-text); }
+.tag.accent { color: var(--accent-text); background: var(--accent-tint); }
+.tag:not(.amber):not(.red):not(.accent) { color: var(--ink2); background: var(--tok); }
+
+/* ---------- Policy findings */
+.pf-run { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink2); margin: 0 0 10px; }
+.pf-g { font-size: 12px; font-weight: 650; color: var(--ink3); margin: 14px 0 6px; } .pf-g.red { color: var(--deny); }
+.pf { border: 1px solid var(--line); border-left-width: 3px; border-radius: 9px; padding: 9px 12px; margin-bottom: 8px; font-size: 12.5px; line-height: 1.45; }
+.pf.deny { border-left-color: var(--deny); background: color-mix(in srgb, var(--deny-tint) 45%, var(--surface)); }
+.pf.waived { border-left-color: var(--amber); } .pf.info { border-left-color: var(--line); }
+.pf-h { display: flex; gap: 8px; align-items: center; } .pf-h b { font-weight: 650; font-size: 13px; flex: 1; min-width: 0; }
+.pf.deny .pf-h > svg { color: var(--deny); } .pf.waived .pf-h > svg { color: var(--amber); } .pf.info .pf-h > svg { color: var(--ink3); }
+.pf-e { font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: 4px; line-height: 17px; text-transform: lowercase; white-space: nowrap; }
+.pf-e.e-deny { color: var(--deny); background: var(--deny-tint); } .pf-e.e-waived { color: var(--amber); background: var(--amber-tint); } .pf-e.e-info { color: var(--ink2); background: var(--tok); }
+.pf-m { color: var(--ink2); margin-top: 3px; } .pf-r { margin-top: 4px; color: var(--ink); } .pf-why { margin-top: 5px; color: var(--ink2); }
+.pf-a { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
+details.pf-off { margin-top: 12px; font-size: 12.5px; } details.pf-off > summary { cursor: pointer; color: var(--ink2); padding: 4px 0 8px; }
+table.mini.kv td:first-child { width: 96px; color: var(--ink3); }
+
+/* ---------- dialogs */
+.cd { display: flex; flex-direction: column; gap: 4px; }
+.cd h4 { margin: 14px 0 6px; color: var(--ink2); font-size: 12.5px; display: flex; align-items: center; gap: 6px; } .cd section:first-child h4 { margin-top: 2px; }
+.cd-p { font-size: 13px; line-height: 1.5; color: var(--ink2); margin: 6px 0; }
+.cd-l { margin: 4px 0; padding-left: 18px; font-size: 13px; line-height: 1.55; } .cd-l li::marker { color: var(--ink3); } .cd-l svg { vertical-align: -3px; color: var(--ink3); }
+.cd-l.diffl li { color: var(--amber); } .cd-l.diffl li::marker { color: var(--amber); }
+.cd-sub { font-size: 12.5px; font-weight: 650; color: var(--amber); margin: 10px 0 2px; }
+.cd-when { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; } .cd-when .cd-p { flex-basis: 100%; }
+.cd-tool { background: var(--amber-tint); border-radius: 10px; padding: 2px 12px 10px; margin-top: 10px; } .cd-tool h4 { color: var(--amber); }
+.cd-deny { background: var(--deny-tint); border-radius: 10px; padding: 2px 12px 10px; margin-top: 10px; } .cd-deny h4 { color: var(--deny); }
+.cd-w { display: flex; flex-direction: column; gap: 4px; padding: 4px 0; } .cd-w .fui-Input { margin-left: 30px; }
+
+/* ---------- commit bar additions */
+.cbar > button.warnb, .cbar > button.warnb b { color: var(--amber); }
+.sched { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 7px; background: var(--accent-tint); color: var(--accent-text); font-weight: 600; font-size: 12.5px; margin-left: 6px; }
+
+/* ---------- Rebase */
+.cf { display: flex; gap: 10px; align-items: flex-start; width: calc(100% + 16px); margin: 0 -8px 2px; padding: 9px 8px; border: 0; background: none; border-radius: 8px; text-align: left; cursor: pointer; color: var(--ink); font-size: 13px; }
+.cf > svg { flex-shrink: 0; margin-top: 2px; color: var(--deny); } .cf.done > svg { color: var(--allow); }
+.cf > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; } .cf > span .ek { align-self: flex-start; } .cf b { font-weight: 600; }
+.cf:hover { background: var(--hover); } .cf.on { background: var(--sel); }
+.cf-n { display: flex; gap: 8px; font-size: 12.5px; color: var(--ink2); line-height: 1.45; padding: 6px 0; } .cf-n svg { flex-shrink: 0; color: var(--ink3); margin-top: 1px; }
+table.cmp td, table.cmp th { padding: 7px 10px 7px 0; } table.cmp td:first-child { color: var(--ink3); width: 96px; }
+table.cmp td.chg { color: var(--amber); font-weight: 600; } table.cmp td.res, table.cmp th.res { background: var(--accent-tint); padding-left: 8px; color: var(--ink); }
+.rebase .fui-RadioGroup { margin: 8px 0 4px; gap: 2px; }
+.slices { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+.slice { display: flex; flex-direction: column; gap: 4px; border: 1.5px solid var(--line); border-radius: 12px; padding: 12px; cursor: pointer; font-size: 13px; }
+.slice input { position: absolute; opacity: 0; pointer-events: none; } .slice:hover { border-color: var(--ink3); } .slice.on { border-color: var(--accent); background: var(--accent-tint); }
+.slice > .muted { line-height: 1.45; min-height: 36px; }
+.sl { margin-top: 6px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); background: var(--surface); }
+.sl-r { display: grid; grid-template-columns: 28px 24px minmax(0, 1fr); gap: 4px 8px; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--line2); box-shadow: inset 3px 0 0 var(--allow); }
+.sl-r.deny { box-shadow: inset 3px 0 0 var(--deny); } .sl-r:last-child { border-bottom: 0; }
+.sl-r .act { height: 20px; padding: 0 5px; } .sl-r b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-r > .muted:last-child { grid-column: 3; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 4px; } .sl-r > .muted:last-child svg { width: 12px; }
+.sl-r.me { background: var(--amber-tint); } .sl-r.them { background: var(--deny-tint); }
+@media (max-width: 1400px) { .slices { grid-template-columns: 1fr; } }
+
+/* ---------- the approver's decision */
+.decide details.dz { border-bottom: 1px solid var(--line2); font-size: 13px; }
+.decide details.dz > summary { display: grid; grid-template-columns: 1fr auto auto; grid-template-rows: auto auto; gap: 2px 10px; padding: 9px 0; cursor: pointer; list-style: none; }
+.decide details.dz > summary::-webkit-details-marker { display: none; }
+.decide details.dz > summary > :last-child { grid-column: 1 / -1; font-size: 12.5px; display: inline-flex; gap: 5px; align-items: center; }
+.dz-l { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 0 10px; } .dz-z { font-size: 11.5px; padding: 1px 7px; border-radius: 5px; background: var(--tok); color: var(--ink2); }
+.decide-a { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+
+/* ---------- changes list additions */
+.li.notice { font-size: 12.5px; color: var(--ink2); background: var(--sunken); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; border: 0; line-height: 1.45; }
+details.li.fmove > summary { cursor: pointer; list-style: none; line-height: 1.45; } details.li.fmove > summary::-webkit-details-marker { display: none; }
+details.li.fmove .edit .mono { color: var(--ink3); font-size: 11.5px; }
+
+/* ---------- inbox */
+.inbox-chips { margin-bottom: 8px; }
+.inbox-r { grid-template-columns: 160px 1fr auto; line-height: 1.45; }
+
+/* ---------- Versions */
+.vrow { display: grid; grid-template-columns: 64px minmax(0, 1fr) 110px 170px 70px; gap: 12px; align-items: center; min-height: 42px; padding: 4px 16px; border-bottom: 1px solid var(--line2); font-size: 13px; cursor: pointer; }
+.vrow:hover { background: var(--hover); } .vrow.on { background: var(--sel); box-shadow: inset 3px 0 0 var(--accent); }
+.vrow > span { display: inline-flex; gap: 6px; align-items: center; min-width: 0; } .vrow > span svg { color: var(--ink3); }
+.vrow.vhead { min-height: 34px; cursor: default; color: var(--ink3); font-size: 12px; position: sticky; top: 0; background: var(--surface); z-index: 1; } .vrow.vhead:hover { background: var(--surface); }
+.vn b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .vn { flex-wrap: nowrap; } .vn .tag { flex-shrink: 0; }
+.deps { display: inline-flex; gap: 5px; }
+.dep { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.dep.ok { background: var(--allow); } .dep.failed { background: var(--deny); } .dep.running { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; } .dep.none { border: 1.5px solid var(--line); }
+@keyframes pulse { 50% { opacity: .35; } }
+.vdet h3 { margin-top: 18px; }
+.vdep { display: grid; grid-template-columns: 14px 1fr auto auto; gap: 8px; align-items: center; font-size: 13px; padding: 4px 0; } .vdep b { font-weight: 600; }
+.vact { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+.vexp { line-height: 1.5; margin-top: 10px; }
+
+/* ---------- prototype controls */
+.proto-36 { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); font-size: 13px; }
+.proto-36 label { display: flex; gap: 8px; align-items: flex-start; line-height: 1.35; } .proto-36 input { margin-top: 2px; }
+.proto-36 button { text-align: left; padding: 6px 10px; border-radius: 7px; border: 1px dashed var(--ink3); background: var(--sunken); color: var(--ink); font-size: 12.5px; cursor: pointer; }
+.proto-36 button:disabled { opacity: .5; cursor: default; } .proto-36 .muted { margin: 0; }
+
+/* The Review screen leaves room for the commit bar only when the bar is there. */
+.main:not(:has(> .cbar)) > .review { bottom: 0; }

@@ -1,6 +1,6 @@
 // PROTOTYPE, throwaway. Review: the whole Change set on one wide screen before Submit.
 // Left: what was edited. Middle: one Rule before and after, and what it writes in Azure. Right: order, Approval, Policy, and the action.
-import { useEffect, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { Dismiss20Regular, ArrowRight16Regular, Checkmark12Filled, Dismiss12Filled } from '@fluentui/react-icons';
 import { useStore } from './store';
 import { rules as baseRules, envs } from './data';
@@ -9,7 +9,9 @@ import { Track } from './Pages';
 import { Chip } from './ObjectPicker';
 import { useT } from './i18n';
 
-export function Review({ onClose, onRule }: { onClose: () => void; onRule: (id: string) => void }) {
+// Issue 36: the same screen serves the approver and the other Change sets; each part can be replaced.
+export function Review({ onClose, onRule, title, summary, banner, left, middle, right, track, warnAt, readOnly }: { onClose: () => void; onRule: (id: string) => void; title?: string; summary?: ReactNode; banner?: ReactNode;
+  left?: ReactNode; middle?: ReactNode; right?: ReactNode; track?: number; warnAt?: number; readOnly?: boolean }) {
   const s = useStore(); const { t } = useT(); const pv = usePreview(); const ap = useApproval(pv); const [sel, setSel] = useState<string | null>(null);
   useEffect(() => { const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, []);
   const r = sel ? s.rules.find(x => x.id === sel) ?? baseRules.find(x => x.id === sel) : undefined; const st = sel ? s.status.get(sel) : undefined;
@@ -19,19 +21,20 @@ export function Review({ onClose, onRule }: { onClose: () => void; onRule: (id: 
   return (
     <div className="review" role="dialog" aria-label={t('Review')}>
       <header className="rv-h">
-        <div><h1>{t('Review')} CHG-5120 Release app0042</h1>
-          <p>{ruleCount} {t(ruleCount === 1 ? 'Rule' : 'Rules')} {t('changed')}. {pv.nsgs.length} {t('Managed NSGs change')} {t('in')} {ap.byEnv.length} {t(ap.byEnv.length === 1 ? 'Environment' : 'Environments')}. {pv.unorderable ? t('Cannot be ordered') : `${Math.max(1, pv.steps.length)} ${t(pv.steps.length > 1 ? 'write steps' : 'write step')}`}. {need ? `${need} ${t('Approvals')}` : t('No Approval needed')}.</p></div>
-        <span className="sp" /><Track at={ap.eff === 'Approved' ? 3 : s.state === 'Submitted' ? 2 : 0} labels />
+        <div><h1>{t('Review')} {title ?? 'CHG-5120 Release app0042'}</h1>
+          <p>{summary ?? <>{ruleCount} {t(ruleCount === 1 ? 'Rule' : 'Rules')} {t('changed')}. {pv.nsgs.length} {t('Managed NSGs change')} {t('in')} {ap.byEnv.length} {t(ap.byEnv.length === 1 ? 'Environment' : 'Environments')}. {pv.unorderable ? t('Cannot be ordered') : `${Math.max(1, pv.steps.length)} ${t(pv.steps.length > 1 ? 'write steps' : 'write step')}`}. {need ? `${need} ${t('Approvals')}` : t('No Approval needed')}.</>}</p></div>
+        <span className="sp" /><Track at={track ?? (s.state === 'Committed' ? 4 : ap.eff === 'Approved' ? 3 : s.state === 'Submitted' ? 2 : 0)} warnAt={warnAt} labels />
         <button className="ib" title={t('Close')} onClick={onClose}><Dismiss20Regular /></button>
       </header>
+      {banner && <div className="rv-banner">{banner}</div>}
       <div className="rv-b">
-        <section className="rv-c rv-l"><h3>{t('Changes')}</h3>
+        <section className="rv-c rv-l">{left ?? <><h3>{t('Changes')}</h3>
           <button className={`rv-all ${sel === null ? 'on' : ''}`} onClick={() => setSel(null)}>{t('Everything that changes in Azure')}<span>{pv.nsgs.length} NSGs</span></button>
-          <ChangesList onFocus={setSel} selected={sel} /></section>
+          <ChangesList onFocus={setSel} selected={sel} /></>}</section>
         <section className="rv-c rv-m">
-          {!r ? <><h3>{t('What changes in Azure')}</h3><PreviewView pv={pv} /></> : <>
+          {middle ? middle : !r ? <><h3>{t('What changes in Azure')}</h3><PreviewView pv={pv} /></> : <>
             <div className="rv-rule"><span className="muted">{s.numbers.get(r.id) ?? '—'}</span><h2>{r.name}</h2><span className={`act ${r.action}`}>{r.action === 'allow' ? <Checkmark12Filled /> : <Dismiss12Filled />}{t(r.action === 'allow' ? 'Allow' : 'Deny')}</span>
-              <span className="sp" /><button className="lens-x" onClick={() => { onClose(); onRule(r.id); }}>{t('Open in the Rule base')}<ArrowRight16Regular /></button></div>
+              <span className="sp" />{!readOnly && <button className="lens-x" onClick={() => { onClose(); onRule(r.id); }}>{t('Open in the Rule base')}<ArrowRight16Regular /></button>}</div>
             <div className="rv-flow"><div className="chips">{r.src.map(x => <Chip key={x} id={x} />)}</div><ArrowRight16Regular className="flow" /><div className="chips">{r.dst.map(x => <Chip key={x} id={x} />)}</div><div className="chips">{r.svc.map(x => <Chip key={x} id={x} />)}</div></div>
             <h3>{t('Before and after')}</h3>
             <table className="mini diff"><thead><tr><th>{t('What')}</th><th>{t('Before')}</th><th>{t('After')}</th></tr></thead><tbody>
@@ -46,11 +49,11 @@ export function Review({ onClose, onRule }: { onClose: () => void; onRule: (id: 
             {ops.length > 40 && <p className="muted">{ops.length - 40} {t('more')}</p>}
           </>}
         </section>
-        <section className="rv-c rv-r">
+        <section className="rv-c rv-r">{right ?? <>
           <h3>{t('Write order')}</h3><WriteOrderView pv={pv} />
           <h3>{t('Approval')}</h3><ApprovalView pv={pv} />
           <h3>{t('Policy findings')}</h3><PolicyView pv={pv} />
-          <div className="rv-act"><CsActions pv={pv} compact /></div>
+          <div className="rv-act"><CsActions pv={pv} compact /></div></>}
         </section>
       </div>
     </div>

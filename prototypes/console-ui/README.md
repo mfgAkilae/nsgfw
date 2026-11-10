@@ -25,6 +25,8 @@ pnpm dev          # http://localhost:5199/  (?theme=dark|light, ?lang=de)
 7. Sixth design pass: the side panel becomes a Rule editor. Every field in one place, an inline object picker, where the Rule lands in Azure updating live, and "Before you submit" with what to fix. New Rule opens the editor with the name selected. Commit `21402d6`.
 8. Seventh design pass: Review, the whole Change set on one wide screen before Submit (what was edited, one Rule before and after with what it writes in Azure, write order, Approval, Policy findings, the action). Also a keyboard help in the rail and the Version in the head.
 
+9. After the author: [Prototype: Change set review, conflicts and Version history](https://github.com/mfgAkilae/nsgfw/issues/36). The approver decides on the Review screen, a Rebase with conflicts has a screen of its own, Policy findings come in full with the Pre-check waiver, Commit always opens a short dialog, the Versions page starts Restore and Revert, and the bell leads to the inbox in full. See [Change set review, conflicts and Version history](#change-set-review-conflicts-and-version-history-issue-36).
+
 The map owner called the third pass clearly better and asked for two more, then for Folders and two further passes. The brief for the third pass: much better design, dark and light mode, clear and very pleasant to look at, functional, and as few clicks as possible to the main functions.
 
 ## Folders (new, not in the brief)
@@ -45,6 +47,36 @@ The prototype adds what follows from the order of Rules and from the Change set 
 In the table a Folder row shows its Rules, the allow and deny mix, and how many are changed or flagged. It renames in place (double click), moves with its Rules by the grip, and takes Rules by drop, from the selection bar ("Move to Folder…") or the context menu. A filter shows the matching Rules under their Folders ("44 of 801 Rules"); a sorted table has no Folders. With the Folders closed, 10,000 Rules fit on one screen.
 
 Still open, for their own design ticket: where imported Rules land, how a Rebase treats two people who change the same Folder, and how a Version stores Folders.
+
+## Change set review, conflicts and Version history (issue 36)
+
+Decided with the map owner on 2026-11-10 before building: the approver decides on the Review screen; conflicts after a Rebase get a wide screen of their own; the Version history is a page in the rail; the bell leads to the inbox on the Change sets page; Commit always opens a short dialog; in the Emergency Commit dialog each blocking deny finding is ticked for a waiver with the reason prefilled from the Emergency reason; a prototype switch shows the small profile without Folders.
+
+How to try it (the dashed flask in the rail holds the switches):
+
+| What | How |
+| --- | --- |
+| Approve as an approver, with the Preview an earlier approver saw | Bell, then "Review" on kim's request. "Show what changed" in the amber banner. Approve asks for a fresh sign-in. |
+| Approve an Emergency Commit afterwards, or reject it | Bell, "Review" on sam's Emergency Commit. A rejection makes the tool prepare a Revert, which lands in the inbox. |
+| Submit stopped by a deny Policy finding, then waive it | Bell, "Open" on the rejected "Open RDP for vendor", then Submit. Or flask: "Force a deny Policy finding" and Submit your own Change set. |
+| Resolve conflicts after a Rebase | Flask: "kim commits Version 1289 … with conflicts on a Rule, a position and a Folder". Then the red "3 conflicts after the Rebase" in the commit bar. |
+| Approvals that survive a Rebase, and the Commit dialog listing what changed since | Edit a Rule (right click, Disable), Submit, "Approve as kim", then flask: "with a conflict on a Folder only", resolve, "Commit…". |
+| Commit at a chosen time | "Commit…", "At a time I choose". The bar then shows the schedule with Move and Cancel. |
+| A Tool path closes | Flask: "This Change set closes a Tool path", or a deny Rule to app0001-mgmt. Submit, Commit and Emergency Commit ask for a reason. |
+| A Re-translation is open | Flask: "A Re-translation is open in Production". Commits that change Production wait; the bell holds its Approval request. |
+| Revert and Restore | Versions in the rail. 1288 (only Folders, no Approval), 1287 (an Emergency Commit), 1284 (a Folder move, so moves of its Rules), 1281 (a removed Folder that cannot come back: conflict), Restore to 1285. |
+| The small profile | Flask: "Small profile: no Folders yet". Folders disappear from the table, the editor, the Changes list and the Versions. |
+
+What to judge:
+
+1. The approver's view: decision at the top of the right column, Zones per Environment with their status, one Approve for every Zone you hold the approver Role for. Enough per Affected Zone?
+2. The Rebase screen: three columns (base, theirs, yours) per conflict, and two previews of the rebased Rule base to confirm a position.
+3. Policy findings: blocking first, then waived, then information, then "not enforced" and "exempt" folded away. The pre-check result shows only after a run (Submit, on demand, Emergency Commit dialog).
+4. The Commit dialog: what goes out per Environment, now or later, Approvals with what changed since, Folder edits since the Approval, waivers, Tool path.
+5. Versions: one list with Deployment dots per Environment, detail on the right, Revert and Restore as Change sets.
+6. German term proposals: Versionen, Neuübersetzung (Re-translation), Pre-Check-Verzicht (Pre-check waiver), Tool-Pfad, nachträgliche Freigabe, nicht erzwungen, ausgenommen. Rebase, Restore, Revert and Commit stay English.
+
+Code: `flow.tsx` (state of this ticket), `Decide.tsx` (other Change sets on the Review screen), `Rebase.tsx`, `Commit.tsx`, `Policy.tsx`, `Versions.tsx` with `versions36.ts`, `Inbox.tsx`, `app36.css`, `i18n36.ts`. The shared files (`store.tsx`, `Console.tsx`, `ChangeViews.tsx`, `Pages.tsx`, `Review.tsx`, `Editor.tsx`, `RuleGrid.tsx`) carry small, marked changes.
 
 ## The design
 
@@ -98,7 +130,7 @@ Editing never asks to start a Change set first: an edit lands in the current Cha
 
 In: Rule base table (10,000 Rules, drag-and-drop, inline editing, filter, clone, disable, bulk actions), Zone lens, Change set list, pending changes with Preview, write order (ADR 0018) including "cannot be ordered", Approval per Affected Zone, Policy findings (rough), Emergency Commit (rough), inbox (rough), Zone overview with limits, candidates and flagged Zones (20,000 Zones), object picker with Azure service tags, English and German, light and dark.
 
-Out (follow-up prototype tickets): Zone detail and Security layers, Flow view, ASG object editor, conflict resolution after a Rebase, Version history with Restore and Revert, Deployment and Drift views, Import, access, audit, settings and health.
+Out (follow-up prototype tickets): Zone detail and Security layers, Flow view, ASG object editor, Deployment and Drift views, Import, access, audit, settings and health. Issue 36 added the approver's view, conflicts after a Rebase, Policy findings in full, the Pre-check waiver, the Commit and Emergency Commit dialogs, the Version history with Restore and Revert, and the inbox in full.
 
 The dashed flask button in the rail holds prototype-only controls: it forces Crossing flows or a Change set that cannot be ordered.
 

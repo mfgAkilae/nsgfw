@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Switch, Tooltip, Popover, PopoverTrigger, PopoverSurface } from '@fluentui/react-components';
 import { Add16Regular, Search16Regular, Dismiss16Regular, PanelRight20Regular, TextBulletListSquare20Regular, Grid20Regular, Box20Regular, BranchFork20Regular,
   WeatherMoon20Regular, WeatherSunny20Regular, Copy16Regular, Delete16Regular, Eye16Regular, EyeOff16Regular, ArrowSort16Regular, Send16Regular, ArrowRight12Filled,
-  Checkmark12Filled, Dismiss12Filled, Flash16Regular, ChevronDown12Regular, TextLineSpacing20Regular, Folder16Regular, FolderAdd16Regular, FolderArrowRight16Regular, ArrowMaximizeVertical20Regular, ArrowMinimizeVertical20Regular, LockClosed16Regular, Warning16Filled, ShieldError16Filled, PeopleSwap16Regular, LayerDiagonal16Regular } from '@fluentui/react-icons';
+  Checkmark12Filled, Dismiss12Filled, Flash16Regular, ChevronDown12Regular, History20Regular, TextLineSpacing20Regular, Folder16Regular, FolderAdd16Regular, FolderArrowRight16Regular, ArrowMaximizeVertical20Regular, ArrowMinimizeVertical20Regular, LockClosed16Regular, Warning16Filled, ShieldError16Filled, PeopleSwap16Regular, LayerDiagonal16Regular } from '@fluentui/react-icons';
 import { RuleGrid, RuleGridHandle, FilterKey, countFilters, systemTop, systemBottom, SysRow, compact } from './RuleGrid';
 import { ZoneGrid, Bar, LIMITS, EgressBadge, Flags } from './ZoneGrid';
 import { Glyph } from './Glyph';
@@ -18,13 +18,19 @@ import { useStore, placement, cost, alsoChanged } from './store';
 import { zones, zoneById, envs, ref, svcById } from './data';
 import { useT } from './i18n';
 import { useMode } from './theme';
+// Issue 36: Versions, the Rebase and approver screens, the Commit dialog, Policy findings in full.
+import { useFlow } from './flow';
+import { FlowScreens } from './Decide';
+import { VersionsPage } from './Versions';
+import { CsButtons, BarFlags } from './Commit';
+import { useBlocking } from './Policy';
 
-type Page = 'rules' | 'zones' | 'objects' | 'sets';
+type Page = 'rules' | 'zones' | 'objects' | 'sets' | 'versions';
 type CsTab = 'changes' | 'preview' | 'order' | 'approval' | 'policy';
 const typing = () => { const el = document.activeElement as HTMLElement | null; return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable || !!el.closest('.ag-root-wrapper')); };
 
 export default function Console() {
-  const s = useStore(); const { t, lang, setLang } = useT(); const { mode, toggle } = useMode(); const pv = usePreview(); const ap = useApproval(pv);
+  const s = useStore(); const { t, lang, setLang } = useT(); const { mode, toggle } = useMode(); const pv = usePreview(); const ap = useApproval(pv); const f36 = useFlow();
   const [page, setPage] = useState<Page>('rules');
   const [lens, setLens] = useState<{ zid: string; dir: 'in' | 'out' } | null>(null);
   const [filter, setFilter] = useState<FilterKey>('all'); const [q, dq, setQ] = useDebounced();
@@ -79,7 +85,7 @@ export default function Console() {
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h);
   });
 
-  const nav: [Page, string, JSX.Element][] = [['rules', 'Rules', <TextBulletListSquare20Regular />], ['zones', 'Zones', <Grid20Regular />], ['objects', 'Objects', <Box20Regular />], ['sets', 'Change sets', <BranchFork20Regular />]];
+  const nav: [Page, string, JSX.Element][] = [['rules', 'Rules', <TextBulletListSquare20Regular />], ['zones', 'Zones', <Grid20Regular />], ['objects', 'Objects', <Box20Regular />], ['sets', 'Change sets', <BranchFork20Regular />], ['versions', 'Versions', <History20Regular />]];
   const chips: [FilterKey, string][] = [['all', 'All'], ['deny', 'Deny'], ['disabled', 'Disabled'], ['expiring', 'Expiring'], ['findings', 'With findings'], ['unused', 'No hits']];
   const showBar = s.edits.length > 0 || s.state !== 'Open';
 
@@ -90,7 +96,7 @@ export default function Console() {
         {nav.map(([k, label, icon]) => <button key={k} className={`rail-b ${page === k ? 'on' : ''}`} aria-current={page === k} onClick={() => setPage(k)}>{icon}<span>{k === 'sets' && lang === 'de' ? 'Pakete' : t(label)}</span></button>)}
         <span className="rail-sp" />
         <ProtoButton />
-        <InboxButton />
+        <InboxButton onOpen={() => setPage('sets')} />
         <Tooltip content={t(mode === 'dark' ? 'Light mode' : 'Dark mode')} relationship="label" positioning="after"><button className="rail-i" onClick={toggle}>{mode === 'dark' ? <WeatherSunny20Regular /> : <WeatherMoon20Regular />}</button></Tooltip>
         <Tooltip content={lang === 'en' ? 'Deutsch' : 'English'} relationship="label" positioning="after"><button className="rail-i rail-lang" onClick={() => setLang(lang === 'en' ? 'de' : 'en')}>{lang.toUpperCase()}</button></Tooltip>
         <Popover positioning="after-bottom"><PopoverTrigger disableButtonEnhancement><button className="rail-i rail-lang" title={t('Keyboard shortcuts')}>?</button></PopoverTrigger>
@@ -111,12 +117,12 @@ export default function Console() {
                 <Input ref={search} className="search" contentBefore={<Search16Regular />} contentAfter={<kbd>/</kbd>} placeholder={t('Filter Rules by name, object, ID or ticket')} value={q} onChange={(_, d) => setQ(d.value)} />
                 <button className="jump" onClick={() => setPalette('all')}>{t('Jump to')}<kbd>Ctrl K</kbd></button>
                 <div className="vgroup">
-                <Tooltip content={t(allCollapsed ? 'Open all Folders' : 'Close all Folders')} relationship="label"><button className="ib opt" onClick={() => setCollapsed(allCollapsed ? new Set() : new Set(s.folders.map(f => f.id)))}>{allCollapsed ? <ArrowMaximizeVertical20Regular /> : <ArrowMinimizeVertical20Regular />}</button></Tooltip>
+                {!f36.small && <Tooltip content={t(allCollapsed ? 'Open all Folders' : 'Close all Folders')} relationship="label"><button className="ib opt" onClick={() => setCollapsed(allCollapsed ? new Set() : new Set(s.folders.map(f => f.id)))}>{allCollapsed ? <ArrowMaximizeVertical20Regular /> : <ArrowMinimizeVertical20Regular />}</button></Tooltip>}
                 <Tooltip content={t(dense ? 'Comfortable rows' : 'Compact rows')} relationship="label"><button className={`ib opt ${dense ? 'on' : ''}`} onClick={() => setDense(!dense)}><TextLineSpacing20Regular /></button></Tooltip>
                 <Tooltip content={t('Show what sits above and below the Rules')} relationship="label"><button className={`ib opt ${bands ? 'on' : ''}`} onClick={() => setBands(!bands)}><LockClosed16Regular /></button></Tooltip>
                 <Tooltip content={t('Side panel')} relationship="label"><button className={`ib ${dock.open ? 'on' : ''}`} onClick={() => setDock(d => ({ ...d, open: !d.open, auto: false }))}><PanelRight20Regular /></button></Tooltip>
                 </div>
-                <Button icon={<FolderAdd16Regular />} onClick={() => setFolderFor(sel)} title={t('New Folder')}><span className="lbl">{t('Folder')}</span></Button>
+                {!f36.small && <Button icon={<FolderAdd16Regular />} onClick={() => setFolderFor(sel)} title={t('New Folder')}><span className="lbl">{t('Folder')}</span></Button>}
                 <Button appearance="primary" icon={<Add16Regular />} onClick={newRule}>{t('New Rule')}</Button>
               </header>
 
@@ -138,7 +144,7 @@ export default function Console() {
                   <b>{sel.length} {t('selected')}</b>
                   <button onClick={() => s.setEnabled(sel, true)}><Eye16Regular />{t('Enable')}</button><button onClick={() => s.setEnabled(sel, false)}><EyeOff16Regular />{t('Disable')}</button>
                   <button onClick={() => s.clone(sel)}><Copy16Regular />{t('Clone')}</button><button onClick={() => setMoveIds(sel)}><ArrowSort16Regular />{t('Move to…')}</button>
-                  <button onClick={() => setFolderFor(sel)}><FolderArrowRight16Regular />{t('Move to Folder…')}</button>
+                  {!f36.small && <button onClick={() => setFolderFor(sel)}><FolderArrowRight16Regular />{t('Move to Folder…')}</button>}
                   <button className="danger" onClick={() => { s.remove(sel); grid.current?.clearSelection(); }}><Delete16Regular />{t('Delete')}</button>
                   <span className="sp" /><button onClick={() => grid.current?.clearSelection()}><Dismiss16Regular />{t('Clear selection')}</button>
                 </div>
@@ -156,6 +162,7 @@ export default function Console() {
 
             {page === 'zones' && <><header className="phead"><h1>{t('Zones')}</h1><span className="sub">{t('Every Managed NSG against its Azure limits. Click a Zone to see the Rules that land on it.')}</span></header><ZoneGrid onOpen={x => openZone(x.id)} /></>}
             {page === 'objects' && <><header className="phead"><h1>{t('Objects')}</h1><span className="sub">{t('Every object and where it is used.')}</span></header><ObjectLibrary onZone={openZone} onShowRules={name => { setPage('rules'); setLens(null); setFilter('all'); setQ(name); }} /></>}
+            {page === 'versions' && <><header className="phead"><h1>{t('Versions')}</h1><span className="sub">{t('Every committed Version: what it changed, its Deployments, Revert and Restore.')}</span></header><VersionsPage /></>}
             {page === 'sets' && <><header className="phead"><h1>{t('Change sets')}</h1><span className="sub">{t('What waits for you, and where every Change set stands.')}</span></header><ChangeSetsPage onFilter={k => { setPage('rules'); setLens(null); setFilter(k); }} onReview={() => { setPage('rules'); openDock('cs', 'preview'); }} /></>}
           </section>
 
@@ -177,6 +184,7 @@ export default function Console() {
         </div>
 
         {review && <Review onClose={() => setReview(false)} onRule={jumpToRule} />}
+        <FlowScreens onRule={jumpToRule} />
         {showBar && <CommitBar onOpen={cs => openDock('cs', cs)} onReview={() => setReview(true)} />}
       </div>
 
@@ -191,7 +199,7 @@ export default function Console() {
 function CommitBar({ onOpen, onReview }: { onOpen: (tab: CsTab) => void; onReview: () => void }) {
   const s = useStore(); const { t } = useT(); const pv = usePreview(); const ap = useApproval(pv); const [em, setEm] = useState(false);
   const need = ap.byEnv.filter(x => x.env.level !== 'none'); const got = need.filter(x => s.approvedBy[x.env.id]).length;
-  const deny = pv.policy.filter(p => p.effect === 'deny').length;
+  const deny = useBlocking(pv);
   if (s.state === 'Committed') return (
     <footer className="cbar done"><Checkmark12Filled /><b>{t('Committed as Version')} {s.version}</b><span>{pv.nsgs.length ? <>{t('Deployments started')}: Production (ARM), Non-production (Terraform, {t('step')} 1 {t('of')} {Math.max(1, pv.steps.length)})</> : t('Nothing to deploy: no Managed NSG changes.')}</span>{s.emergency && <span className="tag amber">{t('Emergency Commit')}: {t('awaiting approval afterwards')}</span>}<span className="sp" /><Button size="small" className="proto" onClick={s.discard}>Reset prototype</Button></footer>
   );
@@ -204,14 +212,9 @@ function CommitBar({ onOpen, onReview }: { onOpen: (tab: CsTab) => void; onRevie
       {pv.nsgs.length > 0 && <button onClick={() => onOpen('order')} className={pv.unorderable ? 'bad' : ''}>{pv.unorderable ? <><Warning16Filled />{t('Cannot be ordered')}</> : <><b>{Math.max(1, pv.steps.length)}</b>{t(pv.steps.length > 1 ? 'write steps' : 'write step')}</>}</button>}
       <button onClick={() => onOpen('approval')}>{need.length ? <><b>{got}/{need.length}</b>{t('Approvals')}</> : t('No Approval needed')}</button>
       {deny > 0 && <button className="bad" onClick={() => onOpen('policy')}><ShieldError16Filled /><b>{deny}</b>{t('Policy finding blocks')}</button>}
+      <BarFlags pv={pv} />
       <span className="sp" />
-      {need.length > 0 && <Button size="small" appearance="subtle" icon={<Flash16Regular />} disabled={pv.unorderable} onClick={() => setEm(true)}>{t('Emergency Commit')}</Button>}
-      <Button size="small" appearance="subtle" onClick={s.discard}>{t('Discard')}</Button>
-      <Button size="small" onClick={onReview}>{t('Review')}</Button>
-      {s.state === 'Open' && need.length > 0 && <Button size="small" appearance="primary" icon={<Send16Regular />} disabled={pv.unorderable || deny > 0} onClick={s.submit}>{t('Submit for Approval')}</Button>}
-      {s.state === 'Submitted' && !ap.done && <Button size="small" className="proto" onClick={() => s.approveAs('kim', ap.byEnv.map(x => x.env.id))}>{t('Approve as kim (prototype)')}</Button>}
-      {(s.state !== 'Open' || !need.length) && <Button size="small" appearance="primary" disabled={!ap.done || pv.unorderable || deny > 0} onClick={() => s.commit()}>{t('Commit')}</Button>}
-      <EmergencyDialog open={em} onClose={() => setEm(false)} />
+      <CsButtons pv={pv} onReview={onReview} onPolicy={() => onOpen('policy')} />
     </footer>
   );
 }
@@ -245,7 +248,7 @@ function Palette({ onClose, run, mode }: { onClose: () => void; run: Run; mode: 
   const items = useMemo(() => {
     const ql = q.trim().toLowerCase(); const out: { group: string; label: string; sub?: string; kind?: string; go: () => void }[] = [];
     const cmds: [string, () => void][] = [['New Rule', run.newRule], ['Review Change set', run.review], ['Go to Rule base', () => run.page('rules')], ['Go to Zones', () => run.page('zones')],
-      ['Go to Objects', () => run.page('objects')], ['Go to Change sets', () => run.page('sets')], ['Switch light and dark mode', run.theme], ['Switch language', run.lang]];
+      ['Go to Objects', () => run.page('objects')], ['Go to Change sets', () => run.page('sets')], ['Go to Versions', () => run.page('versions')], ['Switch light and dark mode', run.theme], ['Switch language', run.lang]];
     if (mode === 'zone') out.push({ group: 'Actions', label: t('All Zones: show the whole Rule base'), go: run.all });
     else cmds.filter(([l]) => !ql || t(l).toLowerCase().includes(ql)).slice(0, ql ? 4 : 8).forEach(([l, go]) => out.push({ group: 'Actions', label: t(l), go }));
     if (ql) {

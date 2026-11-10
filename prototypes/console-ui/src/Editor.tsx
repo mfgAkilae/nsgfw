@@ -10,6 +10,8 @@ import { ObjectPicker } from './ObjectPicker';
 import { Glyph } from './Glyph';
 import { compact } from './RuleGrid';
 import { useT } from './i18n';
+import { RulePolicy } from './Policy';
+import { useFlow } from './flow';
 
 // A field that looks like text until you touch it. Enter or leaving commits, Escape reverts.
 function EditText({ value, onCommit, className, placeholder, multiline, select, type }: { value: string; onCommit: (v: string) => void; className?: string; placeholder?: string; multiline?: boolean; select?: boolean; type?: string }) {
@@ -23,7 +25,7 @@ function EditText({ value, onCommit, className, placeholder, multiline, select, 
 }
 
 export function RuleEditor({ id, fresh, onMoveTo, onMoveToFolder, onZone }: { id: string | null; fresh?: string | null; onMoveTo: (ids: string[]) => void; onMoveToFolder: (ids: string[]) => void; onZone: (zid: string) => void }) {
-  const s = useStore(); const { t } = useT(); const [adding, setAdding] = useState<null | 'src' | 'dst' | 'svc'>(null);
+  const s = useStore(); const { t } = useT(); const [adding, setAdding] = useState<null | 'src' | 'dst' | 'svc'>(null); const small = useFlow().small;
   useEffect(() => setAdding(null), [id]);
   const r = id ? s.rules.find(x => x.id === id) : undefined;
   if (!r) return <div className="empty"><b>{t('No Rule selected')}</b><p>{t('Open a Rule to edit every field in one place and see what it becomes in Azure.')}</p></div>;
@@ -63,7 +65,7 @@ export function RuleEditor({ id, fresh, onMoveTo, onMoveToFolder, onZone }: { id
         <div className="seg2 actseg" role="group"><button className={r.action === 'allow' ? 'on allow' : ''} onClick={() => set('action', 'allow')}><Checkmark12Filled />{t('Allow')}</button><button className={r.action === 'deny' ? 'on deny' : ''} onClick={() => set('action', 'deny')}><Dismiss12Filled />{t('Deny')}</button></div>
         <Switch checked={r.enabled} disabled={del} onChange={(_, d) => s.setEnabled([r.id], d.checked)} label={t(r.enabled ? 'Enabled' : 'disabled')} />
       </div>
-      <button className="infolder" onClick={() => onMoveToFolder([r.id])}><Folder16Regular />{folder ? folder.name : t('Not in a Folder')}</button>
+      {!small && <button className="infolder" onClick={() => onMoveToFolder([r.id])}><Folder16Regular />{folder ? folder.name : t('Not in a Folder')}</button>}
 
       <div className="flowbox">{group('src', 'From')}{group('dst', 'to')}{group('svc', 'on')}</div>
 
@@ -82,6 +84,7 @@ export function RuleEditor({ id, fresh, onMoveTo, onMoveToFolder, onZone }: { id
       </div>
 
       {checks.length > 0 && <><h3>{t('Before you submit')}</h3>{checks.map(([tone, icon, text]) => <div key={text} className={`note ${tone}`}>{icon}{t(text)}</div>)}</>}
+      <RulePolicy id={r.id} />
 
       <h3>{t('Details')}</h3>
       <div className="form">
@@ -94,7 +97,7 @@ export function RuleEditor({ id, fresh, onMoveTo, onMoveToFolder, onZone }: { id
       </div>
 
       <div className="insp-a"><Button size="small" icon={<Copy16Regular />} onClick={() => s.clone([r.id])}>{t('Clone')}</Button><Button size="small" icon={<ArrowSort16Regular />} onClick={() => onMoveTo([r.id])}>{t('Move to…')}</Button>
-        <Button size="small" icon={<FolderArrowRight16Regular />} onClick={() => onMoveToFolder([r.id])}>{t('Folder')}</Button><Button size="small" icon={<Delete16Regular />} onClick={() => s.remove([r.id])}>{t('Delete')}</Button></div>
+        {!small && <Button size="small" icon={<FolderArrowRight16Regular />} onClick={() => onMoveToFolder([r.id])}>{t('Folder')}</Button>}<Button size="small" icon={<Delete16Regular />} onClick={() => s.remove([r.id])}>{t('Delete')}</Button></div>
     </div>
   );
 }

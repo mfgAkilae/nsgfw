@@ -5,6 +5,8 @@ import { Search16Regular, Checkmark12Filled, ArrowRight16Regular } from '@fluent
 import { objects, zones, services, zoneById, ref, ObjKind } from './data';
 import { useStore, otherSets, CsState } from './store';
 import { usePreview, useApproval } from './ChangeViews';
+import { useFlow, CUR_NAME } from './flow';
+import { InboxList } from './Inbox';
 import { kindLabel } from './ObjectPicker';
 import { Glyph } from './Glyph';
 import { useT } from './i18n';
@@ -76,30 +78,33 @@ export const Track = ({ at, labels, warnAt }: { at: number; labels?: boolean; wa
   <ol className={`track ${labels ? 'full' : ''}`}>{['Edit', 'Submit', 'Approval', 'Commit'].map((l, i) => <li key={l} className={i === warnAt ? 'warn' : i < at ? 'done' : i === at ? 'on' : ''} title={t(l)}><i>{i === warnAt ? '!' : i < at ? <Checkmark12Filled /> : i + 1}</i><span>{i === warnAt ? t('Approval still open') : t(l)}</span></li>)}</ol>); };
 
 export function ChangeSetsPage({ onFilter, onReview }: { onFilter: (k: FilterKey) => void; onReview: () => void }) {
-  const s = useStore(); const { t } = useT(); const pv = usePreview(); const ap = useApproval(pv);
-  const todo: [string, string, string, string, () => void][] = [
-    ['amber', 'Approval', 'kim asks you to approve “Q4 cleanup of expired Rules”: 63 Zones, four-eyes.', 'Review', () => {}],
-    ['red', 'Emergency Commit', 'sam committed “Hotfix: block 203.0.113.0/24” without Approval. It needs yours afterwards.', 'Review', () => {}],
-    ['amber', 'Expiry', '14 of your Rules expire within 7 days.', 'Show Rules', () => onFilter('expiring')],
-    ['', 'Rejected', 'jo rejected “Open RDP for vendor”: use the jump hosts.', 'Open', () => {}],
-  ];
+  const s = useStore(); const { t } = useT(); const pv = usePreview(); const ap = useApproval(pv); const f = useFlow();
   const n = (k: number, one: string, many: string) => `${k} ${t(k === 1 ? one : many)}`;
-  const row = (name: string, owner: string, state: CsState, meta: string, tags: JSX.Element | null, current?: boolean, onClick?: () => void, warnAt?: number) => (
-    <div key={name} className={`setrow ${current ? 'current' : ''}`} onClick={onClick}>
-      <span className="who" title={owner}>{owner.slice(0, 2).toUpperCase()}</span>
+  const behind = (base: number) => (f.latest > base ? `, ${f.latest - base} ${t('behind')}` : '');
+  const row = (key: string, name: string, owner: string, state: CsState, meta: string, tags: JSX.Element | null, current?: boolean, onClick?: () => void, warnAt?: number) => (
+    <div key={key} className={`setrow ${current ? 'current' : ''}`} onClick={onClick}>
+      <span className="who" title={owner}>{owner === 'nsgfw' ? 'NS' : owner.slice(0, 2).toUpperCase()}</span>
       <div className="set-n"><b>{name}</b><span className="muted">{meta}</span></div>
       <span className="set-t">{tags}</span>
       <Track at={stepOf[state]} labels warnAt={warnAt} />
     </div>);
+  // Issue 36: the other Change sets open on the Review screen, the approver decides there.
+  const dec = (id: string, st: CsState): CsState => (f.decisions[id]?.kind === 'rejected' ? 'Open' : f.decisions[id]?.kind === 'approved' && st === 'Submitted' ? 'Approved' : st);
+  const others = otherSets.map(c => ({ ...c, state: c.id === 'cs-2' && f.latest >= 1289 ? 'Committed' as CsState : dec(c.id, c.state) }));
   return (
     <div className="setspage">
       <h3 style={{ marginTop: 4 }}>{t('Waiting for you')}</h3>
-      <div className="sheet todo">{todo.map(([tone, k, text, btn, go]) => <div key={text} className="todo-r"><span className={`tag ${tone}`}>{t(k)}</span><span>{text}</span><Button size="small" onClick={go}>{t(btn)}</Button></div>)}</div>
+      <InboxList onFilter={k => onFilter(k)} />
       <h3>{t('All Change sets')}</h3>
       <div className="sheet sets">
-        {row('CHG-5120 Release app0042', 'you', ap.eff, `${n(s.edits.length, 'edit', 'edits')}, ${n(pv.affected.length, 'Zone', 'Zones')}, ${t('based on Version')} ${s.version}`, <span className="tag accent">{t('current')}</span>, true, onReview)}
-        {otherSets.map(c => row(c.name, c.owner, c.state, `${n(c.edits, 'edit', 'edits')}, ${n(c.affected, 'Zone', 'Zones')}${c.scheduled ? `, ${t('Scheduled')} ${c.scheduled}` : ''}`,
-          <>{c.rebase && <span className="tag red">{t('Rebase needed')}</span>}{c.emergency && <span className="tag amber">{t('Emergency Commit')}</span>}</>, false, undefined, c.emergency ? 2 : undefined))}
+        {row('cur', CUR_NAME, 'you', s.state === 'Committed' ? 'Committed' : ap.eff, `${n(s.edits.length, 'edit', 'edits')}, ${n(pv.affected.length, 'Zone', 'Zones')}, ${t('based on Version')} ${s.version}${behind(s.version)}`,
+          <><span className="tag accent">{t('current')}</span>{f.pending && <span className="tag red">{t('Rebase needed')}</span>}{f.schedule['CHG-5120'] && <span className="tag">{t('Scheduled')} {f.schedule['CHG-5120']}</span>}</>, true, f.pending ? () => f.setRebaseOpen(true) : onReview)}
+        {row('cs-6', 'Open RDP for vendor', 'you', f.csState['cs-6'] ?? 'Open', `1 ${t('edit')}, 1 ${t('Zone')}, ${t('based on Version')} 1288${behind(1288)}`, f.csState['cs-6'] ? null : <span className="tag red">{t('Rejected')}</span>, false, () => f.openCs('cs-6'))}
+        {f.created.map(c => row(c.id, `${c.kind === 'revert' ? 'Revert Version' : 'Restore to Version'} ${c.of}`, c.author, f.decisions[c.id]?.kind === 'approved' ? 'Committed' : f.csState[c.id] ?? (c.author === 'nsgfw' ? 'Submitted' : 'Open'),
+          `${t(c.kind === 'revert' ? 'Revert' : 'Restore')}, ${t('based on Version')} ${f.latest}`, c.author === 'nsgfw' ? <span className="tag">{t('prepared by the tool')}</span> : null, false, () => f.openCs(c.id)))}
+        {f.retrans && row('rt-1', 'Re-translation for engine 1.6.0', 'nsgfw', f.decisions['rt-1'] ? 'Committed' : 'Submitted', `${t('no edits')}, 37 ${t('Zones')}, Production`, <span className="tag amber">{t('Commits in Production wait')}</span>, false, () => f.openCs('rt-1'))}
+        {others.map(c => row(c.id, c.name, c.owner, c.state, `${n(c.edits, 'edit', 'edits')}, ${n(c.affected, 'Zone', 'Zones')}, ${t('based on Version')} ${c.base}${c.state === 'Committed' ? '' : behind(c.base)}${c.scheduled ? `, ${t('Scheduled')} ${c.scheduled}` : ''}`,
+          <>{c.rebase && <span className="tag red">{t('Rebase needed')}</span>}{c.emergency && <span className="tag amber">{t('Emergency Commit')}</span>}</>, false, c.id === 'cs-2' && c.state === 'Committed' ? undefined : () => f.openCs(c.id), c.emergency && !f.decisions['cs-5'] ? 2 : undefined))}
       </div>
     </div>
   );

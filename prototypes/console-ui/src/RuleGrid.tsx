@@ -10,6 +10,7 @@ import { ShieldError16Filled, Warning16Filled, Info16Regular, Clock16Regular, Pe
 import { Rule, FolderRow, isFolder, svcName, ref } from './data';
 import { useStore, alsoChanged, St } from './store';
 import { useT } from './i18n';
+import { useFlow } from './flow';
 import { useMode } from './theme';
 import { Chip, RefsEditor } from './ObjectPicker';
 
@@ -94,7 +95,7 @@ interface Props { rows: Rule[]; quick?: string; filter?: FilterKey; bands?: { to
   onFocus?: (id: string) => void; onOpen?: (id: string) => void; onQuick?: (text: string) => void; onSelection?: (ids: string[]) => void; onMoveTo?: (ids: string[]) => void; onReady?: (ms: number) => void }
 
 export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, refH) {
-  const s = useStore();
+  const s = useStore(); const small = useFlow().small;
   const { t, lang } = useT();
   const sRef = useRef(s); sRef.current = s;
   const pRef = useRef(p); pRef.current = p;
@@ -131,14 +132,14 @@ export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, r
     if (sorted) return s.rules.filter(ok);
     const out: (Rule | FolderView)[] = []; let cur: FolderView | null = null;
     for (const e of s.entries) {
-      if (isFolder(e)) { cur = { ...e, total: 0, shown: 0, allow: 0, deny: 0, changed: 0, flagged: 0, open: filtering || !p.collapsed.has(e.id) }; out.push(cur); continue; }
+      if (isFolder(e)) { if (small) { cur = null; continue; } cur = { ...e, total: 0, shown: 0, allow: 0, deny: 0, changed: 0, flagged: 0, open: filtering || !p.collapsed.has(e.id) }; out.push(cur); continue; }   // issue 36: no Folders in the small profile
       if (!e.folder) cur = null;
       const hit = ok(e);
       if (cur) { cur.total++; if (hit) { cur.shown++; if (e.action === 'allow') cur.allow++; else cur.deny++; if (s.status.has(e.id)) cur.changed++; if (e.policy || e.importNote || e.layerWarn) cur.flagged++; } }
-      if (hit && (!cur || cur.open)) out.push(e);
+      if (hit && (!cur || cur.open)) out.push(small && e.folder ? { ...e, folder: undefined } : e);
     }
     return filtering ? out.filter(e => !isFolder(e) || (e as FolderView).shown > 0) : out;
-  }, [s.entries, s.rules, s.status, p.rows, p.scoped, p.quick, p.filter, p.collapsed, sorted, filtering]);
+  }, [s.entries, s.rules, s.status, p.rows, p.scoped, p.quick, p.filter, p.collapsed, sorted, filtering, small]);
   const gridCtx = useMemo(() => ({ toggle: (id: string) => pRef.current.onToggle(id), open: (id: string) => pRef.current.onOpen?.(id) }), []);
 
   const cols = useMemo<ColDef[]>(() => [
@@ -234,8 +235,8 @@ export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, r
             <button onClick={act(() => s.move([live.id], null, 'after'))}><ArrowDown16Regular />{t('Move to the bottom')}</button>
             <button onClick={act(() => p.onMoveTo?.([live.id]))}><ArrowSort16Regular />{t('Move to…')}</button>
             <hr />
-            <button onClick={act(() => p.onMoveToFolder?.([live.id]))}><FolderArrowRight16Regular />{t('Move to Folder…')}</button>
-            {live.folder ? <button onClick={act(() => s.moveToFolder([live.id], null))}><Folder16Regular />{t('Take out of the Folder')}</button> : <button onClick={act(() => s.newFolder(`${t('Folder')} ${live.name.slice(0, 24)}`, [live.id]))}><FolderAdd16Regular />{t('New Folder from this Rule')}</button>}
+            {!small && <><button onClick={act(() => p.onMoveToFolder?.([live.id]))}><FolderArrowRight16Regular />{t('Move to Folder…')}</button>
+            {live.folder ? <button onClick={act(() => s.moveToFolder([live.id], null))}><Folder16Regular />{t('Take out of the Folder')}</button> : <button onClick={act(() => s.newFolder(`${t('Folder')} ${live.name.slice(0, 24)}`, [live.id]))}><FolderAdd16Regular />{t('New Folder from this Rule')}</button>}</>}
             {menu.objs.length > 0 && <><hr />{menu.objs.slice(0, 3).map(id => <button key={id} onClick={act(() => p.onQuick?.(oname(id)))}><Filter16Regular /><span>{t('Rules with')} <b>{oname(id)}</b></span></button>)}</>}
             <hr />
             <button className="danger" onClick={act(() => s.remove([live.id]))}><Delete16Regular />{t('Delete')}</button>
