@@ -47,7 +47,7 @@
   };
   function world(zones, o) {
     o = o || {};
-    const inst = { internal: ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'], envs: E.clone(ENVS), vnets: E.clone(VNETS), subnets: E.clone(SUBNETS), nics: E.clone(NICS),
+    const inst = { internal: ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'fc00::/7'], envs: E.clone(ENVS), vnets: E.clone(VNETS), subnets: E.clone(SUBNETS), nics: E.clone(NICS),
       objects: Object.assign(E.clone(OBJECTS), E.clone(o.objects || {})), services: Object.assign(E.clone(SERVICES), E.clone(o.services || {})), zones: {}, rules: E.clone(o.rules || []) };
     for (const z of zones) { const [id, ov] = typeof z === 'string' ? [z, {}] : z; inst.zones[id] = Object.assign({ state: 'managed', posture: 'dest', inherit: {}, extra: [] }, E.clone(ZONES[id]), E.clone(ov)); }
     if (o.edit) o.edit(inst);
@@ -142,10 +142,10 @@
 
   add('Placement', 'internal', 'The Internal address space',
     'web is destination-enforced. Rule 1 allows ssh to on-premises clients (192.168.10.0/24, inside the default Internal address space). Rule 2 allows https to a partner network in 100.64.0.0/10, which is not. Step 2 adds 100.64.0.0/10 to the Internal address space.',
-    ['Rule 1 is left out: on-premises is reachable from web without any Rule, and on-premises has no NSG.', 'Step 2: Rule 2 is left out too. Affected Zones are empty, so the instance default (four-eyes) applies, if this is a Change set at all.'],
+    ['Rule 1 is left out: on-premises is reachable from web without any Rule, and on-premises has no NSG.', 'Step 2: Rule 2 is left out too. The change is a Change set whose Affected Zones are every destination-enforced Zone (decided 2026-11-10).'],
     [V('Version 1', () => world(['web'], { objects: { partner: { kind: 'cidr', value: '100.64.0.0/10', name: 'partner-net' } }, rules: [R(1, 'web to onprem ssh', ['zone:web'], ['onprem'], ['ssh']), R(2, 'web to partner', ['zone:web'], ['partner'], ['https'])] }),
       { checks: [['Rule 1 left out', (S, D) => dropped(D, 'web', 1).length === 1], ['Rule 2 kept', (S, D) => of(D, 'web', 'out', 2).length === 1]] }),
-     C('Change set: add 100.64.0.0/10 to the Internal address space', I => { I.internal.push('100.64.0.0/10'); }, { checks: [['Rule 2 left out now', (S, D) => dropped(D, 'web', 2).length === 1], ['no Affected Zones', (S, D) => affected(D) === '']] })]);
+     C('Change set: add 100.64.0.0/10 to the Internal address space', I => { I.internal.push('100.64.0.0/10'); }, { checks: [['Rule 2 left out now', (S, D) => dropped(D, 'web', 2).length === 1], ['every destination-enforced Zone is affected', (S, D) => affected(D) === 'web']] })]);
 
   add('Placement', 'intra', 'Intra-zone default and a Rule above it',
     'Traffic inside app is allowed by the Intra-zone default at 4080. Rule 1 denies rdp inside app and sits above it.',
@@ -155,9 +155,9 @@
 
   add('Placement', 'dual', 'A dual-stack Zone',
     'dual and dual2 carry IPv4 and IPv6 prefixes. Until the empirical checks show that Azure accepts both families in one NSG rule, the engine splits per family.',
-    ['Platform exceptions 100 (AzureLoadBalancer) and 101 (IPv6 probe source), Intra-zone default 4080 and 4081.', 'Rule 1 (any → dual): two NSG rules, IPv4 and IPv6. It also lands outbound on dual and dual2 for IPv6, because no IPv6 prefix is internal.', 'Rule 2 (dual → dual2) on destination-enforced dual: the IPv4 NSG rule is left out, the IPv6 one stays, because the default Internal address space holds no IPv6 prefix.', 'Step 2: one NSG rule per Rule if mixed families were allowed (engine option).'],
+    ['Platform exceptions 100 (AzureLoadBalancer) and 101 (IPv6 probe source), Intra-zone default 4080 and 4081.', 'Rule 1 (any → dual): two NSG rules, IPv4 and IPv6.', 'Rule 2 (dual → dual2) on destination-enforced dual: both families are left out, because the default Internal address space now holds fc00::/7 (decided 2026-11-10). The egress allow has an IPv6 rule at 4095. Before that decision the IPv6 NSG rule stayed, and "any → dual" landed outbound on every dual-stack Zone.', 'Step 2: one NSG rule per Rule if mixed families were allowed (engine option).'],
     [V('Version 1', () => world(['dual', 'dual2'], { rules: [R(1, 'any to dual', ['any'], ['zone:dual'], ['https']), R(2, 'dual to dual2', ['zone:dual'], ['zone:dual2'], ['tcp-8443'])] }),
-      { checks: [['two NSG rules for Rule 1', (S, D) => of(D, 'dual', 'in', 1).length === 2], ['IPv6 kept outbound on dual', (S, D) => of(D, 'dual', 'out', 2).length === 1 && of(D, 'dual', 'out', 2)[0].dst.fam === 6], ['platform 101 present', (S, D) => D.out.nsgs.dual.in.some(r => r.priority === 101)]] }),
+      { checks: [['two NSG rules for Rule 1', (S, D) => of(D, 'dual', 'in', 1).length === 2], ['both families left out on dual', (S, D) => !of(D, 'dual', 'out', 2).length && dropped(D, 'dual', 2).length === 2], ['IPv6 egress allow at 4095', (S, D) => D.out.nsgs.dual.out.some(r => r.priority === 4095 && r.kind === 'egress')], ['platform 101 present', (S, D) => D.out.nsgs.dual.in.some(r => r.priority === 101)]] }),
      X('Engine option: mixed families in one NSG rule', S => { S.opt = { splitFamilies: false }; S.inst = E.clone(S.inst); S.pending = true; }, { checks: [['one NSG rule for Rule 1', (S, D) => of(D, 'dual', 'in', 1).length === 1]] })]);
 
   add('Placement', 'appgw', 'An Application Gateway v2 Zone',
@@ -185,12 +185,12 @@
     ['Step 1: Rule 1 also lands inbound on labapp and opens lab clients → labapp on ssh.', 'Step 2: with a VNet binding to spoke1, it lands only on app.'],
     [V('Version 1', () => world(['web', 'app', 'labapp'], { objects: { 'app-servers': { kind: 'cidr', value: '10.1.2.0/24', name: 'app-servers' } }, edit: I => { I.subnets.labclients.prefixes = ['10.1.1.0/24']; }, rules: [R(1, 'web ssh to app servers', ['zone:web'], ['app-servers'], ['ssh'])] }),
       { checks: [['labapp gets the NSG rule', (S, D) => of(D, 'labapp', 'in', 1).length === 1], ['lab clients reach labapp on ssh', (S, D) => E.flowAllowed(S.inst, D.out, {}, { s: E.ip('10.1.1.20'), d: E.ip('10.1.2.5'), proto: 'Tcp', port: 22 }, null, 'labapp').every(x => x)]] }),
-     C('Change set: bind "app-servers" to spoke1', I => { I.objects['app-servers'].bind = ['spoke1']; }, { checks: [['only app now', (S, D) => D.out.cost[1].nsgs.join() === 'app'], ['lab clients blocked', (S, D) => !E.flowAllowed(S.inst, D.out, {}, { s: E.ip('10.1.1.20'), d: E.ip('10.1.2.5'), proto: 'Tcp', port: 22 }, null, 'labapp').some(x => x)]] })]);
+     C('Change set: bind "app-servers" to spoke1', I => { I.objects['app-servers'].bind = ['spoke1']; }, { checks: [['only app now', (S, D) => D.out.cost[1].nsgs.join() === 'app'], ['lab clients blocked', (S, D) => !E.flowAllowed(S.inst, D.out, {}, { s: E.ip('10.1.1.20'), d: E.ip('10.1.2.5'), proto: 'Tcp', port: 22 }, null, 'labapp')[0]]] })]);
 
   // ======================= Priorities and names =======================
   add('Priorities and names', 'bands', 'The fixed priority bands',
     'One Managed NSG with every block: db has all three Inherited defaults (as after an Import) and is destination-enforced.',
-    ['100–119 Platform exceptions, 120–4079 Rules, 4080–4089 Intra-zone default, 4090–4095 Inherited defaults, 4096 Deny-all, 65000+ Azure default rules (read-only).', 'Prototype choice, not decided: the egress allow of the Egress posture sits at 4094 (IPv4) and 4095 (IPv6), in the band that ADR 0011 gives the Inherited defaults.', 'A single NSG rule takes the middle of the Rules band (2100).'],
+    ['100–119 Platform exceptions, 120–4079 Rules, 4080–4089 Intra-zone default, 4090–4095 Inherited defaults, 4096 Deny-all, 65000+ Azure default rules (read-only).', 'The egress allow of the Egress posture sits at 4094 (IPv4) and 4095 (IPv6), in one band 4090–4095 with the Inherited defaults at 4090/4091 (decided 2026-11-10).', 'A single NSG rule takes the middle of the Rules band (2100).'],
     [V('Version 1', () => world([['db', { inherit: { inVNet: true, outVNet: true, outInternet: true } }]], { rules: [R(1, 'any to db', ['any'], ['zone:db'], ['sql']), R(2, 'db to storage', ['zone:db'], ['tag-storage'], ['https'])] }),
       { checks: [['inherited at 4090', (S, D) => D.out.nsgs.db.in.some(r => r.priority === 4090 && r.kind === 'inherited')], ['egress at 4094', (S, D) => D.out.nsgs.db.out.some(r => r.priority === 4094 && r.kind === 'egress')], ['middle of the band', (S, D) => prio(D, 'db', 'in', 1)[0] === 2100]] })]);
 
@@ -227,13 +227,13 @@
 
   add('Priorities and names', 'names', 'NSG rule names',
     'Rule 1042 "web to db". Names follow nsgfw-r<Rule ID>-<in|out>-<hash>, and the hash covers only the split key (protocol, kind and identity of each side\'s partition).',
-    ['Adding a port and a prefix keeps the name (step 2).', 'Renaming the Rule keeps the name; only the description changes (step 4).', 'A new protocol or a new partition (a service tag) adds NSG rules with new names (step 6).'],
+    ['Adding a port and a prefix keeps the name (step 2).', 'Renaming the Rule keeps the name; only the description changes (step 4).', 'A new protocol or a new partition (a service tag) adds NSG rules with new names (step 6). They take the numbers right after their sibling (2101–2103, decided 2026-11-10), not the middle of the gap.'],
     [V('Version 1', () => world(['web', 'db'], { rules: [R(1042, 'web to db', ['zone:web'], ['zone:db'], ['https'])] })),
      C('Change set: add tcp/8443 and on-premises to the Rule', I => { const r = rule(I, 1042); r.svc.push('tcp-8443'); r.src.push('onprem'); }, { checks: [['same name', (S, D) => of(D, 'db', 'in', 1042)[0].name === S.committed.out.nsgs.db.in.find(r => r.ruleId === 1042).name]] }),
      K('Commit (Version 2)'),
      C('Change set: rename the Rule', I => { rule(I, 1042).name = 'web tier to SQL'; }, { checks: [['same name, new description', (S, D) => D.preview[0].changed.length === 1 && D.preview[0].changed[0].before.name === D.preview[0].changed[0].after.name]] }),
      K('Commit (Version 3)'),
-     C('Change set: add udp/53 and the Front Door tag', I => { const r = rule(I, 1042); r.svc.push('udp-53'); r.src.push('tag-afd'); }, { checks: [['three new NSG rules, old one kept', (S, D) => D.preview[0].added.length === 3 && !D.preview[0].removed.length]] })]);
+     C('Change set: add udp/53 and the Front Door tag', I => { const r = rule(I, 1042); r.svc.push('udp-53'); r.src.push('tag-afd'); }, { checks: [['three new NSG rules, old one kept', (S, D) => D.preview[0].added.length === 3 && !D.preview[0].removed.length], ['next to their sibling', (S, D) => prio(D, 'db', 'in', 1042).join() === '2100,2101,2102,2103']] })]);
 
   add('Priorities and names', 'limits', 'Limit warning and a limit breach',
     'db is the destination of 1,800 Rules (one host each). That is above 90 % of the 1,994 custom NSG rules counted per NSG. A Change set adds 200 more. Step 3 shows the address limit: one Rule with an Address group of 6,100 hosts.',
@@ -284,12 +284,12 @@
 
   add('ASGs', 'asg-delete', 'IP fallback: a deleted member\'s IP leaves allow Rules on its own',
     'web-servers has members in spoke1 and spoke2; db (spoke1) holds the spoke2 member\'s IP. The VM in spoke2 is deleted in Azure. The tool removes its IP from allow Rules without Approval (issue 27, point 14). Step 3 repeats it with the object also in a deny Rule.',
-    ['Step 2: the tool\'s Change set removes the member; db loses one NSG rule; it only closes, so no Approval.', 'Step 3/4: the same object is also in "deny web-servers → app ssh". Removing the member closes on the allow Rule and opens on the deny Rule (the IP leaves a deny). A member belongs to the object, not to one Rule, so the tool cannot remove it from the allow Rule only. Open question.'],
+    ['Step 2: the tool\'s Change set removes the member; db loses one NSG rule; it only closes, so no Approval.', 'Step 3/4: the same object is also in "deny web-servers → app ssh". Removing the member closes on the allow Rule and opens on the deny Rule. Decided 2026-11-10: a deleted member is removed everywhere on its own. A reused IP is no member, so it is treated like any other address, as the Rule base says. Changed IPs of existing members still follow ADR 0006.'],
     [V('Version 1', () => asgWorld(['web', 'api', 'db'], { 'asg-web': asg('web-servers', ['nic-web1', 'nic-api1']) }, [R(1, 'web servers to db', ['asg-web'], ['zone:db'], ['sql'])])),
      C('Azure: vm-api1 is deleted; the tool prepares the removal', (I, S) => { delete I.nics['nic-api1']; I.objects['asg-web'].members = ['nic-web1']; S.note = 'Change set prepared by the tool, Author: the tool. ' + E.rulesUsing(S.committed.inst, 'asg-web').map(r => `Rule ${r.id} (${r.action}): removing the member ${r.action === 'allow' ? 'only closes' : 'opens'}`).join('; ') + '.'; },
       { checks: [['IP partition gone from db', (S, D) => of(D, 'db', 'in', 1).length === 1], ['only closes', (S, D) => E.rulesUsing(S.committed.inst, 'asg-web').every(r => r.action === 'allow')]] }),
      V('Version 1b: the object is also in a deny Rule', () => asgWorld(['web', 'api', 'app', 'db'], { 'asg-web': asg('web-servers', ['nic-web1', 'nic-api1']) }, [R(2, 'web servers no ssh to app', ['asg-web'], ['zone:app'], ['ssh'], 'deny'), R(1, 'web servers to db', ['asg-web'], ['zone:db'], ['sql'])])),
-     C('Azure: vm-api1 is deleted again', (I, S) => { delete I.nics['nic-api1']; I.objects['asg-web'].members = ['nic-web1']; S.note = E.rulesUsing(S.committed.inst, 'asg-web').map(r => `Rule ${r.id} (${r.action}): removing the member ${r.action === 'allow' ? 'closes' : 'opens (the IP leaves a deny Rule)'}`).join('; ') + '. Not automatic as one member removal.'; },
+     C('Azure: vm-api1 is deleted again', (I, S) => { delete I.nics['nic-api1']; I.objects['asg-web'].members = ['nic-web1']; S.note = E.rulesUsing(S.committed.inst, 'asg-web').map(r => `Rule ${r.id} (${r.action}): removing the member ${r.action === 'allow' ? 'closes' : 'opens for the IP, which is no member any more'}`).join('; ') + '. Removed on its own, without Approval, with an audit entry (decided 2026-11-10).'; },
       { checks: [['one allow and one deny use the object', (S, D) => E.rulesUsing(S.committed.inst, 'asg-web').map(r => r.action).sort().join() === 'allow,deny']] })]);
 
   add('ASGs', 'asg-tf-dual', 'A dual-stack ASG member in a Terraform Environment',
@@ -332,12 +332,12 @@
   const memberRules = () => [R(1, 'admins rdp to db', ['asg-admin'], ['zone:db'], ['rdp']), R(2, 'batch to db', ['asg-batch'], ['zone:db'], ['sql'])];
   add('Write order', 'members', 'The three ASG member steps',
     'ASG objects admins (vm-web1) and batch (vm-web2) are allowed into db. The Change set removes vm-web1 from admins, adds vm-app1 to batch, and adds a new Rule on db.',
-    ['Step 1: vm-web1 leaves admins (it only closes under the Deployed NSG contents).', 'Step 2: the NSG of db.', 'Step 3: vm-app1 joins batch (it only opens under the target).', 'Step 3 of this example: vm-web2 moves from batch to admins in one network interface write, and vm-app1 joins batch. No NSG changes. The move closes sql and opens rdp, so it fits neither step and the Change set fails validation, although the write is atomic and no NSG write can mix with it. Open question.'],
+    ['Step 1: vm-web1 leaves admins (it only closes under the Deployed NSG contents).', 'Step 2: the NSG of db.', 'Step 3: vm-app1 joins batch (it only opens under the target).', 'Step 3 of this example: vm-web2 moves from batch to admins, and vm-app1 joins batch. The move closes sql and opens rdp, so as one write it fits neither step. Decided 2026-11-10: it is split into two writes on the same network interface, leaving batch in step 1 and joining admins in the last step. In between the VM is in neither ASG, which only closes.'],
     [V('Version 1', () => world(['web', 'app', 'db'], { objects: memberObjs(), rules: memberRules() })),
      C('Change set', I => { I.objects['asg-admin'].members = []; I.objects['asg-batch'].members.push('nic-app1'); I.rules.push(R(3, 'web https to db', ['zone:web'], ['zone:db'], ['https'])); },
       { checks: [['vm-web1 in step 1, vm-app1 in step 3', (S, D) => D.plan.members.find(m => m.nic === 'nic-web1').step === 1 && D.plan.members.find(m => m.nic === 'nic-app1').step === 3], ['three levels', (S, D) => D.plan.levels.length === 3]] }),
      C('Other Change set on Version 1: vm-web2 moves to admins, vm-app1 joins batch', (I, S) => { S.inst = E.clone(S.committed.inst); I = S.inst; I.objects['asg-batch'].members = ['nic-app1']; I.objects['asg-admin'].members.push('nic-web2'); },
-      { checks: [['fails validation', (S, D) => errKinds(D).includes('member')], ['no NSG write', (S, D) => !D.plan.writes.some(w => w.kind === 'nsg')]] })]);
+      { checks: [['no validation error', (S, D) => !errKinds(D).length], ['split into leave and join', (S, D) => D.plan.levels[0].includes('nic:nic-web2:leave') && D.plan.levels[D.plan.levels.length - 1].includes('nic:nic-web2:join')]] })]);
 
   add('Write order', 'failed', 'A failed write delays only the writes with an edge from it',
     'The Change set of "A Crossing flow" plus unrelated changes on db and app. One edge: web before api.',
@@ -421,7 +421,7 @@
     ['The imported deny moves above the imported allow. That only closes flows: app → billing 8080, which the legacy NSG allowed.', 'A warning Import note lists it.'],
     [V('Deployed state', () => world(['app', ['billing', { state: 'legacy', nsg: 'nsg-billing', legacy: legacyCycle }]], { rules: [R(1, 'spoke1 to 8080', ['spoke1-net'], ['any'], ['tcp-8080']), R(2, 'no 8000s', ['any'], ['any'], ['tcp-8000s'], 'deny')] })),
      C('Onboarding Change set with Import', (I, S) => { S.importResult = doImport(S, 'billing', legacyCycle); },
-      { panel: (S, D) => importPanel(S, D, 'billing'), checks: [['cycle broken', (S, D) => S.importResult.m.edges.some(e => e.kind === 'cycle-break')], ['app → billing 8080 closes', (S, D) => !E.flowAllowed(S.inst, D.out, {}, { s: E.ip('10.1.2.9'), d: E.ip('10.1.4.9'), proto: 'Tcp', port: 8080 }, 'app', 'billing').some(x => x)]] })]);
+      { panel: (S, D) => importPanel(S, D, 'billing'), checks: [['cycle broken', (S, D) => S.importResult.m.edges.some(e => e.kind === 'cycle-break')], ['app → billing 8080 closes', (S, D) => !E.flowAllowed(S.inst, D.out, {}, { s: E.ip('10.1.2.9'), d: E.ip('10.1.4.9'), proto: 'Tcp', port: 8080 }, 'app', 'billing')[0]]] })]);
 
   const legacyHr = { name: 'nsg-hr', in: [
     { name: 'allow-onprem-rdp', priority: 100, access: 'Allow', proto: 'Tcp', ports: '3389', src: '192.168.10.0/24', dst: '*' },
@@ -444,21 +444,21 @@
         checks: [['hr has no inbound flag', (S, D) => !S.importBoth.b.flags.inVNet], ['billing inbound flag at 4090', (S, D) => D.out.nsgs.billing.in.some(r => r.priority === 4090)], ['rdp merge proposed', (S, D) => S.importBoth.proposals.some(p => p.possible && p.names.every(n => n === 'allow-onprem-rdp'))]] })]);
 
   const legacyBind = { name: 'nsg-billing', in: [{ name: 'allow-app-half-https', priority: 100, access: 'Allow', proto: 'Tcp', ports: '443', src: '10.1.2.0/25', dst: '*' }], out: [] };
-  add('Import', 'import-binding', 'How Import could use VNet bindings',
+  add('Import', 'import-binding', 'Import and VNet bindings',
     'billing (spoke1) is onboarded. Its legacy NSG lets 10.1.2.0/25 in on 443. That prefix is part of Zone app (spoke1) and of Zone labapp in the unconnected VNet lab, so Import creates a CIDR object (issue 18). labapp is strict. In lab, 10.1.4.0/24 (billing\'s prefix) is a client subnet that is not a Zone.',
-    ['Step 2 (as decided): the new object covers labapp too, so the imported Rule lands outbound on labapp and opens labapp → lab clients on 443, in a VNet the old NSG could never see.', 'Step 3 (prototype proposal): Import binds the new object to the VNets connected to billing\'s VNet. It then covers only app.'],
+    ['Step 2 (the first rule of issue 18): the new object covers labapp too, so the imported Rule lands outbound on labapp and opens labapp → lab clients on 443, in a VNet the old NSG could never see.', 'Step 3 (decided 2026-11-10): Import binds the new object to billing\'s VNet and the VNets peered with it. It then covers only app.'],
     [V('Deployed state', () => world([['app', { posture: 'strict' }], ['labapp', { posture: 'strict' }], ['billing', { state: 'legacy', nsg: 'nsg-billing', legacy: legacyBind }]], { rules: [] })),
-     C('Import as decided (no binding)', (I, S) => { S.importResult = doImport(S, 'billing', legacyBind); }, { panel: (S, D) => importPanel(S, D, 'billing'), checks: [['lands on labapp', (S, D) => D.out.cost[100].nsgs.includes('labapp')]] }),
-     C('Import with the binding proposal', (I, S) => { S.inst = E.clone(S.committed.inst); S.importResult = doImport(S, 'billing', legacyBind, null, { bindings: 'connected' }); }, { panel: (S, D) => importPanel(S, D, 'billing'), checks: [['not on labapp', (S, D) => !D.out.cost[100].nsgs.includes('labapp')]] })]);
+     C('Import without a binding (first rule)', (I, S) => { S.importResult = doImport(S, 'billing', legacyBind, null, { bindings: 'none' }); }, { panel: (S, D) => importPanel(S, D, 'billing'), checks: [['lands on labapp', (S, D) => D.out.cost[100].nsgs.includes('labapp')]] }),
+     C('Import with the binding (decided)', (I, S) => { S.inst = E.clone(S.committed.inst); S.importResult = doImport(S, 'billing', legacyBind); }, { panel: (S, D) => importPanel(S, D, 'billing'), checks: [['not on labapp', (S, D) => !D.out.cost[100].nsgs.includes('labapp')]] })]);
 
   // ======================= Change workflow =======================
   add('Change workflow', 'affected', 'Affected Zones under ADR 0016',
     'web, app and db are destination-enforced, api is strict. The Change set adds three Rules. Step 3 switches app to strict.',
-    ['"any → db": db (destination) and api (strict source); not web or app.', '"web → Internet": the destination reaches outside Zones, so web counts.', '"app → web": only web.', 'Step 3: app\'s posture change makes app affected, and also web, because Rule 3 uses app (a changed Zone). Is web meant to approve that?'],
+    ['"any → db": db (destination) and api (strict source); not web or app.', '"web → Internet": the destination reaches outside Zones, so web counts.', '"app → web": only web.', 'Step 4: app\'s posture change affects only app (decided 2026-11-10). Read literally, web would also count, because Rule 3 uses app.'],
     [V('Version 1', () => world(['web', 'app', 'db', ['api', { posture: 'strict' }]], { rules: [] })),
      C('Change set: three Rules', I => { I.rules = [R(1, 'any to db', ['any'], ['zone:db'], ['sql']), R(2, 'web to internet', ['zone:web'], ['tag-internet'], ['https']), R(3, 'app to web', ['zone:app'], ['zone:web'], ['https'])]; }, { checks: [['api, db, web', (S, D) => affected(D) === 'api,db,web']] }),
      K('Commit (Version 2)'),
-     C('Change set: app becomes strict', I => { I.zones.app.posture = 'strict'; }, { checks: [['app and web', (S, D) => affected(D) === 'app,web']] })]);
+     C('Change set: app becomes strict', I => { I.zones.app.posture = 'strict'; }, { checks: [['only app', (S, D) => affected(D) === 'app']] })]);
 
   add('Change workflow', 'rebase', 'Order conflicts at Rebase',
     'A Change set based on Version 5 inserts Rule 9 "allow app host → db ssh" between Rule 2 and Rule 3. Meanwhile Version 6 was committed.',
@@ -478,17 +478,17 @@
 
   // What the prototype asks the map owner to react to (each links to the example that shows it)
   const QUESTIONS = [
-    { key: 'internal-import', ex: 'merge', text: 'Imported Zones start destination-enforced, so Import opens outbound traffic from the new Zone to every Internal address outside its VirtualNetwork tag. That breaks "behaviour is preserved by default" for outbound. Accept with a warning Import note, or start imported Zones differently?' },
-    { key: 'ipv6-internal', ex: 'dual', text: 'The default Internal address space holds no IPv6 prefix. Between dual-stack Zones, IPv6 then behaves as if every Zone were strict: "any → dual" lands outbound on every dual-stack Zone, which brings back the broad-source cost of ADR 0016 for IPv6. Add unique local addresses (fc00::/7) or the VNets\' IPv6 ranges to the default?' },
-    { key: 'member-delete', ex: 'asg-delete', text: 'A deleted ASG member\'s IP leaves allow Rules on its own (issue 27, point 14). When the same object is also in a deny Rule, removing the member opens there. What does the tool do then?' },
-    { key: 'member-neither', ex: 'members', text: 'A member change that fits neither step fails validation (ADR 0018), even when it is one atomic network interface write and the Deployment writes no NSG it could mix with. Keep the rule, allow that case, or split such a change into two writes?' },
-    { key: 'import-binding', ex: 'import-binding', text: 'Import creates a CIDR object when a prefix matches Zones in unconnected VNets, and the object then lands on Zones in VNets the old NSG never saw. Should Import bind such objects to the VNets connected to the onboarded Zone?' },
-    { key: 'posture-affected', ex: 'affected', text: 'A Zone\'s Egress posture change makes every Rule that uses the Zone "changed through a changed Zone", so the Zones on the far side become Affected Zones although their NSGs and verdicts stay the same. Intended?' },
-    { key: 'internal-cs', ex: 'internal', text: 'Changing the Internal address space changes the outbound NSG of every destination-enforced Zone but has no Affected Zones. Is it a Change set (with the instance default four-eyes), or an admin setting with its own Approval?' },
-    { key: 'egress-band', ex: 'bands', text: 'The egress allow of the destination-enforced posture has no decided priority. The prototype puts it at 4094 (IPv4) and 4095 (IPv6), inside 4090–4095, the band ADR 0011 gives the Inherited defaults. Keep, or move it?' },
-    { key: 'first-spread', ex: 'stable', text: 'The first Commit spreads NSG rules evenly over 120–4079 (911, 1703, 2496, 3288). Keep the plain middle-of-the-gap numbers, or round them (for example to multiples of 10) so they read like a firewall\'s?' },
-    { key: 'sibling-priority', ex: 'names', text: 'New NSG rules of an existing Rule take the middle of the gap (3089–3091), away from their sibling at 2100. Issue 13 says both: one Rule\'s NSG rules take consecutive priorities (point 6), and a new NSG rule takes the middle of the gap (point 4). Place them next to their siblings when the numbers are free?' },
-    { key: 'tag-knowledge', ex: 'crossing', text: 'For Crossing flows the prototype treats addresses of the NSG\'s own VNet and of directly peered VNets as inside VirtualNetwork (documented), and private addresses as outside Azure service tags. Everything else is evaluated both ways. Accept this as engine knowledge?' },
+    { key: 'internal-import', ex: 'merge', answer: 'Decided: accepted. Imported Zones stay destination-enforced; outbound flows that open against the old NSG get a warning Import note.', text: 'Imported Zones start destination-enforced, so Import opens outbound traffic from the new Zone to every Internal address outside its VirtualNetwork tag. That breaks "behaviour is preserved by default" for outbound. Accept with a warning Import note, or start imported Zones differently?' },
+    { key: 'ipv6-internal', ex: 'dual', answer: 'Decided: the default Internal address space also holds fc00::/7.', text: 'The default Internal address space holds no IPv6 prefix. Between dual-stack Zones, IPv6 then behaves as if every Zone were strict: "any → dual" lands outbound on every dual-stack Zone, which brings back the broad-source cost of ADR 0016 for IPv6. Add unique local addresses (fc00::/7) or the VNets\' IPv6 ranges to the default?' },
+    { key: 'member-delete', ex: 'asg-delete', answer: 'Decided: a deleted member is removed everywhere on its own, also from deny Rules, with an audit entry.', text: 'A deleted ASG member\'s IP leaves allow Rules on its own (issue 27, point 14). When the same object is also in a deny Rule, removing the member opens there. What does the tool do then?' },
+    { key: 'member-neither', ex: 'members', answer: 'Decided: such a change is split into a leave write (step 1) and a join write (last step) on the same network interface.', text: 'A member change that fits neither step fails validation (ADR 0018), even when it is one atomic network interface write and the Deployment writes no NSG it could mix with. Keep the rule, allow that case, or split such a change into two writes?' },
+    { key: 'import-binding', ex: 'import-binding', answer: 'Decided: Import binds such new IP or CIDR objects to the Zone\'s VNet and its peered VNets.', text: 'Import creates a CIDR object when a prefix matches Zones in unconnected VNets, and the object then lands on Zones in VNets the old NSG never saw. Should Import bind such objects to the VNets connected to the onboarded Zone?' },
+    { key: 'posture-affected', ex: 'affected', answer: 'Decided: a change of Egress posture or Inherited defaults affects only the Zone itself.', text: 'A Zone\'s Egress posture change makes every Rule that uses the Zone "changed through a changed Zone", so the Zones on the far side become Affected Zones although their NSGs and verdicts stay the same. Intended?' },
+    { key: 'internal-cs', ex: 'internal', answer: 'Decided: a Change set whose Affected Zones are every destination-enforced Zone.', text: 'Changing the Internal address space changes the outbound NSG of every destination-enforced Zone but has no Affected Zones. Is it a Change set (with the instance default four-eyes), or an admin setting with its own Approval?' },
+    { key: 'egress-band', ex: 'bands', answer: 'Decided: kept at 4094/4095; 4090–4095 holds the Zone-setting allows.', text: 'The egress allow of the destination-enforced posture has no decided priority. The prototype puts it at 4094 (IPv4) and 4095 (IPv6), inside 4090–4095, the band ADR 0011 gives the Inherited defaults. Keep, or move it?' },
+    { key: 'first-spread', ex: 'stable', answer: 'Decided: kept as the plain middle-of-the-gap spread.', text: 'The first Commit spreads NSG rules evenly over 120–4079 (911, 1703, 2496, 3288). Keep the plain middle-of-the-gap numbers, or round them (for example to multiples of 10) so they read like a firewall\'s?' },
+    { key: 'sibling-priority', ex: 'names', answer: 'Decided: next to their siblings when the numbers are free, else the middle of the gap.', text: 'New NSG rules of an existing Rule take the middle of the gap (3089–3091), away from their sibling at 2100. Issue 13 says both: one Rule\'s NSG rules take consecutive priorities (point 6), and a new NSG rule takes the middle of the gap (point 4). Place them next to their siblings when the numbers are free?' },
+    { key: 'tag-knowledge', ex: 'crossing', answer: 'Decided: only the documented part. Own and directly peered VNets are inside VirtualNetwork and outside Internet; every other tag is evaluated both ways.', text: 'For Crossing flows the prototype treats addresses of the NSG\'s own VNet and of directly peered VNets as inside VirtualNetwork (documented), and private addresses as outside Azure service tags. Everything else is evaluated both ways. Accept this as engine knowledge?' },
     { key: 'any-internet', ex: 'internet', text: 'Observation: "web → any" opens web to every Zone, because any covers every Zone. Should the Rule editor warn when any is a destination next to a Zone source and offer the Internet tag?' },
     { key: 'pods-shared', ex: 'pods-twice', text: 'Observation: with the same Extra prefix on two Zones, a Rule between them also matches the destination cluster\'s own pods. Warn in the object editor?' }
   ];

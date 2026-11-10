@@ -263,7 +263,13 @@
       if (pr[i] !== null) { i++; continue; }
       const a = i; while (i < n && pr[i] === null) i++; const b = i - 1;
       const lo = a > 0 ? pr[a - 1] : RULES_LO - 1, hi = b < n - 1 ? pr[b + 1] : RULES_HI + 1;
-      if (b - a + 1 <= hi - lo - 1) { spread(list, pr, a, b, lo, hi); continue; }
+      if (b - a + 1 <= hi - lo - 1) { // decided 2026-11-10: siblings of an existing Rule first take the free numbers next to it
+        let s0 = a, e0 = b, L = lo, H = hi;
+        while (s0 <= e0 && a > 0 && list[s0].ruleId === list[a - 1].ruleId && L + 1 < H - (e0 - s0)) { pr[s0] = ++L; s0++; }
+        while (e0 >= s0 && b < n - 1 && list[e0].ruleId === list[b + 1].ruleId && H - 1 > L + (e0 - s0)) { pr[e0] = --H; e0--; }
+        if (s0 <= e0) spread(list, pr, s0, e0, L, H);
+        continue;
+      }
       const c = (lo + hi) / 2; let r = Math.max(1, Math.ceil((hi - lo) / 2));
       for (;;) {
         const L = Math.max(RULES_LO, Math.floor(c - r)), H = Math.min(RULES_HI, Math.ceil(c + r)), whole = L === RULES_LO && H === RULES_HI;
@@ -394,8 +400,8 @@
     const z = inst.zones[zid], vn = [z.vnet].concat(inst.vnets[z.vnet].peers || []);
     const inVnet = vn.some(v => inst.vnets[v].space.some(s => inP(s, addr)));
     if (t === 'VirtualNetwork') return inVnet ? true : null; // documented: own VNet and peered VNets are inside the tag
-    if (t === 'Internet') return inVnet ? false : null;
-    return isPrivate(addr) ? false : null; // Azure service tags hold public ranges
+    if (t === 'Internet') return inVnet ? false : null; // documented: Internet is the space outside the virtual network
+    return null; // decided 2026-11-10: nothing else is assumed; other service tags are evaluated both ways
   }
   function portIn(ports, port) { if (port === null) return true; return ports.some(p => { const [a, b] = parsePorts(p); return a <= port && port <= b; }); }
   function sideMatch(side, addr, ctx, role) {
@@ -558,37 +564,50 @@
     const dA = dep.out.asgs, tA = tgt.out.asgs;
     Object.keys(tA).filter(n => !dA[n]).forEach(n => W('asg+:' + n, 'asg-create', `create Managed ASG ${n}`, { env: tA[n].env }));
     const changes = memberChanges(dep.inst, tgt.inst);
-    changes.forEach(c => W('nic:' + c.nic, 'member', `network interface ${(tgt.inst.nics[c.nic] || dep.inst.nics[c.nic]).name}: ASGs ${c.before.join(', ') || '—'} → ${c.after.join(', ') || '—'}`, { change: c, env: tgt.inst.vnets[(tgt.inst.nics[c.nic] || dep.inst.nics[c.nic]).vnet].env }));
     const sig = n => JSON.stringify(n ? n.in.concat(n.out).map(r => [r.name, r.dir, r.priority, r.access, r.proto, r.ports, r.src, r.dst]) : null);
     const zones = uniq(Object.keys(dep.out.nsgs).concat(Object.keys(tgt.out.nsgs)));
     const nsgW = zones.filter(z => tgt.out.nsgs[z] && sig(dep.out.nsgs[z]) !== sig(tgt.out.nsgs[z]));
     nsgW.forEach(z => { const st = dep.inst.zones[z] ? dep.inst.zones[z].state : 'new'; W('nsg:' + z, 'nsg', `write NSG ${tgt.out.nsgs[z].name}${st === 'legacy' ? ' (adopted in place, legacy content until now)' : st === 'none' || st === 'new' ? ' (new)' : ''}`, { zone: z, env: tgt.inst.vnets[tgt.inst.zones[z].vnet].env }); });
     zones.filter(z => tgt.inst.zones[z] && (!dep.inst.zones[z] || dep.inst.zones[z].state === 'none')).forEach(z => { W('assoc:' + z, 'assoc', `associate ${tgt.out.nsgs[z].name} with subnet ${z}`, { env: tgt.inst.vnets[tgt.inst.zones[z].vnet].env }); edges.push({ from: 'nsg:' + z, to: 'assoc:' + z, kind: 'dep', why: 'association after its NSG' }); });
     Object.keys(dA).filter(n => !tA[n]).forEach(n => W('asg-:' + n, 'asg-delete', `delete Managed ASG ${n}`, { env: dA[n].env }));
+    // ASG member steps (ADR 0018). Decided 2026-11-10: a change that fits neither step is split into a write that
+    // leaves ASGs (step 1, must only close) and a write that joins ASGs (last step, must only open).
+    const memDep = membership(dep.inst), memTgt = membership(tgt.inst), I2 = tgt.inst;
+    const nic = n => tgt.inst.nics[n] || dep.inst.nics[n], envN = n => tgt.inst.vnets[nic(n).vnet].env;
+    const atDep = (c, set) => withNic(memDep, I2, c.nic, c.before, set), atTgt = (c, set) => withNic(memTgt, I2, c.nic, c.after, set);
+    const effDep = (c, from, to) => memberEffect(dep.inst, dep.out, atDep(c, from), atDep(c, to), c.nic, tgt.inst);
+    const effTgt = (c, from, to) => memberEffect(tgt.inst, tgt.out, atTgt(c, from), atTgt(c, to), c.nic, dep.inst);
+    const memberWrites = [];
+    const MW = (id, c, part, step, eff, label) => { W(id, 'member', label, { change: Object.assign({ nic: c.nic }, part), step, env: envN(c.nic) }); memberWrites.push(id); (c.parts = c.parts || []).push({ step, effect: eff, id }); };
+    const lbl = (n, b, a) => `network interface ${nic(n).name}: ASGs ${b.join(', ') || '—'} → ${a.join(', ') || '—'}`;
+    changes.forEach(c => {
+      const eOld = effDep(c, c.before, c.after);
+      if (!eOld.opens.length) { c.step = 1; c.effect = eOld; MW('nic:' + c.nic, c, { before: c.before, after: c.after }, 1, eOld, lbl(c.nic, c.before, c.after)); return; }
+      const eNew = effTgt(c, c.before, c.after);
+      if (!eNew.closes.length) { c.step = 3; c.effect = eNew; MW('nic:' + c.nic, c, { before: c.before, after: c.after }, 3, eNew, lbl(c.nic, c.before, c.after)); return; }
+      const keep = c.before.filter(a => c.after.includes(a)), eLeave = effDep(c, c.before, keep), eJoin = effTgt(c, keep, c.after);
+      if (!eLeave.opens.length && !eJoin.closes.length) {
+        c.step = 'split'; c.effect = { opens: eJoin.opens, closes: eLeave.closes };
+        MW('nic:' + c.nic + ':leave', c, { before: c.before, after: keep }, 1, eLeave, `${lbl(c.nic, c.before, keep)} (leaves first)`);
+        MW('nic:' + c.nic + ':join', c, { before: keep, after: c.after }, 3, eJoin, `${lbl(c.nic, keep, c.after)} (joins last)`);
+        edges.push({ from: 'nic:' + c.nic + ':leave', to: 'nic:' + c.nic + ':join', kind: 'dep', why: 'same network interface: leave before join' });
+        return;
+      }
+      c.step = null; c.effect = { opens: eOld.opens, closes: eNew.closes };
+      W('nic:' + c.nic, 'member', lbl(c.nic, c.before, c.after), { change: c, step: null, env: envN(c.nic) });
+      errors.push({ kind: 'member', text: `Member change on ${nic(c.nic).name} fits no step, even split into leaving and joining: leaving opens ${eLeave.opens[0] || '—'} or joining closes ${eJoin.closes[0] || '—'}. Split the Change set.` });
+    });
+    const mw = id => writes.find(w => w.id === id);
+    let mid = clone(memDep);
+    memberWrites.filter(id => mw(id).step === 1).forEach(id => { const ch = mw(id).change; mid = withNic(mid, I2, ch.nic, ch.before, ch.after); });
     const refs = (out, z, name) => out.nsgs[z] && out.nsgs[z].in.concat(out.nsgs[z].out).some(r => [r.src, r.dst].some(s => s.kind === 'asgs' && s.asgs.includes(name)));
     writes.filter(w => w.kind === 'asg-create').forEach(w => { const n = w.id.slice(5);
-      writes.filter(x => x.kind === 'member' && x.change.after.includes(n)).forEach(x => edges.push({ from: w.id, to: x.id, kind: 'dep', why: 'ASG exists before a member joins' }));
+      writes.filter(x => x.kind === 'member' && x.change.after.includes(n) && !x.change.before.includes(n)).forEach(x => edges.push({ from: w.id, to: x.id, kind: 'dep', why: 'ASG exists before a member joins' }));
       nsgW.filter(z => refs(tgt.out, z, n)).forEach(z => edges.push({ from: w.id, to: 'nsg:' + z, kind: 'dep', why: 'ASG exists before an NSG rule references it' })); });
     writes.filter(w => w.kind === 'asg-delete').forEach(w => { const n = w.id.slice(5);
-      writes.filter(x => x.kind === 'member' && x.change.before.includes(n)).forEach(x => edges.push({ from: x.id, to: w.id, kind: 'dep', why: 'last member leaves before the ASG is deleted' }));
+      writes.filter(x => x.kind === 'member' && x.change.before.includes(n) && !x.change.after.includes(n)).forEach(x => edges.push({ from: x.id, to: w.id, kind: 'dep', why: 'last member leaves before the ASG is deleted' }));
       nsgW.filter(z => refs(dep.out, z, n)).forEach(z => edges.push({ from: 'nsg:' + z, to: w.id, kind: 'dep', why: 'no NSG rule references the ASG any more' })); });
-    // member steps
-    const memDep = membership(dep.inst), memTgt = membership(tgt.inst);
-    const step1 = [], step3 = [];
-    let mid = clone(memDep);
-    changes.forEach(c => {
-      const eOld = memberEffect(dep.inst, dep.out, memDep, withNic(memDep, tgt.inst.nics[c.nic] ? tgt.inst : dep.inst, c.nic, c.before, c.after), c.nic, tgt.inst);
-      c.effectOld = eOld; if (!eOld.opens.length) { step1.push(c.nic); c.effect = eOld; c.step = 1; }
-    });
-    step1.forEach(n => { const c = changes.find(x => x.nic === n); mid = withNic(mid, tgt.inst.nics[n] ? tgt.inst : dep.inst, n, c.before, c.after); });
-    changes.filter(c => !c.step).forEach(c => {
-      const eNew = memberEffect(tgt.inst, tgt.out, withNic(memTgt, tgt.inst, c.nic, c.after, c.before), memTgt, c.nic, dep.inst);
-      c.effect = eNew;
-      if (!eNew.closes.length) { step3.push(c.nic); c.step = 3; }
-      else errors.push({ kind: 'member', text: `Member change on ${tgt.inst.nics[c.nic].name} neither only closes under the Deployed NSG contents nor only opens under the target: it closes ${eNew.closes[0]} and opens ${c.effectOld.opens[0]}. Split the Change set.` });
-    });
-    step1.forEach(n => nsgW.forEach(z => edges.push({ from: 'nic:' + n, to: 'nsg:' + z, kind: 'step', why: 'member change that only closes goes first' })));
-    step3.forEach(n => nsgW.forEach(z => edges.push({ from: 'nsg:' + z, to: 'nic:' + n, kind: 'step', why: 'member change that only opens goes last' })));
+    memberWrites.forEach(id => nsgW.forEach(z => { if (mw(id).step === 1) edges.push({ from: id, to: 'nsg:' + z, kind: 'step', why: 'member change that only closes goes first' }); if (mw(id).step === 3) edges.push({ from: 'nsg:' + z, to: id, kind: 'step', why: 'member change that only opens goes last' }); }));
     // Crossing flows, against the members after step 1
     const cr = crossings(dep, tgt, mid);
     cr.edges.forEach(e => { if (nsgW.includes(e.from) || nsgW.includes(e.to)) edges.push({ from: 'nsg:' + e.from, to: 'nsg:' + e.to, kind: 'crossing', why: `Crossing flow, e.g. ${e.witness.flow}`, witness: e.witness, count: e.count }); });
@@ -642,7 +661,10 @@
     const res = {}, add = (z, why) => (res[z] = res[z] || []).push(why);
     const objChanged = id => JSON.stringify(prevInst.objects[id]) !== JSON.stringify(inst.objects[id]);
     const zoneChanged = id => JSON.stringify(prevInst.zones[id]) !== JSON.stringify(inst.zones[id]);
-    const refsChanged = (refs, I) => flat(refs, I).some(r => r !== 'any' && (r.startsWith('zone:') ? zoneChanged(r.slice(5)) : objChanged(r))) || refs.some(r => r !== 'any' && !r.startsWith('zone:') && objChanged(r));
+    // decided 2026-11-10: only changes to what a Zone covers change the Rules that use it; posture and Inherited defaults affect the Zone alone
+    const covFields = z => z ? JSON.stringify([z.vnet, z.prefixes, z.extra, z.state]) : 'none';
+    const zoneCovChanged = id => covFields(prevInst.zones[id]) !== covFields(inst.zones[id]);
+    const refsChanged = (refs, I) => flat(refs, I).some(r => r !== 'any' && (r.startsWith('zone:') ? zoneCovChanged(r.slice(5)) : objChanged(r))) || refs.some(r => r !== 'any' && !r.startsWith('zone:') && objChanged(r));
     const order = I => I.rules.map(r => r.id), po = order(prevInst), no = order(inst);
     const common = no.filter(id => po.includes(id)), stay = new Set(lis(common.map((id, i) => [i, po.indexOf(id)])).map(([i]) => common[i]));
     const ids = uniq(po.concat(no));
@@ -660,6 +682,8 @@
     const a = nicAsgs(prevInst), b = nicAsgs(inst);
     uniq(Object.keys(a).concat(Object.keys(b))).forEach(n => { if (JSON.stringify(a[n] || []) === JSON.stringify(b[n] || [])) return; const nic = inst.nics[n] || prevInst.nics[n]; if (isZone(inst, nic.subnet) || isZone(prevInst, nic.subnet)) add(nic.subnet, `ASG member ${nic.name} added or removed`); });
     uniq(Object.keys(prevInst.zones).concat(Object.keys(inst.zones))).forEach(z => { if (zoneChanged(z)) add(z, 'the Zone itself is onboarded, removed or changed'); });
+    if (JSON.stringify(prevInst.internal) !== JSON.stringify(inst.internal)) // decided 2026-11-10
+      zoneIds(inst).filter(z => inst.zones[z].posture === 'dest' && inst.zones[z].kind !== 'appgw').forEach(z => add(z, 'the Internal address space changed, and this Zone\'s egress allow uses it'));
     Object.keys(res).forEach(z => (res[z] = uniq(res[z])));
     return res;
   }
@@ -686,7 +710,7 @@
 
   // ---------- Import (ADR 0011, issue 18) ----------
   function importNsg(inst, zid, legacy, o) {
-    const opt = Object.assign({ bindings: 'none' }, o || {}), z = inst.zones[zid], zp = zoneAddrs(inst, zid).map(P);
+    const opt = Object.assign({ bindings: 'connected' }, o || {}), z = inst.zones[zid], zp = zoneAddrs(inst, zid).map(P);
     const notes = [], rules = [], newObjects = {}, newServices = {};
     const connected = [z.vnet].concat(inst.vnets[z.vnet].peers || []);
     const findObj = v => Object.keys(inst.objects).concat(Object.keys(newObjects)).find(k => { const x = inst.objects[k] || newObjects[k]; return (x.kind === 'host' || x.kind === 'cidr') && x.value === v && !x.bind; });

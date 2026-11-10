@@ -89,7 +89,7 @@
     const failBtn = id => w(id).kind === 'nsg' || w(id).kind === 'member' ? ` <button data-act="fail" data-write="${esc(id)}">${failed.has(id) ? 'undo fail' : 'fail this write'}</button>` : '';
     const steps = P.levels ? P.levels.map((l, i) => `<li><b>Step ${i + 1}</b>${l.length > 1 ? ' (in parallel)' : ''}: ${l.map(id => esc(w(id).label) + status(id) + failBtn(id)).join('; ')}</li>`).join('') : '';
     const crossing = P.edges.filter(e => e.kind === 'crossing').map(e => `<li><b>${esc(w(e.from).label.replace('write ', ''))}</b> before <b>${esc(w(e.to).label.replace('write ', ''))}</b>: Crossing flow ${esc(e.witness.flow)}${e.count > 1 ? ` <span class="muted">(${e.count} flow samples)</span>` : ''}. Closes: ${esc(e.witness.closes)}; opens: ${esc(e.witness.opens)}.${e.witness.cases.length ? `<br><span class="muted small">Tag case: ${esc(e.witness.cases.join('; '))}</span>` : ''}</li>`).join('');
-    const mem = P.members.map(m => `<li>${esc((S.inst.nics[m.nic] || S.committed.inst.nics[m.nic]).name)}: ${esc(m.before.join(', ') || '—')} → ${esc(m.after.join(', ') || '—')} · ${m.step === 1 ? 'step 1, only closes under the Deployed contents' : m.step === 3 ? 'last step, only opens under the target' : '<span class="bad">fits neither step</span>'}${m.effect && (m.effect.opens.length || m.effect.closes.length) ? `<br><span class="muted small">${m.effect.closes.length ? 'closes e.g. ' + esc(m.effect.closes[0]) : ''} ${m.effect.opens.length ? 'opens e.g. ' + esc(m.effect.opens[0]) : ''}</span>` : ''}</li>`).join('');
+    const mem = P.members.map(m => `<li>${esc((S.inst.nics[m.nic] || S.committed.inst.nics[m.nic]).name)}: ${esc(m.before.join(', ') || '—')} → ${esc(m.after.join(', ') || '—')} · ${m.step === 1 ? 'step 1, only closes under the Deployed contents' : m.step === 3 ? 'last step, only opens under the target' : m.step === 'split' ? 'fits neither step as one write, so it is split: leaving in step 1, joining in the last step' : '<span class="bad">fits no step</span>'}${m.effect && (m.effect.opens.length || m.effect.closes.length) ? `<br><span class="muted small">${m.effect.closes.length ? 'closes e.g. ' + esc(m.effect.closes[0]) : ''} ${m.effect.opens.length ? 'opens e.g. ' + esc(m.effect.opens[0]) : ''}</span>` : ''}</li>`).join('');
     const errs = P.errors.map(e => `<div class="verdict bad">${esc(e.text)}${e.flows ? `<br><span class="small">Flows: ${e.flows.map(esc).join('; ')}</span>` : ''}</div>`).join('');
     return `${errs}${steps ? `<ol class="plain">${steps}</ol>` : P.writes.length ? '' : '<p class="muted">Nothing to write.</p>'}${crossing ? `<h4>Order from Crossing flows</h4><ul>${crossing}</ul>` : P.writes.length ? '<p class="muted small">No Crossing flow: apart from dependencies, the writes run in any order.</p>' : ''}${mem ? `<h4>ASG member changes</h4><ul>${mem}</ul>` : ''}`;
   }
@@ -125,7 +125,7 @@
       <div class="scroll">${Object.entries(D.out.nsgs).map(([z, n]) => nsgCard(S, D, z, n, marks)).join('')}</div>`;
   }
   function questionsHtml() {
-    return `<ol>${X.QUESTIONS.map(q => `<li>${esc(q.text)} <button data-act="ex" data-key="${q.ex}">show</button></li>`).join('')}</ol>`;
+    return `<ol>${X.QUESTIONS.map(q => `<li>${esc(q.text)} <button data-act="ex" data-key="${q.ex}">show</button>${q.answer ? `<br><span class="ok small">${esc(q.answer)}</span>` : ''}</li>`).join('')}</ol>`;
   }
 
   // free play: thin actions on the current state
