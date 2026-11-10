@@ -1,6 +1,6 @@
 # The operator grants the Tool identity's Azure roles, and the tool verifies them
 
-Status: accepted (2026-11-09, [Grilling: Hosting, identity and least-privilege role](https://github.com/mfgAkilae/nsgfw/issues/20)). Amended on 2026-11-09 by [Grilling: Review round on placement, egress posture and MVP shape](https://github.com/mfgAkilae/nsgfw/issues/27): a third, optional role holds the rights for tool-written ASG membership.
+Status: accepted (2026-11-09, [Grilling: Hosting, identity and least-privilege role](https://github.com/mfgAkilae/nsgfw/issues/20)). Amended on 2026-11-09 by [Grilling: Review round on placement, egress posture and MVP shape](https://github.com/mfgAkilae/nsgfw/issues/27): a third, optional role holds the rights for tool-written ASG membership. Amended on 2026-11-10 by [Grilling: Operations: restore, exit, upgrades and exposure](https://github.com/mfgAkilae/nsgfw/issues/29): an Environment's flow-data workspace may lie outside every Environment and then gets a Reader assignment of its own, and the Reader reads log data through a data action limited to one table.
 
 The brief requires a least-privilege custom role for the Tool identity and a documented reason for every permission. One Tool identity serves all Environments ([Grilling: Environment and tenancy model](https://github.com/mfgAkilae/nsgfw/issues/9)). In a Terraform Environment the tool writes nothing to Azure ([ADR 0010](0010-terraform-mode-data-contract-and-azure-observation.md)). Often a different team owns the management group of an Environment than the team that runs the tool. A tool that can assign roles could also widen its own rights.
 
@@ -12,6 +12,8 @@ We decided:
 - **The tool never assigns roles.** It holds no `Microsoft.Authorization/roleAssignments/write`.
 - **The tool verifies its effective permissions** at Environment onboarding, at Zone onboarding, once a day and before the first write of every Deployment. A missing action flags the Environment or Zone with the actions it lacks and blocks Deployments to the affected Zones before their first write, like Drift, Policy and live limits ([ADR 0009](0009-tighten-then-loosen-deployments.md)). A missing read stops Drift polling where it applies and is flagged too.
 - **The tool reads only inside Environments.** An Address object that stands for an Azure resource (subnet, VNet, External ASG object) must lie in an Environment. A subscription with shared infrastructure, such as a hub, joins an Environment without Zones and gets only the Reader there.
+- **One exception: the flow-data workspace.** An Environment's Log Analytics workspace often sits in a management subscription outside every Environment. It is then a referenced resource: `environment-access` takes its resource ID and assigns `nsgfw Reader` on the workspace alone, where only the workspace reads take effect. A workspace has no discovery, no Drift and no Coverage, so the reasons against read-only scopes below do not apply to it.
+- **Log data through the data action with a table condition.** The Reader holds `Microsoft.OperationalInsights/workspaces/tables/data/read` as a data action, and every Reader assignment carries a condition that limits it to the table `NTANetAnalytics` (attribute `Microsoft.OperationalInsights/workspaces/tables:name`). Granular RBAC is generally available since 2025-11. The legacy table action `workspaces/query/NTANetAnalytics/read` stays out: Microsoft calls it no longer recommended, and in a workspace in `DataActionsOnly` mode only data actions give access to log data ([granular RBAC](https://learn.microsoft.com/en-us/azure/azure-monitor/logs/granular-rbac-log-analytics), page date 2025-11-18; [manage access](https://learn.microsoft.com/en-us/azure/azure-monitor/logs/manage-access), page date 2026-09-21; both retrieved 2026-11-10).
 
 ## Considered Options
 
@@ -20,6 +22,8 @@ We decided:
 - **Wildcards for reads,** such as `Microsoft.Network/*/read`. Rejected. Microsoft advises explicit actions, because wildcards include future actions automatically.
 - **Role definitions per Environment.** Rejected. Every Environment would need a new apply on each upgrade, and the definitions could drift apart.
 - **Read-only scopes outside Environments.** Rejected. It would add a concept with its own discovery, Drift observation and read filter for Roles.
+- **The management subscription joins an Environment without Zones for its workspace.** Rejected on 2026-11-10. The Reader would read every VNet and NSG there, and with Environments defined by management group, the subscription would need an Environment of its own.
+- **The legacy table action, alone or next to the data action.** Rejected on 2026-11-10. Alone it fails in `DataActionsOnly` workspaces; next to the data action it adds an action that nothing needs.
 - **Adding every candidate join action at once.** Rejected. Together with subnet write, they would let the identity attach any route table or NAT gateway to a subnet.
 
 ## Consequences

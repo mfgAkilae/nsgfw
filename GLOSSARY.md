@@ -18,6 +18,10 @@ _Avoid_: NSG rule, security rule, policy
 The identifier a Rule gets when it is created. It never changes when the Rule is renamed, edited or moved, and it is never reused. The name of every NSG rule that the Translation engine generates for the Rule carries it.
 _Avoid_: rule number (the Rule's current position in the Rule base)
 
+**Folder**:
+A named, contiguous run of Rules in the Rule base that administrators use to keep it in order. Folders are one level deep, a Rule belongs to at most one Folder, and a Rule may stand outside every Folder. A Folder carries only its name and has no effect on how a Rule is evaluated or translated. Creating, renaming, moving or removing one is an edit in a Change set, and it needs no Approval while it changes no Managed NSG.
+_Avoid_: section, group (Address group and Service group hold Objects), tag
+
 **Intra-zone default**:
 The implicit allow for traffic that stays inside one Zone. It sits below every Rule and above the Deny-all rules, so a Rule can override it.
 _Avoid_: intrazone rule
@@ -214,6 +218,10 @@ _Avoid_: rollback (the umbrella for Restore and Revert)
 A Change set that undoes the edits of one earlier Commit on top of the latest Version.
 _Avoid_: rollback, undo
 
+**Re-translation**:
+A Change set that the tool prepares when a new engine version translates the unchanged Rule base into different NSG rules. It holds no edits, only the new output, and its Affected Zones are the Zones whose resources it changes. While it is open, other Commits wait in the Environments where it changes something. An Emergency Commit, a disabled expired Rule and an automatic Adopt take it along, and its Affected Zones there need Approval afterwards.
+_Avoid_: migration, redeploy
+
 **Deployment mode**:
 How a Commit reaches Azure: directly through the Azure Resource Manager API, or as a Data contract in a pull request to the Environment's Terraform repository, whose pipeline applies it.
 
@@ -252,3 +260,21 @@ _Avoid_: Coverage (the Zones a Rule's source or destination stands for)
 **Audit log**:
 The append-only, tamper-evident record of who did what in the tool, when and why, and with what result. It is never edited or pruned. Successful writes to Azure are recorded in the Deployment history instead.
 _Avoid_: activity log (Azure's own log), history
+
+### Instance and operations
+
+**Instance**:
+One installation of nsgfw with its own database, one Rule base and one Tool identity. Its identity lives in the database: a database recovered from backup is the same Instance, an empty database is a new one. Managed NSGs and Managed ASGs carry the ID of their Instance.
+_Avoid_: tenant, deployment (a Deployment delivers a Version)
+
+**Handover**:
+An admin's confirmation, with a checklist, that the tool takes over an NSG, an ASG or a subnet's NSG association that other IaC or another Instance has managed, when the subnet is onboarded. The other side must stop writing; if it does not, its writes show up as Drift.
+_Avoid_: takeover, release
+
+**Recovery mode**:
+The restricted state an Instance enters when its database is older than Azure, for example after a recovery from backup, when it runs under another Tool identity than the one it recorded, or when an admin starts it. Only holders of the Entra app role InstanceAdmin can sign in, nothing reaches Azure through Commits or on the tool's own initiative, and an admin ends it with a reason.
+_Avoid_: restore mode (a Restore is a Change set), safe mode, maintenance mode
+
+**Tool path**:
+A flow that the tool itself needs: from its own source prefixes to one of its dependencies, such as its database, its Key Vault, a DNS server or a proxy. A Change set that would close one needs the committer's confirmation with a reason.
+_Avoid_: self path, management path
