@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Input, Switch, Tooltip, Popover, PopoverTrigger, PopoverSurface } from '@fluentui/react-components';
 import { Add16Regular, Search16Regular, Dismiss16Regular, PanelRight20Regular, TextBulletListSquare20Regular, Grid20Regular, Box20Regular, BranchFork20Regular,
   WeatherMoon20Regular, WeatherSunny20Regular, Copy16Regular, Delete16Regular, Eye16Regular, EyeOff16Regular, ArrowSort16Regular, Send16Regular, ArrowRight12Filled,
-  Checkmark12Filled, Dismiss12Filled, Flash16Regular, ChevronDown12Regular, TextLineSpacing20Regular, Folder16Regular, FolderAdd16Regular, FolderArrowRight16Regular, ArrowMaximizeVertical20Regular, ArrowMinimizeVertical20Regular, LockClosed16Regular, Warning16Filled, ShieldError16Filled, PeopleSwap16Regular, LayerDiagonal16Regular } from '@fluentui/react-icons';
+  Checkmark12Filled, Dismiss12Filled, Flash16Regular, ChevronDown12Regular, TextLineSpacing20Regular, Folder16Regular, FolderAdd16Regular, FolderArrowRight16Regular, ArrowMaximizeVertical20Regular, ArrowMinimizeVertical20Regular, LockClosed16Regular, Warning16Filled, ShieldError16Filled, PeopleSwap16Regular, LayerDiagonal16Regular, ShieldPerson20Regular, LockClosed12Regular } from '@fluentui/react-icons';
 import { RuleGrid, RuleGridHandle, FilterKey, countFilters, systemTop, systemBottom, SysRow, compact } from './RuleGrid';
 import { ZoneGrid, Bar, LIMITS, EgressBadge, Flags } from './ZoneGrid';
 import { Glyph } from './Glyph';
@@ -18,14 +18,19 @@ import { useStore, placement, cost, alsoChanged } from './store';
 import { zones, zoneById, envs, ref, svcById } from './data';
 import { useT } from './i18n';
 import { useMode } from './theme';
+import { useSession, useReadFilter, useGate, AccountButton, SessionLayer, NoAccessPage, StepUpLock } from './session';
+import { AdminPage, AdminSec, useAdminNav } from './Admin';
 
-type Page = 'rules' | 'zones' | 'objects' | 'sets';
+type Page = 'rules' | 'zones' | 'objects' | 'sets' | 'admin';
 type CsTab = 'changes' | 'preview' | 'order' | 'approval' | 'policy';
 const typing = () => { const el = document.activeElement as HTMLElement | null; return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable || !!el.closest('.ag-root-wrapper')); };
 
 export default function Console() {
   const s = useStore(); const { t, lang, setLang } = useT(); const { mode, toggle } = useMode(); const pv = usePreview(); const ap = useApproval(pv);
-  const [page, setPage] = useState<Page>('rules');
+  // Issue 38: who is signed in decides what the Rule base shows (read filter by Coverage) and whether it can be edited.
+  const se = useSession(); const adminNav = useAdminNav(); const [adminSec, setAdminSec] = useState<AdminSec>(() => (new URLSearchParams(location.search).get('sec') as AdminSec) || 'setup');
+  const rf = useReadFilter(s.rules, pv.affected.map(a => a.zone), s.edits.length > 0); const ro = se.readOnly;
+  const [page, setPage] = useState<Page>(() => (new URLSearchParams(location.search).get('page') as Page) || 'rules');
   const [lens, setLens] = useState<{ zid: string; dir: 'in' | 'out' } | null>(null);
   const [filter, setFilter] = useState<FilterKey>('all'); const [q, dq, setQ] = useDebounced();
   const [dense, setDense] = useState(false); const [bands, setBands] = useState(true);
@@ -42,7 +47,8 @@ export default function Console() {
 
   const z = lens ? zoneById.get(lens.zid)! : null;
   const rows = useMemo(() => (!lens ? s.rules : s.rules.filter(r => { const p = placement(r); return lens.dir === 'in' ? p.dst.includes(lens.zid) : p.src.includes(lens.zid); })), [s.rules, lens]);
-  const counts = useMemo(() => { const c = countFilters(rows, s.status); if (lens) c.changed = rows.filter(r => s.status.has(r.id)).length; return c; }, [rows, s.status, lens]);
+  const seen = useMemo(() => (rf.visible ? rows.filter(r => rf.visible!.has(r.id)) : rows), [rows, rf.visible]);
+  const counts = useMemo(() => { const c = countFilters(seen, s.status); if (lens) c.changed = seen.filter(r => s.status.has(r.id)).length; return c; }, [seen, s.status, lens]);
   const bandRows = useMemo<{ top: SysRow[]; bottom: SysRow[] } | null>(() => {
     if (!bands) return null;
     if (!z || !lens) return { top: systemTop, bottom: systemBottom };
@@ -64,7 +70,7 @@ export default function Console() {
   const openRule = (id: string) => { setFocused(id); openDock('rule'); };
   const jumpToRule = (id: string) => { unfold(id); setPage('rules'); setLens(null); setFilter('all'); setQ(''); setTimeout(() => { grid.current?.reveal(id); openRule(id); }, 80); };
   const openZone = (zid: string) => { setPage('rules'); setLens({ zid, dir: 'in' }); setFilter('all'); setQ(''); };
-  const newRule = () => { setPage('rules'); if (focused) unfold(focused); const id = s.addRule(focused ?? undefined); setFresh(id); setTimeout(() => { grid.current?.reveal(id); openRule(id); }, 80); };
+  const newRule = () => { if (ro) return; setPage('rules'); if (focused) unfold(focused); const id = s.addRule(focused ?? undefined); setFresh(id); setTimeout(() => { grid.current?.reveal(id); openRule(id); }, 80); };
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -79,15 +85,18 @@ export default function Console() {
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h);
   });
 
-  const nav: [Page, string, JSX.Element][] = [['rules', 'Rules', <TextBulletListSquare20Regular />], ['zones', 'Zones', <Grid20Regular />], ['objects', 'Objects', <Box20Regular />], ['sets', 'Change sets', <BranchFork20Regular />]];
+  const nav: [Page, string, JSX.Element][] = [['rules', 'Rules', <TextBulletListSquare20Regular />], ['zones', 'Zones', <Grid20Regular />], ['objects', 'Objects', <Box20Regular />], ['sets', 'Change sets', <BranchFork20Regular />], ['admin', adminNav.label, <ShieldPerson20Regular />]];
   const chips: [FilterKey, string][] = [['all', 'All'], ['deny', 'Deny'], ['disabled', 'Disabled'], ['expiring', 'Expiring'], ['findings', 'With findings'], ['unused', 'No hits']];
   const showBar = s.edits.length > 0 || s.state !== 'Open';
+
+  // A principal without any Role sees only the no-access page (ADR 0013).
+  if (se.persona.id === 'none') return <><NoAccessPage /><SessionLayer changeSet="CHG-5120" /><div className="na-proto"><ProtoButton /></div></>;
 
   return (
     <div className="app">
       <nav className="rail" aria-label="Main">
         <Brand />
-        {nav.map(([k, label, icon]) => <button key={k} className={`rail-b ${page === k ? 'on' : ''}`} aria-current={page === k} onClick={() => setPage(k)}>{icon}<span>{k === 'sets' && lang === 'de' ? 'Pakete' : t(label)}</span></button>)}
+        {nav.map(([k, label, icon]) => <button key={k} className={`rail-b ${page === k ? 'on' : ''}`} aria-current={page === k} onClick={() => setPage(k)}>{icon}<span>{k === 'sets' && lang === 'de' ? 'Pakete' : t(label)}</span>{k === 'admin' && adminNav.worst !== 'ok' && <i className={`hpip h-${adminNav.worst}`} />}</button>)}
         <span className="rail-sp" />
         <ProtoButton />
         <InboxButton />
@@ -97,7 +106,7 @@ export default function Console() {
           <PopoverSurface style={{ width: 300, padding: '14px 18px' }}><div className="panel-h">{t('Keyboard shortcuts')}</div>
             <dl className="keys">{([['Ctrl K', 'Jump to a Rule, Zone or action'], ['/', 'Filter the Rules'], ['N', 'New Rule'], ['I', 'Rule editor'], ['P', 'Change set panel'], ['Esc', 'Close'], ['Double click', 'Edit a cell'], ['Right click', 'Everything for one Rule']] as const).map(([k, d]) => <div key={k}><dt><kbd>{k}</kbd></dt><dd>{t(d)}</dd></div>)}</dl>
             <p className="muted" style={{ margin: '8px 0 0', lineHeight: 1.45 }}>{t('The single-letter keys work while the table does not have the focus.')}</p></PopoverSurface></Popover>
-        <span className="avatar" title="You, signed in with Entra ID: editor and approver">YO</span>
+        <AccountButton onAccess={se.anyAdmin ? () => { setPage('admin'); setAdminSec('access'); } : undefined} />
       </nav>
 
       <div className="main">
@@ -116,8 +125,9 @@ export default function Console() {
                 <Tooltip content={t('Show what sits above and below the Rules')} relationship="label"><button className={`ib opt ${bands ? 'on' : ''}`} onClick={() => setBands(!bands)}><LockClosed16Regular /></button></Tooltip>
                 <Tooltip content={t('Side panel')} relationship="label"><button className={`ib ${dock.open ? 'on' : ''}`} onClick={() => setDock(d => ({ ...d, open: !d.open, auto: false }))}><PanelRight20Regular /></button></Tooltip>
                 </div>
+                {ro ? <span className="readonly-b" title={t('You hold no editor Role in any Scope.')}><LockClosed12Regular />{t('Read only')}</span> : <>
                 <Button icon={<FolderAdd16Regular />} onClick={() => setFolderFor(sel)} title={t('New Folder')}><span className="lbl">{t('Folder')}</span></Button>
-                <Button appearance="primary" icon={<Add16Regular />} onClick={newRule}>{t('New Rule')}</Button>
+                <Button appearance="primary" icon={<Add16Regular />} onClick={newRule}>{t('New Rule')}</Button></>}
               </header>
 
               {z && lens && (
@@ -146,16 +156,18 @@ export default function Console() {
                 <div className="chipbar">
                   {chips.map(([k, label]) => <button key={k} className={`chip ${filter === k ? 'on' : ''} c-${k} ${counts[k] ? '' : 'zero'}`} aria-pressed={filter === k} disabled={!counts[k] && filter !== k} onClick={() => setFilter(k)}>{t(label)}<i>{counts[k].toLocaleString()}</i></button>)}
                   {counts.changed > 0 && <button className={`chip c-changed ${filter === 'changed' ? 'on' : ''}`} aria-pressed={filter === 'changed'} onClick={() => setFilter('changed')}>{t('Changed')}<i>{counts.changed}</i></button>}
-                  <span className="sp" /><span className="hint">{lens ? `${rows.length} ${t('Rules')} ${t(lens.dir === 'in' ? 'land on this Zone inbound' : 'land on this Zone outbound')}` : t('Top-down, the first match wins. Flow data is about 70 minutes old.')}</span>
+                  <span className="sp" /><span className="hint">{rf.visible ? <>{t('You see')} {rf.seen.toLocaleString()} {t('of')} {s.rules.length.toLocaleString()} {t('Rules: those that land on your Scopes.')}{rf.through.size > 0 && <> <span className="through">+{rf.through.size.toLocaleString()} {t('through your open Change set')}</span></>}</>
+                    : lens ? `${seen.length} ${t('Rules')} ${t(lens.dir === 'in' ? 'land on this Zone inbound' : 'land on this Zone outbound')}` : t('Top-down, the first match wins. Flow data is about 70 minutes old.')}</span>
                 </div>
               )}
 
-              <div className="sheet"><RuleGrid key={lens ? `${lens.zid}-${lens.dir}` : 'all'} ref={grid} rows={rows} scoped={!!lens} collapsed={collapsed} onToggle={toggleFolder} onMoveToFolder={setFolderFor} quick={dq} filter={filter} bands={bandRows} dense={dense} focusedId={focused}
+              <div className="sheet"><RuleGrid key={lens ? `${lens.zid}-${lens.dir}` : 'all'} ref={grid} rows={rows} visible={rf.visible} through={rf.through} readOnly={ro} scoped={!!lens} collapsed={collapsed} onToggle={toggleFolder} onMoveToFolder={setFolderFor} quick={dq} filter={filter} bands={bandRows} dense={dense} focusedId={focused}
                 onFocus={focusRule} onOpen={openRule} onQuick={setQ} onSelection={setSel} onMoveTo={setMoveIds} onReady={reportReady(lens ? `Zone lens, ${rows.length} Rules` : 'Rule base, 10,000 Rules')} /></div>
             </>}
 
             {page === 'zones' && <><header className="phead"><h1>{t('Zones')}</h1><span className="sub">{t('Every Managed NSG against its Azure limits. Click a Zone to see the Rules that land on it.')}</span></header><ZoneGrid onOpen={x => openZone(x.id)} /></>}
             {page === 'objects' && <><header className="phead"><h1>{t('Objects')}</h1><span className="sub">{t('Every object and where it is used.')}</span></header><ObjectLibrary onZone={openZone} onShowRules={name => { setPage('rules'); setLens(null); setFilter('all'); setQ(name); }} /></>}
+            {page === 'admin' && <AdminPage sec={adminSec} setSec={setAdminSec} onZones={() => setPage('zones')} onRule={jumpToRule} onReview={() => setReview(true)} />}
             {page === 'sets' && <><header className="phead"><h1>{t('Change sets')}</h1><span className="sub">{t('What waits for you, and where every Change set stands.')}</span></header><ChangeSetsPage onFilter={k => { setPage('rules'); setLens(null); setFilter(k); }} onReview={() => { setPage('rules'); openDock('cs', 'preview'); }} /></>}
           </section>
 
@@ -182,6 +194,7 @@ export default function Console() {
 
       {palette && <Palette mode={palette} onClose={() => setPalette(false)} run={{ all: () => { setPage('rules'); setLens(null); }, rule: jumpToRule, zone: openZone, page: setPage, newRule, review: () => setReview(true), theme: toggle, lang: () => setLang(lang === 'en' ? 'de' : 'en') }} />}
       <MoveDialog ids={moveIds} onClose={() => setMoveIds(null)} />
+      <SessionLayer changeSet="CHG-5120" />
       {folderFor && <FolderPicker ids={folderFor} onClose={() => setFolderFor(null)} onDone={fid => { setCollapsed(c => { const n = new Set(c); n.delete(fid); return n; }); grid.current?.clearSelection(); }} />}
     </div>
   );
@@ -190,6 +203,7 @@ export default function Console() {
 // ---------- Commit bar: what the pending edits mean, always visible, one click to submit.
 function CommitBar({ onOpen, onReview }: { onOpen: (tab: CsTab) => void; onReview: () => void }) {
   const s = useStore(); const { t } = useT(); const pv = usePreview(); const ap = useApproval(pv); const [em, setEm] = useState(false);
+  const g = useGate(pv.affected, s.approvedBy);   // issue 38: the Commit gate per Affected Zone, and who may make an Emergency Commit
   const need = ap.byEnv.filter(x => x.env.level !== 'none'); const got = need.filter(x => s.approvedBy[x.env.id]).length;
   const deny = pv.policy.filter(p => p.effect === 'deny').length;
   if (s.state === 'Committed') return (
@@ -205,12 +219,13 @@ function CommitBar({ onOpen, onReview }: { onOpen: (tab: CsTab) => void; onRevie
       <button onClick={() => onOpen('approval')}>{need.length ? <><b>{got}/{need.length}</b>{t('Approvals')}</> : t('No Approval needed')}</button>
       {deny > 0 && <button className="bad" onClick={() => onOpen('policy')}><ShieldError16Filled /><b>{deny}</b>{t('Policy finding blocks')}</button>}
       <span className="sp" />
-      {need.length > 0 && <Button size="small" appearance="subtle" icon={<Flash16Regular />} disabled={pv.unorderable} onClick={() => setEm(true)}>{t('Emergency Commit')}</Button>}
+      {g.commit && <span className="commit-why"><LockClosed12Regular />{t(g.commit)}</span>}
+      {need.length > 0 && <Button size="small" appearance="subtle" icon={<Flash16Regular />} disabled={pv.unorderable || !!g.emergency} title={g.emergency ? t(g.emergency) : undefined} onClick={() => setEm(true)}>{t('Emergency Commit')}<StepUpLock /></Button>}
       <Button size="small" appearance="subtle" onClick={s.discard}>{t('Discard')}</Button>
       <Button size="small" onClick={onReview}>{t('Review')}</Button>
       {s.state === 'Open' && need.length > 0 && <Button size="small" appearance="primary" icon={<Send16Regular />} disabled={pv.unorderable || deny > 0} onClick={s.submit}>{t('Submit for Approval')}</Button>}
       {s.state === 'Submitted' && !ap.done && <Button size="small" className="proto" onClick={() => s.approveAs('kim', ap.byEnv.map(x => x.env.id))}>{t('Approve as kim (prototype)')}</Button>}
-      {(s.state !== 'Open' || !need.length) && <Button size="small" appearance="primary" disabled={!ap.done || pv.unorderable || deny > 0} onClick={() => s.commit()}>{t('Commit')}</Button>}
+      {(s.state !== 'Open' || !need.length) && <Button size="small" appearance="primary" disabled={!ap.done || pv.unorderable || deny > 0 || !!g.commit} onClick={() => s.commit()}>{t('Commit')}</Button>}
       <EmergencyDialog open={em} onClose={() => setEm(false)} />
     </footer>
   );
@@ -245,7 +260,7 @@ function Palette({ onClose, run, mode }: { onClose: () => void; run: Run; mode: 
   const items = useMemo(() => {
     const ql = q.trim().toLowerCase(); const out: { group: string; label: string; sub?: string; kind?: string; go: () => void }[] = [];
     const cmds: [string, () => void][] = [['New Rule', run.newRule], ['Review Change set', run.review], ['Go to Rule base', () => run.page('rules')], ['Go to Zones', () => run.page('zones')],
-      ['Go to Objects', () => run.page('objects')], ['Go to Change sets', () => run.page('sets')], ['Switch light and dark mode', run.theme], ['Switch language', run.lang]];
+      ['Go to Objects', () => run.page('objects')], ['Go to Change sets', () => run.page('sets')], ['Go to Admin', () => run.page('admin')], ['Switch light and dark mode', run.theme], ['Switch language', run.lang]];
     if (mode === 'zone') out.push({ group: 'Actions', label: t('All Zones: show the whole Rule base'), go: run.all });
     else cmds.filter(([l]) => !ql || t(l).toLowerCase().includes(ql)).slice(0, ql ? 4 : 8).forEach(([l, go]) => out.push({ group: 'Actions', label: t(l), go }));
     if (ql) {

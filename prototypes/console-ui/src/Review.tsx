@@ -8,6 +8,7 @@ import { ChangesList, PreviewView, WriteOrderView, ApprovalView, PolicyView, CsA
 import { Track } from './Pages';
 import { Chip } from './ObjectPicker';
 import { useT } from './i18n';
+import { useSession } from './session';
 
 export function Review({ onClose, onRule }: { onClose: () => void; onRule: (id: string) => void }) {
   const s = useStore(); const { t } = useT(); const pv = usePreview(); const ap = useApproval(pv); const [sel, setSel] = useState<string | null>(null);
@@ -49,10 +50,18 @@ export function Review({ onClose, onRule }: { onClose: () => void; onRule: (id: 
         <section className="rv-c rv-r">
           <h3>{t('Write order')}</h3><WriteOrderView pv={pv} />
           <h3>{t('Approval')}</h3><ApprovalView pv={pv} />
+          <FlushNote envIds={[...new Set(pv.nsgs.map(n => n.env))]} />
           <h3>{t('Policy findings')}</h3><PolicyView pv={pv} />
           <div className="rv-act"><CsActions pv={pv} compact /></div>
         </section>
       </div>
     </div>
   );
+}
+
+// Issue 38: with flushConnection off, closing a flow does not end the connections that are already running.
+function FlushNote({ envIds }: { envIds: string[] }) {
+  const se = useSession(); const { t } = useT(); const off = envIds.filter(e => !se.envSettings[e]?.flush);
+  if (!off.length) return null;
+  return <div className="rv-note"><b>{t('Running connections')}</b><p>{off.map(e => t(envs.find(x => x.id === e)?.name ?? e)).join(', ')}: {t('flushConnection is off. A connection that this Change set closes keeps running until it ends. Revoked access does not end running sessions.')}</p></div>;
 }

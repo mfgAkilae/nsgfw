@@ -1,5 +1,6 @@
 // PROTOTYPE, throwaway. English is the key; German terms are proposals for review (see README).
 import { createContext, useContext, useState, ReactNode } from 'react';
+import { deAdmin } from './i18n-admin';
 
 const de: Record<string, string> = {
   'Rule base': 'Regelwerk', 'Rule': 'Regel', 'Zones': 'Zonen', 'Zone': 'Zone', 'Objects': 'Objekte', 'Change sets': 'Änderungspakete',
@@ -82,7 +83,7 @@ type T = (key: string) => string;
 const Ctx = createContext<{ lang: 'en' | 'de'; setLang: (l: 'en' | 'de') => void; t: T }>({ lang: 'en', setLang: () => {}, t: k => k });
 export function LangProvider({ children }: { children: ReactNode }) {
   const [lang, setLang] = useState<'en' | 'de'>(() => (new URLSearchParams(location.search).get('lang') === 'de' ? 'de' : 'en'));
-  const t: T = k => (lang === 'de' ? de[k] ?? k : k);
+  const t: T = k => (lang === 'de' ? de[k] ?? deAdmin[k] ?? k : k);
   return <Ctx.Provider value={{ lang, setLang, t }}>{children}</Ctx.Provider>;
 }
 export const useT = () => useContext(Ctx);

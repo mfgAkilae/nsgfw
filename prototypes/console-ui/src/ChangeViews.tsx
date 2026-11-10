@@ -5,8 +5,9 @@ import { Alert20Regular, ArrowSync16Regular, CheckmarkCircle16Filled, Clock16Reg
 import { useStore, buildPreview, otherSets, alsoChanged, CsState, Preview } from './store';
 import { envs, rules as baseRules } from './data';
 import { useT } from './i18n';
+import { useSession, StepUpLock } from './session';
 
-export const usePreview = () => { const s = useStore(); return useMemo(() => buildPreview(s), [s.status, s.rules, s.scenario]); };
+export const usePreview = () => { const s = useStore(); return useMemo(() => buildPreview(s), [s.status, s.rules, s.scenario, s.space]); };
 export function StateBadge({ state }: { state: CsState }) { const { t } = useT(); return <span className="state"><span className={`dot ${state}`} />{t(state)}</span>; }
 
 export function useApproval(pv: Preview) {
@@ -27,6 +28,7 @@ export function ChangesList({ onFocus, selected }: { onFocus?: (id: string) => v
       {groups.length > 60 && <p className="muted" style={{ marginTop: 0 }}>{groups.length} {t('Rules')}. {t('Showing the first 60.')}</p>}
       {groups.slice(0, 60).map(([id, es]) => {
         const r = s.rules.find(x => x.id === id) ?? baseRules.find(x => x.id === id); const also = alsoChanged.get(id);
+        if (es[0].kind === 'setting') return <div key={id} className="li">{es.map(e => <div key={e.seq} className="edit" style={{ marginTop: 0 }}><span className="ek edit">{t('Setting')}</span><span>{t(e.field ?? '')}: <s>{e.before}</s> {t('to')} {e.after}</span></div>)}</div>;
         if (es[0].kind === 'folder') return <div key={id} className="li">{es.map(e => <div key={e.seq} className="edit" style={{ marginTop: 0 }}><span className="ek move">{t('Folder')}</span><span>{e.after}</span></div>)}</div>;
         return (
           <div key={id} className={`li clickable ${selected === id ? 'sel' : ''}`} onClick={() => onFocus?.(id)}>
@@ -142,7 +144,7 @@ export function CsActions({ pv, compact }: { pv: Preview; compact?: boolean }) {
 }
 
 export function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const s = useStore(); const { t } = useT(); const [reason, setReason] = useState('');
+  const s = useStore(); const { t } = useT(); const [reason, setReason] = useState(''); const se = useSession();
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
       <DialogSurface><DialogBody><DialogTitle>{t('Emergency Commit')}</DialogTitle>
@@ -150,7 +152,7 @@ export function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () 
           <p>This commits without the required Approval. It stays in every approver's inbox until one of them approves it afterwards. You sign in again before it runs.</p>
           <Field label={t('Reason (required)')} required><Textarea value={reason} onChange={(_, d) => setReason(d.value)} /></Field>
         </DialogContent>
-        <DialogActions><Button onClick={onClose}>{t('Cancel')}</Button><Button appearance="primary" disabled={reason.trim().length < 5} onClick={() => { s.commit(reason); onClose(); }}>{t('Emergency Commit')}</Button></DialogActions>
+        <DialogActions><Button onClick={onClose}>{t('Cancel')}</Button><Button appearance="primary" disabled={reason.trim().length < 5} onClick={() => { onClose(); se.stepUp('Emergency Commit', () => s.commit(reason)); }}>{t('Emergency Commit')}<StepUpLock /></Button></DialogActions>
       </DialogBody></DialogSurface>
     </Dialog>
   );

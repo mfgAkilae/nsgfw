@@ -24,6 +24,7 @@ pnpm dev          # http://localhost:5199/  (?theme=dark|light, ?lang=de)
 6. Folders, at the map owner's request (see below). Commit `83f4fbe`.
 7. Sixth design pass: the side panel becomes a Rule editor. Every field in one place, an inline object picker, where the Rule lands in Azure updating live, and "Before you submit" with what to fix. New Rule opens the editor with the name selected. Commit `21402d6`.
 8. Seventh design pass: Review, the whole Change set on one wide screen before Submit (what was edited, one Rule before and after with what it writes in Azure, write order, Approval, Policy findings, the action). Also a keyboard help in the rail and the Version in the head.
+9. Access, audit, settings and health ([issue 38](https://github.com/mfgAkilae/nsgfw/issues/38)), see the section below.
 
 The map owner called the third pass clearly better and asked for two more, then for Folders and two further passes. The brief for the third pass: much better design, dark and light mode, clear and very pleasant to look at, functional, and as few clicks as possible to the main functions.
 
@@ -45,6 +46,32 @@ The prototype adds what follows from the order of Rules and from the Change set 
 In the table a Folder row shows its Rules, the allow and deny mix, and how many are changed or flagged. It renames in place (double click), moves with its Rules by the grip, and takes Rules by drop, from the selection bar ("Move to Folder…") or the context menu. A filter shows the matching Rules under their Folders ("44 of 801 Rules"); a sorted table has no Folders. With the Folders closed, 10,000 Rules fit on one screen.
 
 Still open, for their own design ticket: where imported Rules land, how a Rebase treats two people who change the same Folder, and how a Version stores Folders.
+
+## Access, audit, settings and health (issue 38)
+
+Answers [Prototype: Access, audit, settings and health views](https://github.com/mfgAkilae/nsgfw/issues/38). Decided with the map owner before building, 2026-11-10:
+
+- One rail entry, **Admin**, with a sub-navigation: Setup, Access, Audit log, Health, Environments, Instance, Alert channel. Each part shows only to the Roles that may use it. A person who may only read sees just the audit log, so the entry reads **Audit**. A red or amber dot on the entry reports Health.
+- **Access** is a Scope tree (instance, Environments, subscriptions, VNets, Zones; searchable, children render only when open) with a detail per Scope: its Approval level (effective, where it comes from, set here or inherit), its Role assignments (direct, and inherited ones greyed), and "Check access" for one principal. A second tab lists every assignment flat, with chips for kind and for deleted and hidden-membership principals.
+- **Rule numbers under the read filter** stay global: a viewer sees gaps (1, 4, 6) and one hint line: "You see 16 of 10,000 Rules: those that land on your Scopes." Rules visible only through the open Change set carry the flag "through your Change set". Folders follow ADR 0021: a Folder shows when it holds a readable Rule, an empty one always, and its count counts only readable Rules.
+- **Missing Roles**: a person without the editor Role in any Scope gets a read-only console (no New Rule, no drag, no in-place edit, no checkboxes, a "Read only" mark in the head). An editor sees Commit and Emergency Commit locked, with the reason in the commit bar ("at the level none you need the editor Role in every Affected Zone. Missing in 3: …"). When the server refuses anyway, a dialog names the Role, the Scope and what the person holds, and says the attempt is in the audit log.
+- **Step-up** asks only on click: a small lock marks the buttons that will ask (Approval, Emergency Commit, Role assignment changes); the dialog explains why, opens Entra, and the action continues afterwards with what was entered.
+- **Health** is a strip with one status per check, then only the problems, grouped by what is missing (one missing action with its Zones, its effect and its fix).
+- **Setup** is a checklist page for an instance admin that stays until every step is done; each step opens the normal settings page.
+
+Built on top, for review:
+
+- **Session**: the avatar opens "your access" (sign-in time, when the session ends, every Role with its Scope and where it comes from, sign in again, sign out). An idle warning five minutes before the 60-minute limit, a warning before the 8-hour end, and a signed-out screen that says nothing is lost because every edit is already in the Change set.
+- **No access** page for a principal without a Role: who is signed in, the object ID to copy, a copyable access request, and an access contact (a new instance setting, a proposal).
+- **Audit log**: chain status on top (intact, verified at, the accepted fork at a recovery entry; red when broken), chips per kind with counts, a Scope filter, a time range, text search, and a detail panel with Scopes, the hashes and the entry as exported. Automatic actions of the tool (removed ASG members, disabled expired Rules) carry the actor "nsgfw".
+- **Environments**: the list with mode, Zones, Approval level and the state of the Azure access check; per Environment the access check with the missing actions and "Show what to run" (Terraform module or script), "Overwrite automatically" (lost subnet associations and marker tags only), `flushConnection` with what off means, patterns, Terraform settings, flow data. "Add Environment" is a wizard: Scope, Deployment mode, the role assignments to create with a check, settings.
+- **Instance**: the Internal address space as prefixes; a change goes into the current Change set as an edit, touches every destination-enforced Zone and needs their Approval. Settle time, Tool paths, the access contact, ingress (shown only; Terraform sets it), identity facts.
+- **Alert channel**: none, e-mail (SMTP or Graph) or webhook (Teams Workflows or generic JSON, URL as a Key Vault secret name), a test alert and the last deliveries.
+- **Review** gets a note when `flushConnection` is off in an Environment the Change set changes: revoked access does not end running sessions.
+
+Prototype controls (flask button) switch the persona (instance admin, Environment admin, approver, editor, viewer of one Zone, no Role), set the sign-in age, trigger the idle warning, the sign-out, the session end and a denied action, and switch to an on-premises runtime or a broken audit chain. URL parameters reach any state directly: `?page=admin&sec=access|audit|health|envs|instance|alert|setup`, `?as=ia|envadmin|approver|editor|viewer|none`.
+
+Simplifications: the Change set's Approval still uses one level per Environment, so a level set on a VNet or Zone shows in Access but not yet in the commit bar. The persona switch keeps the Change set, so every persona is its Author. Zones, Objects and Change sets pages are not filtered by Coverage yet.
 
 ## The design
 

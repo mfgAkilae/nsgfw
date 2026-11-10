@@ -1,9 +1,10 @@
 // PROTOTYPE, throwaway. In-memory Change set state and a mock Preview. No persistence, no real Translation engine.
 import { createContext, useContext, useMemo, useRef, useState, ReactNode } from 'react';
-import { rules as initialRules, entries as initialEntries, Rule, Entry, FolderRow, isFolder, ref, zoneById, envs, Level, me, versions } from './data';
+import { rules as initialRules, entries as initialEntries, Rule, Entry, FolderRow, isFolder, ref, zoneById, zones, envs, Level, me, versions } from './data';
+import { internalSpace as initialSpace } from './access';
 
 export type CsState = 'Open' | 'Submitted' | 'Approved' | 'Committed';
-export interface Edit { seq: number; kind: 'add' | 'edit' | 'move' | 'delete' | 'enable' | 'disable' | 'folder'; ruleId: string; field?: string; before?: string; after?: string; by: string }
+export interface Edit { seq: number; kind: 'add' | 'edit' | 'move' | 'delete' | 'enable' | 'disable' | 'folder' | 'setting'; ruleId: string; field?: string; before?: string; after?: string; by: string }
 export interface St { added?: boolean; deleted?: boolean; moved?: boolean; changed?: Set<string> }
 export interface ChangeSet { id: string; name: string; owner: string; state: CsState; base: number; authors: string[]; edits: number; affected: number; rebase?: boolean; emergency?: boolean; scheduled?: string; mine?: boolean }
 export type Scenario = 'auto' | 'crossing' | 'unorderable';
@@ -36,6 +37,8 @@ function useStoreValue() {
   const [version, setVersion] = useState(versions.latest);
   const [scenario, setScenario] = useState<Scenario>('auto');
   const [emergency, setEmergency] = useState<string | null>(null);
+  // The Internal address space is part of the Rule base and changes through a Change set (issue 38).
+  const [space, setSpace] = useState<string[]>(initialSpace);
   const seq = useRef(0);
 
   const log = (e: Omit<Edit, 'seq' | 'by'>[]) => { if (!e.length) return; setEdits(x => [...x, ...e.map(i => ({ ...i, seq: ++seq.current, by: me }))]); if (state !== 'Open') setState('Open'); };
@@ -44,7 +47,7 @@ function useStoreValue() {
   const status = useMemo(() => {
     const m = new Map<string, St>();
     for (const e of edits) {
-      if (e.kind === 'folder') continue;
+      if (e.kind === 'folder' || e.kind === 'setting') continue;
       const s = m.get(e.ruleId) ?? {};
       if (e.kind === 'add') s.added = true;
       else if (e.kind === 'delete') s.deleted = true;
@@ -89,7 +92,12 @@ function useStoreValue() {
   });
 
   const api = {
-    entries, rules, folders, edits, status, numbers, base, state, version, scenario, setScenario, approvedBy, emergency,
+    entries, rules, folders, edits, status, numbers, base, state, version, scenario, setScenario, approvedBy, emergency, space,
+    setSpace(next: string[]) {
+      const before = initialSpace.join(', '); const after = next.join(', ');
+      setSpace(next); setEdits(x => [...x.filter(e => !(e.kind === 'setting' && e.ruleId === 'iasp')), ...(after === before ? [] : [{ seq: ++seq.current, by: me, kind: 'setting' as const, ruleId: 'iasp', field: 'Internal address space', before, after }])]);
+      if (state !== 'Open') setState('Open');
+    },
     editField(id: string, field: keyof Rule, value: unknown) {
       const r = rules.find(x => x.id === id); if (!r || fmt(r[field]) === fmt(value)) return;
       if (status.get(id)?.added) { mapRules(x => (x.id === id ? { ...x, [field]: value } : x)); return; }   // shaping a new Rule is part of adding it
@@ -151,7 +159,7 @@ function useStoreValue() {
       if (addedNow.length) { setEntries(es => es.filter(e => !addedNow.includes(e.id))); setEdits(es => es.filter(e => !addedNow.includes(e.ruleId))); }
       log(ids.filter(id => !addedNow.includes(id)).map(id => ({ kind: 'delete' as const, ruleId: id })));
     },
-    discard() { setEntries(initialEntries); setEdits([]); setState('Open'); setApprovedBy({}); setEmergency(null); },
+    discard() { setEntries(initialEntries); setSpace(initialSpace); setEdits([]); setState('Open'); setApprovedBy({}); setEmergency(null); },
     submit() { setState('Submitted'); },
     approveAs(who: string, envIds: string[]) { setApprovedBy(a => ({ ...a, ...Object.fromEntries(envIds.map(e => [e, who])) })); },
     commit(reason?: string) { setState('Committed'); setVersion(v => v + 1); if (reason) setEmergency(reason); },
@@ -214,6 +222,8 @@ export function buildPreview(s: Store): Preview {
     if (r.policy || (r.src.some(x => x === 'any' || x === 'tag:Internet') && r.svc.some(x => x === 'svc-rdp' || x === 'svc-ssh')))
       policy.push({ assignment: 'Deny management ports from the Internet (landing zone)', effect: 'deny', reason: 'RDP or SSH open from the Internet', rule: id });
   }
+  // A change of the Internal address space affects every destination-enforced Zone: their egress allow at 4094 changes.
+  if (s.edits.some(e => e.kind === 'setting' && e.ruleId === 'iasp')) for (const z of zones) if (z.egress === 'dest') touch(z.id).ops.push({ op: 'change', name: 'nsgfw-egress-internal', dir: 'out', priority: 4094, rule: 'iasp', detail: 'Internal address space' });
   if (nsgs.size && !policy.length) policy.push({ assignment: 'Audit NSG flow logging', effect: 'audit', reason: 'No VNet flow log on 2 VNets', rule: '' });
   let unorderable = s.scenario === 'unorderable';
   if (unorderable && crossing.length < 2 && crossing[0]) crossing.push({ ...crossing[0], from: crossing[0].to, to: crossing[0].from, flow: `${crossing[0].to} → ${crossing[0].from} tcp/1433`, closes: crossing[0].opens, opens: crossing[0].closes });
