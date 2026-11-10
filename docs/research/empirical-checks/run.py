@@ -325,7 +325,12 @@ def main():
 
     sub = (secret or {}).get("subscriptionId")
     if not sub:
-        subs = az.call("GET", "/subscriptions", api="2022-12-01")[2]["value"]
+        for _ in range(15):  # a new principal sees its subscription once the role assignment propagated
+            subs = az.call("GET", "/subscriptions", api="2022-12-01")[2]["value"]
+            if subs:
+                break
+            print("no subscription visible yet, waiting for the role assignment", flush=True)
+            time.sleep(20)
         if len(subs) != 1:
             sys.exit(f"the principal sees {len(subs)} subscriptions; add subscriptionId to the secret file")
         sub = subs[0]["subscriptionId"]
