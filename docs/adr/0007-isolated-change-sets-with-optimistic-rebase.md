@@ -1,6 +1,6 @@
 # Isolated Change sets with optimistic Rebase
 
-Status: accepted (2026-11-09, [Grilling: Change sets, concurrency and approval](https://github.com/mfgAkilae/nsgfw/issues/15)). Amended on 2026-11-09 by [Grilling: Review round on placement, egress posture and MVP shape](https://github.com/mfgAkilae/nsgfw/issues/27): a placement conflicts only against an overlapping Rule with the other action.
+Status: accepted (2026-11-09, [Grilling: Change sets, concurrency and approval](https://github.com/mfgAkilae/nsgfw/issues/15)). Amended on 2026-11-09 by [Grilling: Review round on placement, egress posture and MVP shape](https://github.com/mfgAkilae/nsgfw/issues/27): a placement conflicts only against an overlapping Rule with the other action. Amended on 2026-11-10 by [ADR 0021](0021-folders-are-layout-outside-approval-and-rule-conflicts.md): conflicts on Folders, and where a placed Rule lands at Rebase.
 
 There is one central Rule base for all Environments ([ADR 0001](0001-central-rule-base-across-environments.md)), and up to 20 administrators edit it at the same time. The brief asks the tool to detect or prevent conflicting edits, and every Change set needs an Approval that depends on the Zones it touches. Firewall consoles solve this in different ways. Palo Alto shares one candidate configuration between all administrators. Check Point gives each administrator a session and locks every object that the session edits.
 

@@ -19,7 +19,7 @@ The identifier a Rule gets when it is created. It never changes when the Rule is
 _Avoid_: rule number (the Rule's current position in the Rule base)
 
 **Folder**:
-A named, contiguous run of Rules in the Rule base that administrators use to keep it in order. Folders are one level deep, a Rule belongs to at most one Folder, and a Rule may stand outside every Folder. A Folder carries only its name and has no effect on how a Rule is evaluated or translated. Creating, renaming, moving or removing one is an edit in a Change set, and it needs no Approval while it changes no Managed NSG.
+A named, contiguous run of Rules in the Rule base that administrators use to keep it in order. Folders are one level deep, their names are unique, a Rule belongs to at most one Folder, and a Rule may stand outside every Folder. A Folder may be empty. It carries only its name and has no effect on how a Rule is evaluated or translated, so the Folder of a Rule is part of its position, not of its content. Creating, renaming or removing a Folder and moving a Rule in or out at the same position are edits in a Change set that need no Approval and keep the Approvals already given. Moving a Folder moves each of its Rules.
 _Avoid_: section, group (Address group and Service group hold Objects), tag
 
 **Intra-zone default**:
@@ -164,7 +164,7 @@ The one person who manages a Change set: adds co-editors, submits it for Approva
 _Avoid_: owner, assignee
 
 **Rebase**:
-Moving an open Change set onto the latest Version after another Commit. It conflicts when both changed the same Rule, Object or Zone, or when the other Commit changed the order between a Rule it placed and an overlapping Rule with the other action.
+Moving an open Change set onto the latest Version after another Commit. It conflicts when both changed the same Rule, Object or Zone, or renamed, moved or removed the same Folder, or when the other Commit changed the order between a Rule it placed and an overlapping Rule with the other action.
 _Avoid_: merge, sync, update
 
 **Affected Zones**:
@@ -215,11 +215,11 @@ A stored, committed state of the Rule base that can be rolled back to, together 
 _Avoid_: revision, snapshot
 
 **Restore**:
-A Change set that returns the Rule base to an earlier Version. It restores Rules, Objects, Zones and ASG members, not the Azure facts adopted since.
+A Change set that returns the Rule base to an earlier Version. It restores Rules, Objects, Zones, Folders and ASG members, not the Azure facts adopted since.
 _Avoid_: rollback (the umbrella for Restore and Revert)
 
 **Revert**:
-A Change set that undoes the edits of one earlier Commit on top of the latest Version.
+A Change set that undoes the edits of one earlier Commit on top of the latest Version, Folder edits included.
 _Avoid_: rollback, undo
 
 **Re-translation**:

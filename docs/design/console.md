@@ -53,6 +53,16 @@ It follows from the order of Rules and from the Change set model:
 - Creating, renaming, removing a Folder and moving Rules in or out are edits in a Change set. A Change set that only does this says "Nothing changes in Azure" and "No Approval needed", commits directly and starts no Deployment. A Rule that changes its position is a move like any other; a Rule that joins or leaves a Folder at the same position is not.
 - Closing a Folder is a view setting of the person, not an edit.
 
+Decided in [Grilling: Folders in Import, Rebase and Versions][t34] ([ADR 0021](../adr/0021-folders-are-layout-outside-approval-and-rule-conflicts.md)):
+
+- Folder names are unique, and a Folder may be empty ("0 Rules").
+- Moving a Folder moves each of its Rules: the Review lists them as moves, and their Affected Zones need Approval.
+- A Folder edit in a submitted or approved Change set keeps its Approvals. The Commit dialog lists the Folder edits made since the Approval.
+- Any editor commits a Change set that only changes Folders.
+- Import creates no Folders. Imported Rules stand outside Folders unless the constraint merge forces one inside, which an info Import note says.
+- With the read filter by Coverage, a person sees the Folders that hold a Rule they may read, and every empty Folder. The count on a Folder row counts only those Rules.
+- Folders ship in a later stage of the MVP, after the small profile.
+
 A Folder row shows the number of its Rules, the mix of allow and deny, and how many are changed or flagged. It renames in place, moves with its Rules by a grip, and takes Rules by drop, from the action row or from the context menu. A filter shows the matching Rules under their Folders ("44 of 801 Rules"). A sorted table has no Folders. With all Folders closed, 10,000 Rules fit on one screen.
 
 ## Change sets
@@ -90,7 +100,6 @@ AG Grid Community carries the Rule base at the design target; the fallback to Ta
 - The approver's view, conflicts after a Rebase, the Pre-check waiver, the Version history with Restore and Revert, the inbox in full: [Prototype: Change set review, conflicts and Version history][t36].
 - Deployment and its history, Terraform pull request steps, Drift, onboarding and Import: [Prototype: Deployment, Drift and Import views][t37].
 - Roles, the audit log, sign-in edges, health and settings: [Prototype: Access, audit, settings and health views][t38].
-- What Import, Rebase and Versions do with a Folder: [Grilling: Folders in Import, Rebase and Versions][t34].
 
 [t25]: https://github.com/mfgAkilae/nsgfw/issues/25
 [t34]: https://github.com/mfgAkilae/nsgfw/issues/34
