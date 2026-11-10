@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button, Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent, DialogActions, Field, Textarea, Input, Radio, RadioGroup, Checkbox, MessageBar, MessageBarBody, MessageBarTitle, Popover, PopoverTrigger, PopoverSurface } from '@fluentui/react-components';
 import { Flash16Regular, Send16Regular, Warning16Filled, CalendarClock16Regular, PlugDisconnected16Regular, ArrowSync16Regular, ShieldError16Filled } from '@fluentui/react-icons';
 import { useStore, Preview, placement } from './store';
-import { envs, zoneById } from './data';
+import { envs, zoneById, entries as baseEntries } from './data';
 import { useApproval, usePreview } from './ChangeViews';
 import { useFindings } from './Policy';
 import { useFlow, useCsId, CUR, CUR_NAME, TOOL_PATHS, nowLabel } from './flow';
@@ -139,12 +139,14 @@ export function CsButtons({ pv, name = CUR_NAME, onReview, onPolicy, emergency =
   const [dlg, setDlg] = useState<null | 'commit' | 'emergency' | 'submit'>(null);
   const need = a.byEnv.some(x => x.env.level !== 'none'); const rb = cs === CUR && !!f.pending; const sched = f.schedule[cs];
   const deny = fx.ran ? fx.blocking.length : 0; const stop = pv.unorderable || rb;
+  // Discarding another Change set resets only its own store: the store's discard() also clears the current Change set's Zone and Object edits (issue 35).
+  const discard = cs === CUR ? s.discard : () => s.rebaseOnto(s.version, () => baseEntries, () => [], false);
   const submit = () => { f.runCheck(cs, 'Submit', s.edits.length); if (fx.blocking.length) { onPolicy?.(); return; } if (tps.length) setDlg('submit'); else s.submit(); };
   const commitReady = s.edits.length > 0 && a.done && !stop && !deny;
   return (
     <>
       {emergency && need && <Button size="small" appearance="subtle" icon={<Flash16Regular />} disabled={!s.edits.length || pv.unorderable} onClick={() => setDlg('emergency')}>{t('Emergency Commit')}</Button>}
-      <Button size="small" appearance="subtle" onClick={s.discard} disabled={!s.edits.length}>{t('Discard')}</Button>
+      <Button size="small" appearance="subtle" onClick={discard} disabled={!s.edits.length}>{t('Discard')}</Button>
       {onReview && <Button size="small" onClick={onReview}>{t('Review')}</Button>}
       {s.state === 'Open' && need && <Button size="small" appearance="primary" icon={<Send16Regular />} disabled={!s.edits.length || stop || deny > 0} onClick={submit} title={rb ? t('Resolve the conflicts of the Rebase first') : undefined}>{t('Submit for Approval')}</Button>}
       {s.state === 'Submitted' && !a.done && cs === CUR && <Button size="small" className="proto" onClick={() => s.approveAs('kim', a.byEnv.map(x => x.env.id))}>{t('Approve as kim (prototype)')}</Button>}

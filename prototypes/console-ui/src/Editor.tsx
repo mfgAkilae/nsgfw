@@ -9,6 +9,7 @@ import { zoneById, ref, svcById, Rule } from './data';
 import { ObjectPicker } from './ObjectPicker';
 import { Glyph } from './Glyph';
 import { compact } from './RuleGrid';
+import { layerWarn, hitsView } from './zonedata';
 import { useT } from './i18n';
 import { RulePolicy } from './Policy';
 import { useFlow } from './flow';
@@ -24,7 +25,7 @@ function EditText({ value, onCommit, className, placeholder, multiline, select, 
   return multiline ? <textarea rows={2} {...props} /> : <input type={type ?? 'text'} {...props} />;
 }
 
-export function RuleEditor({ id, fresh, onMoveTo, onMoveToFolder, onZone }: { id: string | null; fresh?: string | null; onMoveTo: (ids: string[]) => void; onMoveToFolder: (ids: string[]) => void; onZone: (zid: string) => void }) {
+export function RuleEditor({ id, fresh, onMoveTo, onMoveToFolder, onZone, onObject }: { id: string | null; fresh?: string | null; onMoveTo: (ids: string[]) => void; onMoveToFolder: (ids: string[]) => void; onZone: (zid: string) => void; onObject?: (id: string) => void }) {
   const s = useStore(); const { t } = useT(); const [adding, setAdding] = useState<null | 'src' | 'dst' | 'svc'>(null); const small = useFlow().small;
   useEffect(() => setAdding(null), [id]);
   const r = id ? s.rules.find(x => x.id === id) : undefined;
@@ -38,7 +39,7 @@ export function RuleEditor({ id, fresh, onMoveTo, onMoveToFolder, onZone }: { id
     <div className="flowsep">{field === 'dst' && <ArrowRight12Filled />}{t(label)}<span className="sp" />
       <button className={`addb ${adding === field ? 'on' : ''}`} onClick={() => setAdding(adding === field ? null : field)}>{adding === field ? t('Done') : <><Add12Regular />{t('Add')}</>}</button></div>
     {ids.map(x => { const o = svc ? { name: svcById.get(x)?.name ?? x, kind: 'svc' as const, value: svcById.get(x)?.value ?? '', cov: [] as string[] } : ref(x); return (
-      <div key={x} className={`orow t-${o.kind}`}><Glyph kind={o.kind} /><b>{o.name}</b><span className="mono">{o.kind === 'vnet' || o.kind === 'group' ? '' : o.value}</span>
+      <div key={x} className={`orow t-${o.kind}`}><Glyph kind={o.kind} />{!svc && o.kind !== 'zone' && o.kind !== 'any' && onObject ? <b className="olink" title={t('Open in the object editor')} onClick={() => onObject(x)}>{o.name}</b> : <b>{o.name}</b>}<span className="mono">{o.kind === 'vnet' || o.kind === 'group' ? '' : o.value}</span>
         {!svc && (o.kind === 'zone' ? <a className="link" onClick={() => onZone(x.slice(5))}>{t('open Zone')}</a> : <span className="cov">{o.kind === 'any' ? t('every Zone and beyond') : o.cov.length ? `${o.cov.length.toLocaleString()} ${t(o.cov.length === 1 ? 'Zone' : 'Zones')}` : t('outside every Zone')}</span>)}
         <button className="rmb" title={t('Remove')} onClick={() => { const rest = ids.filter(y => y !== x); set(field, rest.length ? rest : [svc ? 'svc-any' : 'any']); }}><Dismiss12Regular /></button></div>); })}
     {adding === field && <div className="inl-pick"><ObjectPicker value={ids} onChange={v => set(field, v.length ? v : [svc ? 'svc-any' : 'any'])} mode={svc ? 'svc' : 'addr'} autoFocus /></div>}
@@ -55,7 +56,8 @@ export function RuleEditor({ id, fresh, onMoveTo, onMoveToFolder, onZone }: { id
   if (r.name === 'New Rule') checks.push(['info', <Info16Regular />, 'Give the Rule a name that says what it is for.']);
   if (r.policy) checks.push(['red', <ShieldError16Filled />, r.policy]);
   if (r.importNote) checks.push(['amber', <Warning16Filled />, `Import note (${r.importNote}): from nsg-legacy-017, rule “allow-sql”, priority 310, inbound.`]);
-  if (r.layerWarn) checks.push(['amber', <LayerDiagonal16Regular />, `Security layer: ${r.layerWarn}.`]);
+  const lw = layerWarn(r);
+  if (lw) checks.push([lw.sev === 'high' ? 'red' : 'amber', <LayerDiagonal16Regular />, `${t(lw.sev === 'high' ? 'High' : 'Medium')}, ${t('Security layer')}: ${lw.text}. ${lw.detail}`]);
   if (also) checks.push(['red', <PeopleSwap16Regular />, `${t('also changed in')} “${also.set}” ${t('by')} ${also.by}.`]);
 
   return (
@@ -92,7 +94,7 @@ export function RuleEditor({ id, fresh, onMoveTo, onMoveToFolder, onZone }: { id
         <label>{t('Owner')}</label><EditText value={r.owner} onCommit={v => set('owner', v)} placeholder={t('Entra user or group')} />
         <label>{t('Expiry')}</label><EditText type="date" value={r.expiry ?? ''} onCommit={v => set('expiry', v || undefined)} />
         <label>{t('Comment')}</label><EditText multiline value={r.comment} onCommit={v => set('comment', v)} placeholder={t('Why this Rule exists')} />
-        <label>{t('Hits')}</label><span className="ro">{r.hits == null ? t('No flow data for this Rule') : `${compact(r.hits)}, ${t('data about 70 minutes old')}`}</span>
+        <label>{t('Hits')}</label><span className="ro">{hitsView(r, pl.dst.length ? pl.dst : pl.src) === 'noaccess' ? t('No access to flow data: the hits are unknown, not 0') : r.hits == null ? t('No flow data for this Rule') : `${compact(r.hits)}, ${t('data about 70 minutes old')}`}</span>
         <label>Rule ID</label><span className="ro mono">{r.id}</span>
       </div>
 

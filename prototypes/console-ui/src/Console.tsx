@@ -14,8 +14,11 @@ import { ProtoButton } from './Proto';
 import { RuleEditor } from './Editor';
 import { Review } from './Review';
 import { ObjectLibrary, ChangeSetsPage, Track } from './Pages';
+import { ZoneHead, lensBands, FlowView, ZoneSettings, ruleFromFlow, type ZTab } from './ZoneDetail';
+import { ObjectEditor } from './ObjectEditor';
+import { OnboardPanel } from './Onboard';
 import { useStore, placement, cost, alsoChanged } from './store';
-import { zones, zoneById, envs, ref, svcById } from './data';
+import { zones, zoneById, envs, ref, svcById, candidates, type Rule, type Candidate } from './data';
 import { useT } from './i18n';
 import { useMode } from './theme';
 // Issue 36: Versions, the Rebase and approver screens, the Commit dialog, Policy findings in full.
@@ -36,11 +39,13 @@ export default function Console() {
   const [filter, setFilter] = useState<FilterKey>('all'); const [q, dq, setQ] = useDebounced();
   const [dense, setDense] = useState(false); const [bands, setBands] = useState(true);
   const [sel, setSel] = useState<string[]>([]); const [focused, setFocused] = useState<string | null>(null);
-  const [dock, setDock] = useState<{ open: boolean; tab: 'rule' | 'cs'; cs: CsTab; auto: boolean }>({ open: false, tab: 'rule', cs: 'preview', auto: true });
+  const [dock, setDock] = useState<{ open: boolean; tab: 'rule' | 'cs' | 'obj'; cs: CsTab; auto: boolean }>({ open: false, tab: 'rule', cs: 'preview', auto: true });
   const [palette, setPalette] = useState<false | 'all' | 'zone'>(false); const [moveIds, setMoveIds] = useState<string[] | null>(null);
   // Collapsing is a view setting of the person, not an edit to the Rule base.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(s.folders.slice(2).map(f => f.id)));
   const [folderFor, setFolderFor] = useState<string[] | null>(null); const [fresh, setFresh] = useState<string | null>(null); const [review, setReview] = useState(false);
+  // Zone detail (issue 35): the tab of the lens, the Security layer bands that are open, the object in the side panel, the candidate being onboarded.
+  const [ztab, setZtab] = useState<ZTab>('rules'); const [openBands, setOpenBands] = useState<Set<string>>(new Set()); const [objId, setObjId] = useState<string | null>(null); const [onb, setOnb] = useState<Candidate | null>(null);
   const toggleFolder = (id: string) => setCollapsed(c => { const n = new Set(c); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const allCollapsed = s.folders.length > 0 && s.folders.every(f => collapsed.has(f.id));
   const unfold = (ruleId: string) => { const f = s.rules.find(r => r.id === ruleId)?.folder; if (f) setCollapsed(c => { if (!c.has(f)) return c; const n = new Set(c); n.delete(f); return n; }); };
@@ -52,24 +57,31 @@ export default function Console() {
   const bandRows = useMemo<{ top: SysRow[]; bottom: SysRow[] } | null>(() => {
     if (!bands) return null;
     if (!z || !lens) return { top: systemTop, bottom: systemBottom };
-    const inb = lens.dir === 'in';
-    return {
-      top: [{ id: 'sys-pe', system: 'pe', name: 'Platform exceptions', text: inb ? 'Azure Load Balancer health probes to this Zone are allowed, priority 100.' : 'None outbound.' }],
-      bottom: [
-        { id: 'sys-intra', system: 'intra', name: 'Intra-zone default', text: `Traffic inside ${z.name} is allowed.` },
-        ...(z.inherited ? [{ id: 'sys-inh', system: 'inherited', name: 'Inherited defaults', text: inb ? 'VirtualNetwork to this Zone is allowed, as before onboarding.' : 'This Zone to VirtualNetwork and Internet is allowed, as before onboarding.' } as SysRow] : []),
-        ...(!inb && z.egress === 'dest' ? [{ id: 'sys-egress', system: 'egress', name: 'Egress posture', text: 'Outbound to the Internal address space is open. The destination Zone decides.' } as SysRow] : []),
-        { id: 'sys-deny', system: 'denyall', name: 'Deny-all rules', text: inb ? 'Everything else to this Zone is denied, priority 4096.' : 'Everything else from this Zone is denied, priority 4096.' },
-        { id: 'sys-az', system: 'azure', name: 'Azure default rules', text: 'Read-only and never reached.' },
-      ],
-    };
-  }, [bands, z, lens]);
+    return lensBands(z, lens.dir, openBands, id => setOpenBands(o => { const n = new Set(o); if (n.has(id)) n.delete(id); else n.add(id); return n; }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bands, z, lens, openBands, s.edits]);
 
   const openDock = (tab: 'rule' | 'cs', cs?: CsTab) => setDock(d => ({ ...d, open: true, tab, cs: cs ?? d.cs }));
   const focusRule = (id: string) => { setFocused(id); setDock(d => (d.open && d.tab !== 'rule' ? d : d)); };
   const openRule = (id: string) => { setFocused(id); openDock('rule'); };
   const jumpToRule = (id: string) => { unfold(id); setPage('rules'); setLens(null); setFilter('all'); setQ(''); setTimeout(() => { grid.current?.reveal(id); openRule(id); }, 80); };
-  const openZone = (zid: string) => { setPage('rules'); setLens({ zid, dir: 'in' }); setFilter('all'); setQ(''); };
+  const openZone = (zid: string) => { setPage('rules'); setLens({ zid, dir: 'in' }); setFilter('all'); setQ(''); setZtab('rules'); setOpenBands(new Set()); };
+  const revealInLens = (id: string) => { setZtab('rules'); unfold(id); setTimeout(() => { grid.current?.reveal(id); openRule(id); }, 80); };
+  // New Rule from a flow or a proposal: at the end of the Rule base, outside every Folder, so every deny Rule above it still wins. The editor opens with the name selected.
+  const newRuleFrom = (init: Partial<Rule>) => { const last = s.rules[s.rules.length - 1]; const id = s.addRule(last?.id, undefined, init); setFresh(id); setZtab('rules'); setTimeout(() => { grid.current?.reveal(id); openRule(id); }, 120); };
+  const openObject = (id: string) => { setObjId(id); setDock(d => ({ ...d, open: true, tab: 'obj' })); };
+  // Prototype deep links (issue 35): ?zone=z0042-web&dir=out&ztab=flows|settings&bands=avnm,nic, ?page=zones|objects|sets
+  // The same views as #names, for the published copy, which passes only a plain hash.
+  const HASH: Record<string, string> = { 'zone-rules': 'zone=z0042-web&bands=avnm,nic', 'zone-rules-out': 'zone=z0042-web&dir=out&bands=avnm,nic', 'zone-flows': 'zone=z0042-web&ztab=flows',
+    'zone-flows-out': 'zone=z0042-web&dir=out&ztab=flows', 'flows-no-access': 'zone=z0700-web&ztab=flows', 'flows-no-data': 'zone=z0950-web&ztab=flows', 'zone-settings': 'zone=z0042-web&ztab=settings',
+    'objects': 'page=objects', 'external-asg': 'zone=z0042-web&obj=x1', 'onboard': 'onboard=c903', 'not-onboardable': 'onboard=c901', 'versions': 'page=versions', 'inbox': 'page=sets' };   // issue 36 adds #versions and #inbox
+  useEffect(() => { const p = new URLSearchParams(HASH[location.hash.slice(1)] ?? location.search); const zid = p.get('zone'); const pg = p.get('page'); const zt = p.get('ztab'); const b = p.get('bands');
+    if (zid && zoneById.has(zid)) { openZone(zid); if (p.get('dir') === 'out') setLens({ zid, dir: 'out' }); if (zt === 'flows' || zt === 'settings') setTimeout(() => setZtab(zt), 0); if (b) setTimeout(() => setOpenBands(new Set(b.split(',').map(x => `sys-${x}`))), 0); }
+    if (pg === 'zones' || pg === 'objects' || pg === 'sets' || pg === 'versions') setPage(pg);
+    const oc = candidates.find(c => c.id === p.get('onboard')); if (oc) { setPage('zones'); setOnb(oc); }
+    const ob = p.get('obj'); if (ob) openObject(ob);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const newRule = () => { setPage('rules'); if (focused) unfold(focused); const id = s.addRule(focused ?? undefined); setFresh(id); setTimeout(() => { grid.current?.reveal(id); openRule(id); }, 80); };
 
   useEffect(() => {
@@ -86,7 +98,7 @@ export default function Console() {
   });
 
   const nav: [Page, string, JSX.Element][] = [['rules', 'Rules', <TextBulletListSquare20Regular />], ['zones', 'Zones', <Grid20Regular />], ['objects', 'Objects', <Box20Regular />], ['sets', 'Change sets', <BranchFork20Regular />], ['versions', 'Versions', <History20Regular />]];
-  const chips: [FilterKey, string][] = [['all', 'All'], ['deny', 'Deny'], ['disabled', 'Disabled'], ['expiring', 'Expiring'], ['findings', 'With findings'], ['unused', 'No hits']];
+  const chips: [FilterKey, string][] = [['all', 'All'], ['deny', 'Deny'], ['disabled', 'Disabled'], ['expiring', 'Expiring'], ['findings', 'With findings'], ['unused', 'No hits'], ['layers', 'Layer warnings']];
   const showBar = s.edits.length > 0 || s.state !== 'Open';
 
   return (
@@ -126,19 +138,10 @@ export default function Console() {
                 <Button appearance="primary" icon={<Add16Regular />} onClick={newRule}>{t('New Rule')}</Button>
               </header>
 
-              {z && lens && (
-                <div className="lens">
-                  <div className="lens-top">
-                    <span className="lens-name"><Glyph kind="zone" />{z.name}</span><span className="mono">{z.prefix}{z.extra ? ` + ${z.extra.join(', ')}` : ''}</span>
-                    <span className="sp" />
-                    <div className="seg2" role="group"><button className={lens.dir === 'in' ? 'on' : ''} onClick={() => setLens({ ...lens, dir: 'in' })}>{t('Inbound')}</button><button className={lens.dir === 'out' ? 'on' : ''} onClick={() => setLens({ ...lens, dir: 'out' })}>{t('Outbound')}</button></div>
-                    <button className="lens-x" onClick={() => setLens(null)}><Dismiss16Regular />{t('All Rules')}</button>
-                  </div>
-                  <div className="lens-facts"><span>{z.vnet}</span><span>{envs.find(e => e.id === z.env)?.name}</span><EgressBadge e={z.egress} /><Flags z={z} /><span className="sp" />
-                    <span>{t('NSG rules')}<Bar v={z.rules} max={LIMITS.rules} /></span><span>{t('Source addresses')}<Bar v={z.addrSrc} max={LIMITS.addr} /></span><span>{t('ASGs')}<Bar v={z.asgs} max={LIMITS.asgs} /></span></div>
-                </div>
-              )}
-
+              {z && lens && <ZoneHead z={z} dir={lens.dir} setDir={d => setLens({ ...lens, dir: d })} tab={ztab} setTab={setZtab} onClose={() => setLens(null)} ruleCount={rows.length} />}
+              {z && lens && ztab === 'flows' && <FlowView key={`${z.id}-${lens.dir}`} z={z} dir={lens.dir} here={rows} onRule={revealInLens} onNewRule={f => newRuleFrom(ruleFromFlow(z, f, s))} />}
+              {z && lens && ztab === 'settings' && <ZoneSettings key={z.id} z={z} here={rows} onRule={revealInLens} onNewRule={f => newRuleFrom(ruleFromFlow(z, f, s))} onAddRule={newRuleFrom} />}
+              {(!lens || ztab === 'rules') && <>
               {sel.length ? (
                 <div className="chipbar selbar">
                   <b>{sel.length} {t('selected')}</b>
@@ -158,9 +161,10 @@ export default function Console() {
 
               <div className="sheet"><RuleGrid key={lens ? `${lens.zid}-${lens.dir}` : 'all'} ref={grid} rows={rows} scoped={!!lens} collapsed={collapsed} onToggle={toggleFolder} onMoveToFolder={setFolderFor} quick={dq} filter={filter} bands={bandRows} dense={dense} focusedId={focused}
                 onFocus={focusRule} onOpen={openRule} onQuick={setQ} onSelection={setSel} onMoveTo={setMoveIds} onReady={reportReady(lens ? `Zone lens, ${rows.length} Rules` : 'Rule base, 10,000 Rules')} /></div>
+              </>}
             </>}
 
-            {page === 'zones' && <><header className="phead"><h1>{t('Zones')}</h1><span className="sub">{t('Every Managed NSG against its Azure limits. Click a Zone to see the Rules that land on it.')}</span></header><ZoneGrid onOpen={x => openZone(x.id)} /></>}
+            {page === 'zones' && <><header className="phead"><h1>{t('Zones')}</h1><span className="sub">{t('Every Managed NSG against its Azure limits. Click a Zone to see the Rules that land on it.')}</span></header><ZoneGrid onOpen={x => openZone(x.id)} onCandidate={setOnb} /></>}
             {page === 'objects' && <><header className="phead"><h1>{t('Objects')}</h1><span className="sub">{t('Every object and where it is used.')}</span></header><ObjectLibrary onZone={openZone} onShowRules={name => { setPage('rules'); setLens(null); setFilter('all'); setQ(name); }} /></>}
             {page === 'versions' && <><header className="phead"><h1>{t('Versions')}</h1><span className="sub">{t('Every committed Version: what it changed, its Deployments, Revert and Restore.')}</span></header><VersionsPage /></>}
             {page === 'sets' && <><header className="phead"><h1>{t('Change sets')}</h1><span className="sub">{t('What waits for you, and where every Change set stands.')}</span></header><ChangeSetsPage onFilter={k => { setPage('rules'); setLens(null); setFilter(k); }} onReview={() => { setPage('rules'); openDock('cs', 'preview'); }} /></>}
@@ -169,10 +173,10 @@ export default function Console() {
           {dock.open && (
             <aside className="dock">
               <div className="dock-h">
-                <div className="seg2" role="tablist"><button className={dock.tab === 'rule' ? 'on' : ''} onClick={() => setDock({ ...dock, tab: 'rule' })}>{t('Rule')}</button><button className={dock.tab === 'cs' ? 'on' : ''} onClick={() => setDock({ ...dock, tab: 'cs' })}>{t('Change set')}{s.edits.length > 0 && <i className="cnt">{s.edits.length}</i>}</button></div>
+                <div className="seg2" role="tablist"><button className={dock.tab === 'rule' ? 'on' : ''} onClick={() => setDock({ ...dock, tab: 'rule' })}>{t('Rule')}</button>{objId && <button className={dock.tab === 'obj' ? 'on' : ''} onClick={() => setDock({ ...dock, tab: 'obj' })}>{t('Object')}</button>}<button className={dock.tab === 'cs' ? 'on' : ''} onClick={() => setDock({ ...dock, tab: 'cs' })}>{t('Change set')}{s.edits.length > 0 && <i className="cnt">{s.edits.length}</i>}</button></div>
                 <span className="sp" /><button className="ib" title={t('Close')} onClick={() => setDock({ ...dock, open: false, auto: false })}><Dismiss16Regular /></button>
               </div>
-              {dock.tab === 'rule' ? <div className="dock-b"><RuleEditor id={focused} fresh={fresh} onMoveTo={setMoveIds} onMoveToFolder={setFolderFor} onZone={openZone} /></div> : <>
+              {dock.tab === 'obj' && objId ? <div className="dock-b"><ObjectEditor id={objId} onZone={openZone} onShowRules={name => { setPage('rules'); setLens(null); setFilter('all'); setQ(name); }} /></div> : dock.tab === 'rule' ? <div className="dock-b"><RuleEditor id={focused} fresh={fresh} onMoveTo={setMoveIds} onMoveToFolder={setFolderFor} onZone={openZone} onObject={openObject} /></div> : <>
                 <div className="subtabs">{(['changes', 'preview', 'order', 'approval', 'policy'] as CsTab[]).map(k => <button key={k} className={dock.cs === k ? 'on' : ''} onClick={() => setDock({ ...dock, cs: k })}>{k === 'order' && lang === 'de' ? 'Reihenfolge' : t({ changes: 'Changes', preview: 'Preview', order: 'Write order', approval: 'Approval', policy: 'Policy' }[k])}{k === 'order' && pv.unorderable ? <Warning16Filled className="b-red" /> : null}</button>)}</div>
                 <div className="dock-b">
                   {dock.cs === 'changes' && <ChangesList onFocus={jumpToRule} />}{dock.cs === 'preview' && <PreviewView pv={pv} />}{dock.cs === 'order' && <WriteOrderView pv={pv} />}
@@ -190,6 +194,7 @@ export default function Console() {
 
       {palette && <Palette mode={palette} onClose={() => setPalette(false)} run={{ all: () => { setPage('rules'); setLens(null); }, rule: jumpToRule, zone: openZone, page: setPage, newRule, review: () => setReview(true), theme: toggle, lang: () => setLang(lang === 'en' ? 'de' : 'en') }} />}
       <MoveDialog ids={moveIds} onClose={() => setMoveIds(null)} />
+      {onb && <OnboardPanel c={onb} onClose={() => setOnb(null)} onDone={zid => { setOnb(null); openZone(zid); setZtab('settings'); }} />}
       {folderFor && <FolderPicker ids={folderFor} onClose={() => setFolderFor(null)} onDone={fid => { setCollapsed(c => { const n = new Set(c); n.delete(fid); return n; }); grid.current?.clearSelection(); }} />}
     </div>
   );

@@ -6,6 +6,7 @@ import { Button, Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent, 
 import { CheckmarkCircle16Filled, Clock16Regular, PersonLock16Regular, Flash16Regular, ArrowUndo16Regular, History16Regular, Bot16Regular } from '@fluentui/react-icons';
 import { useStoreValue, useStore as useCsStore, Ctx, Store, Preview } from './store';
 import { envs, zones, rules as baseRules, entries, isFolder, Rule, Level } from './data';
+
 import { useFlow, CsScope, useCsId, FlowWatch, nowLabel, Flow } from './flow';
 import { usePreview, useApproval, WriteOrderView, ApprovalView, PolicyView } from './ChangeViews';
 import { CsButtons } from './Commit';
@@ -57,7 +58,7 @@ function specFor(id: string, f: Flow, t: (k: string) => string): Spec {
 // Decided 2026-11-10: when a removed Folder cannot come back as it was, the Author chooses. Neither choice moves a Rule.
 function RevertChoice({ step }: { step: Step }) {
   const s = useCsStore(); const { t } = useT(); const [c, setC] = useState<'' | 'back' | 'keep'>('');
-  const pick = (v: 'back' | 'keep') => { if (v === c) return; if (v === 'back') step(s); else if (c === 'back') s.discard(); setC(v); };
+  const pick = (v: 'back' | 'keep') => { if (v === c) return; if (v === 'back') step(s); else if (c === 'back') s.rebaseOnto(s.version, () => entries, () => [], true); setC(v); };
   return (<div className="rvc">
     <label><input type="radio" checked={c === 'back'} onChange={() => pick('back')} /> <b>{t('Bring the Folder back around the 12 Rules that still stand together')}</b> <span className="muted">{t('They are in no other Folder. No Rule moves.')}</span></label>
     <label><input type="radio" checked={c === 'keep'} onChange={() => pick('keep')} /> <b>{t('Leave the Folder removed')}</b> <span className="muted">{t('The Revert then changes nothing else here.')}</span></label>

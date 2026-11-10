@@ -4,6 +4,7 @@ import { Button, Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent, 
 import { Alert20Regular, ArrowSync16Regular, CheckmarkCircle16Filled, Clock16Regular, Flash16Regular, Send16Regular, ShieldError16Filled, ShieldCheckmark16Regular, PeopleSwap16Regular } from '@fluentui/react-icons';
 import { useStore, buildPreview, otherSets, alsoChanged, CsState, Preview, Edit } from './store';
 import { envs, rules as baseRules } from './data';
+import { targetName } from './zonedata';
 import { useT } from './i18n';
 import { useFlow, useCsId, CUR } from './flow';
 import { CsButtons } from './Commit';
@@ -40,6 +41,7 @@ export function ChangesList({ onFocus, selected }: { onFocus?: (id: string) => v
             {mv.slice(0, 12).map(e => <div key={e.seq} className="edit"><span className="mono">{e.ruleId}</span><span>{(s.rules.find(x => x.id === e.ruleId) ?? baseRules.find(x => x.id === e.ruleId))?.name}</span><span className="muted">{e.before} → {e.after}</span></div>)}
             {mv.length > 12 && <p className="muted">{mv.length - 12} {t('more')}</p>}</details>); }
         const r = s.rules.find(x => x.id === id) ?? baseRules.find(x => x.id === id); const also = alsoChanged.get(id);
+        if (es[0].kind === 'zone' || es[0].kind === 'object') return <div key={id} className="li clickable" onClick={() => onFocus?.(id)}><div className="li-h"><b>{targetName(id)}</b><span className="mono">{t(es[0].kind === 'zone' ? 'Zone' : 'Object')}</span></div>{es.map(e => <div key={e.seq} className="edit"><span className="ek edit">{t(e.field ?? '')}</span>{e.before ? <span><s>{e.before}</s> {t('to')} {e.after}</span> : <span>{e.after}</span>}</div>)}</div>;
         if (es[0].kind === 'folder') return <div key={id} className="li">{es.map(e => <div key={e.seq} className="edit" style={{ marginTop: 0 }}><span className="ek move">{t('Folder')}</span><span>{e.after}</span></div>)}</div>;
         return (
           <div key={id} className={`li clickable ${selected === id ? 'sel' : ''}`} onClick={() => onFocus?.(id)}>

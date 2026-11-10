@@ -8,7 +8,8 @@ import { ShieldError16Filled, Warning16Filled, Info16Regular, Clock16Regular, Pe
   Folder16Regular, FolderOpen16Regular, ChevronRight16Regular, Edit16Regular, ReOrderDotsVertical16Regular, FolderArrowRight16Regular, FolderAdd16Regular,
   Copy16Regular, Delete16Regular, Eye16Regular, EyeOff16Regular, ArrowRight12Filled, PanelRight16Regular, Filter16Regular, ArrowUp16Regular, ArrowDown16Regular, ArrowSort16Regular, Add16Regular, Checkmark12Filled, Dismiss12Filled } from '@fluentui/react-icons';
 import { Rule, FolderRow, isFolder, svcName, ref } from './data';
-import { useStore, alsoChanged, St } from './store';
+import { useStore, alsoChanged, St, placement } from './store';
+import { layerWarn, hitsView } from './zonedata';
 import { useT } from './i18n';
 import { useFlow } from './flow';
 import { useMode } from './theme';
@@ -26,7 +27,22 @@ export const gridTheme = themeQuartz.withParams({
   pinnedColumnBorder: false, dragHandleColor: 'var(--ink3)',
 });
 
-export type SysRow = { id: string; system: 'pe' | 'intra' | 'inherited' | 'egress' | 'denyall' | 'azure'; name: string; text: string };
+export type SysRow = { id: string; system: 'pe' | 'intra' | 'inherited' | 'egress' | 'denyall' | 'azure' | 'avnm' | 'nic' | 'avnmuser'; name: string; text: string;
+  // Security layer bands (issue 35) open into their rules, read-only.
+  items?: BandItem[]; open?: boolean; toggle?: () => void; count?: string };
+export type BandItem = { k: string; prio: string; name: string; act: string; cls: 'allow' | 'deny' | 'always'; flow: string; svc: string; note?: string; sev?: 'high' | 'medium'; head?: boolean };
+const bandH = (b: SysRow) => 36 + (b.open && b.items ? Math.min(b.items.length, 9) * 27 + 12 : 0);
+function Band({ b }: { b: SysRow }) {
+  const { t } = useT();
+  return (
+    <div className={`band b-${b.system} ${b.open ? 'open' : ''}`}>
+      <div className="band-h" onClick={b.toggle}>{b.items ? <ChevronRight16Regular className="chev" /> : <LockClosed12Regular />}<b>{t(b.name)}</b>{b.count && <i className="band-n">{b.count}</i>}<span>{t(b.text)}</span></div>
+      {b.open && b.items && <div className="band-l">{b.items.map(i => i.head
+        ? <div key={i.k} className="band-g">{i.name}<span>{i.flow}</span></div>
+        : <div key={i.k} className="band-r"><span className="mono">{i.prio}</span><b title={i.name}>{i.name}</b><span className={`bact ${i.cls}`}>{i.act}</span><span className="mono">{i.flow}</span><span className="mono">{i.svc}</span>
+          {i.note ? <em className={`mk ${i.sev === 'high' ? 'del' : i.sev ? 'chg' : 'off'}`} title={i.note}>{i.sev ? `${t(i.sev === 'high' ? 'High' : 'Medium')}: ` : ''}{i.note}</em> : <span />}</div>)}</div>}
+    </div>);
+}
 export const systemTop: SysRow[] = [{ id: 'sys-pe', system: 'pe', name: 'Platform exceptions', text: 'Azure Load Balancer health probes are allowed above every Rule. No Rule can override them.' }];
 export const systemBottom: SysRow[] = [
   { id: 'sys-intra', system: 'intra', name: 'Intra-zone default', text: 'Traffic that stays inside one Zone is allowed. A Rule above can override it.' },
@@ -47,14 +63,14 @@ function Toks({ ids, width, arrow }: { ids: string[]; width: number; arrow?: boo
   return <div className="chips">{arrow && <ArrowRight12Filled className="flow" />}{ids.slice(0, n).map(id => <Chip key={id} id={id} />)}{ids.length > n && <span className="more" title={ids.slice(n).map(id => (id.startsWith('svc') ? svcName(id) : ref(id).name)).join(', ')}>+{ids.length - n}</span>}</div>;
 }
 export const compact = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n));
-export type FilterKey = 'all' | 'deny' | 'disabled' | 'expiring' | 'findings' | 'unused' | 'changed';
+export type FilterKey = 'all' | 'deny' | 'disabled' | 'expiring' | 'findings' | 'unused' | 'changed' | 'layers';
 const passes: Record<FilterKey, (r: Rule, st?: St) => boolean> = {
   all: () => true, deny: r => r.action === 'deny', disabled: r => !r.enabled, expiring: r => !!r.expiry,
-  findings: r => !!(r.policy || r.importNote || r.layerWarn), unused: r => r.hits === 0, changed: (_r, st) => !!st,
+  findings: r => !!(r.policy || r.importNote || r.layerWarn), unused: r => r.hits === 0, changed: (_r, st) => !!st, layers: r => !!r.layerWarn,
 };
 export function countFilters(rules: Rule[], status: Map<string, St>) {
-  const c: Record<FilterKey, number> = { all: rules.length, deny: 0, disabled: 0, expiring: 0, findings: 0, unused: 0, changed: status.size };
-  for (const r of rules) for (const k of ['deny', 'disabled', 'expiring', 'findings', 'unused'] as const) if (passes[k](r)) c[k]++;
+  const c: Record<FilterKey, number> = { all: rules.length, deny: 0, disabled: 0, expiring: 0, findings: 0, unused: 0, changed: status.size, layers: 0 };
+  for (const r of rules) for (const k of ['deny', 'disabled', 'expiring', 'findings', 'unused', 'layers'] as const) if (passes[k](r)) c[k]++;
   return c;
 }
 
@@ -151,7 +167,7 @@ export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, r
         <div className="rname"><div className="rn">{r.name}</div>
           <div className="rmeta">{m && <em className={`mk ${m[0]}`}>{t(m[1])}</em>}{!r.enabled && <em className="mk off">{t('disabled')}</em>}
             {r.policy && <em className="mk del" title={r.policy}>{t('Policy finding')}</em>}{r.importNote && <em className={`mk ${r.importNote === 'blocking' ? 'del' : 'chg'}`} title={`Import note (${r.importNote})`}>{t('Import note')}</em>}
-            {r.layerWarn && <em className="mk chg" title="Security layer">{r.layerWarn}</em>}{alsoChanged.has(r.id) && <em className={`mk ${m ? 'del' : 'off'}`} title={`${t('also changed in')} “${alsoChanged.get(r.id)!.set}” ${t('by')} ${alsoChanged.get(r.id)!.by}`}>{t('in another Change set')}</em>}
+            {r.layerWarn && <em className={`mk ${layerWarn(r)?.sev === 'high' ? 'del' : 'chg'}`} title={`${t('Security layer')}, ${t(layerWarn(r)?.sev === 'high' ? 'high severity' : 'medium severity')}: ${layerWarn(r)?.detail}`}>{r.layerWarn}</em>}{alsoChanged.has(r.id) && <em className={`mk ${m ? 'del' : 'off'}`} title={`${t('also changed in')} “${alsoChanged.get(r.id)!.set}” ${t('by')} ${alsoChanged.get(r.id)!.by}`}>{t('in another Change set')}</em>}
             <span className="mono">{r.id}</span>{r.ticket && <span>{r.ticket}</span>}<span>{r.owner}</span>{r.expiry && <span className="exp">{t('expires')} {r.expiry}</span>}</div></div>); } },
     ...(['src', 'dst'] as const).map((f): ColDef => ({ field: f, headerName: t(f === 'src' ? 'Source' : 'Destination'), flex: f === 'src' ? 1 : 1.1, minWidth: f === 'src' ? 162 : 182, editable, cellDataType: false, cellClassRules: changedCls(f),
       cellEditor: RefsEditor, cellEditorParams: { mode: 'addr' }, cellEditorPopup: true, cellEditorPopupPosition: 'under', sortable: false,
@@ -163,8 +179,9 @@ export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, r
     { field: 'action', headerName: t('Action'), width: 98, editable, cellClassRules: changedCls('action'), cellEditor: 'agSelectCellEditor', cellEditorParams: { values: ['allow', 'deny'] },
       cellRenderer: (x: ICellRendererParams) => <span className={`act ${x.value}`}>{x.value === 'allow' ? <Checkmark12Filled /> : <Dismiss12Filled />}{t(x.value === 'allow' ? 'Allow' : 'Deny')}</span> },
     { field: 'hits', headerName: t('Hits'), width: 84, headerTooltip: t('Flow data is about 70 minutes old'), comparator: (a, b) => (a ?? -1) - (b ?? -1),
-      cellRenderer: (x: ICellRendererParams) => x.value == null ? <Tooltip content={t('No flow data for this Rule')} relationship="label"><span className="nodata">—</span></Tooltip>
-        : <div className={`hitc ${x.value === 0 ? 'zero' : ''}`}><span>{compact(x.value)}</span><i><b style={{ width: `${(Math.log10(x.value + 1) / 6.7) * 100}%` }} /></i></div> },
+      cellRenderer: (x: ICellRendererParams) => { const p = placement(x.data); const hv = hitsView(x.data, p.dst.length ? p.dst : p.src); return hv === 'noaccess' ? <Tooltip content={t('The Reader cannot query the flow-data workspace of this Environment, so the hits are unknown, not 0.')} relationship="label"><span className="nodata noacc">{t('no access')}</span></Tooltip>
+        : hv === 'none' ? <Tooltip content={t('No flow data for this Rule')} relationship="label"><span className="nodata">—</span></Tooltip>
+        : <div className={`hitc ${x.value === 0 ? 'zero' : ''}`}><span>{compact(x.value)}</span><i><b style={{ width: `${(Math.log10(x.value + 1) / 6.7) * 100}%` }} /></i></div>; } },
     { colId: 'flags', headerName: '', width: 64, sortable: false, resizable: false, hide: true, cellRenderer: (x: ICellRendererParams) => <Badges r={x.data} /> },
     { field: 'comment', headerName: t('Comment'), flex: 1, minWidth: 150, editable, cellClass: 'c-comment', cellClassRules: changedCls('comment') },
     { colId: 'acts', headerName: '', width: 120, pinned: 'right', sortable: false, resizable: false, cellClass: 'c-acts', cellRenderer: (x: ICellRendererParams) => <RowActs r={x.data} onOpen={id => pRef.current.onOpen?.(id)} /> },
@@ -184,9 +201,9 @@ export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, r
     rowSelection: { mode: 'multiRow', checkboxes: true, headerCheckbox: true, enableClickSelection: false, selectAll: 'filtered', isRowSelectable: (n: any) => !isFolder(n.data) } as const,
     selectionColumnDef: { pinned: 'left', width: 42, resizable: false, cellClassRules: spine } as ColDef,
     getRowId: (x: any) => x.data.id,
-    getRowHeight: (x: any) => (x.node.rowPinned ? 36 : isFolder(x.data) ? 40 : pRef.current.dense ? 34 : 48),
+    getRowHeight: (x: any) => (x.node.rowPinned ? bandH(x.data) : isFolder(x.data) ? 40 : pRef.current.dense ? 34 : 48),
     isFullWidthRow: (x: any) => isSys(x.rowNode.data) || isFolder(x.rowNode.data),
-    fullWidthCellRenderer: (x: ICellRendererParams) => isFolder(x.data) ? <FolderHead f={x.data as FolderView} reg={x.registerRowDragger} /> : <div className={`band b-${x.data.system}`}><LockClosed12Regular /><b>{tRef.current(x.data.name)}</b><span>{tRef.current(x.data.text)}</span></div>,
+    fullWidthCellRenderer: (x: ICellRendererParams) => isFolder(x.data) ? <FolderHead f={x.data as FolderView} reg={x.registerRowDragger} /> : <Band b={x.data} />,
     onCellEditRequest: (e: any) => sRef.current.editField(e.data.id, e.colDef.field as keyof Rule, e.newValue),
     onSortChanged: (e: any) => setSorted(e.api.getColumnState().some((c: any) => c.sort && c.colId !== 'no')),
     onRowDragEnd: (e: any) => {
@@ -285,7 +302,7 @@ export function Badges({ r }: { r: Rule }) {
   const out = [];
   if (r.policy) out.push(<Tooltip key="p" content={`Policy finding: ${r.policy}`} relationship="description"><ShieldError16Filled className="b-red" /></Tooltip>);
   if (r.importNote) out.push(<Tooltip key="i" content={`Import note (${r.importNote}) from nsg-legacy-017, rule "allow-sql", priority 310, inbound`} relationship="description">{r.importNote === 'blocking' ? <ErrorCircle16Filled className="b-red" /> : r.importNote === 'warning' ? <Warning16Filled className="b-amber" /> : <Info16Regular className="b-accent" />}</Tooltip>);
-  if (r.layerWarn) out.push(<Tooltip key="l" content={`Security layer: ${r.layerWarn}`} relationship="description"><LayerDiagonal16Regular className="b-amber" /></Tooltip>);
+  if (r.layerWarn) out.push(<Tooltip key="l" content={`Security layer: ${r.layerWarn}`} relationship="description"><LayerDiagonal16Regular className={layerWarn(r)?.sev === 'high' ? 'b-red' : 'b-amber'} /></Tooltip>);
   if (r.expiry) out.push(<Tooltip key="e" content={`${t('Expiry')}: ${r.expiry}`} relationship="description"><Clock16Regular className="b-amber" /></Tooltip>);
   if (also) out.push(<Tooltip key="a" content={`${t('also changed in')} “${also.set}” ${t('by')} ${also.by}`} relationship="description"><PeopleSwap16Regular className={s.status.has(r.id) ? 'b-red' : 'b-grey'} /></Tooltip>);
   return <span className="badges">{out}</span>;
