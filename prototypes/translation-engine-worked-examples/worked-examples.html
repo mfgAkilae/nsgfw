@@ -67,7 +67,7 @@
   const uniq = a => [...new Set(a)];
   const clone = x => JSON.parse(JSON.stringify(x));
   const cmpBig = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
-  function h6(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16).padStart(8, '0').slice(0, 6); }
+  function h6(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16).padStart(8, '0'); } // decided 2026-11-10 (ADR 0005): 8 hex characters, not 6
 
   // ---------- addresses ----------
   const pc = new Map();
@@ -205,7 +205,10 @@
     }
   }
   function allZonePrefixes(inst) { return zoneIds(inst).flatMap(z => zoneAddrs(inst, z)).map(P); }
-  function insideZones(prefixes, inst) { if (!prefixes) return false; const zs = allZonePrefixes(inst); return prefixes.every(s => s !== '*' && covered(P(s), zs)); }
+  function insideZones(prefixes, inst) { // decided 2026-11-10 (ADR 0016): also no subnet that is not a Zone may overlap, in any VNet
+    if (!prefixes) return false; const zs = allZonePrefixes(inst), others = Object.values(inst.subnets || {}).flatMap(s => s.prefixes).map(P);
+    return prefixes.every(s => s !== '*' && covered(P(s), zs) && !others.some(q => overlaps(P(s), q)));
+  }
   function reachesOutsideZones(refs, inst) { return flat(refs, inst).some(r => { const p = refPrefixes(r, inst); return !p || !insideZones(p, inst); }); }
 
   // ---------- one side of an NSG rule: partitions (issue 13, point 8; ADR 0006) ----------
@@ -453,6 +456,7 @@
     const inVnet = vn.some(v => inst.vnets[v].space.some(s => inP(s, addr)));
     if (t === 'VirtualNetwork') return inVnet ? true : null; // documented: own VNet and peered VNets are inside the tag
     if (t === 'Internet') return inVnet ? false : null; // documented: Internet is the space outside the virtual network
+    if (t === 'AzureLoadBalancer') return addr.fam === 4 && addr.v === ip4('168.63.129.16'); // decided 2026-11-10 (ADR 0018): documented as the host's virtual IP
     return null; // decided 2026-11-10: nothing else is assumed; other service tags are evaluated both ways
   }
   function portIn(ports, port) { if (port === null) return true; return ports.some(p => { const [a, b] = parsePorts(p); return a <= port && port <= b; }); }
