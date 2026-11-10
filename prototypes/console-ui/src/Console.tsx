@@ -11,6 +11,7 @@ import { Glyph } from './Glyph';
 import { ChangesList, PreviewView, WriteOrderView, ApprovalView, PolicyView, InboxButton, MoveDialog, EmergencyDialog, usePreview, useApproval } from './ChangeViews';
 import { Brand, useDebounced, reportReady } from './bits';
 import { ProtoButton } from './Proto';
+import { RuleEditor } from './Editor';
 import { ObjectLibrary, ChangeSetsPage, Track } from './Pages';
 import { useStore, placement, cost, alsoChanged } from './store';
 import { zones, zoneById, envs, ref, svcById } from './data';
@@ -32,7 +33,7 @@ export default function Console() {
   const [palette, setPalette] = useState<false | 'all' | 'zone'>(false); const [moveIds, setMoveIds] = useState<string[] | null>(null);
   // Collapsing is a view setting of the person, not an edit to the Rule base.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(s.folders.slice(2).map(f => f.id)));
-  const [folderFor, setFolderFor] = useState<string[] | null>(null);
+  const [folderFor, setFolderFor] = useState<string[] | null>(null); const [fresh, setFresh] = useState<string | null>(null);
   const toggleFolder = (id: string) => setCollapsed(c => { const n = new Set(c); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const allCollapsed = s.folders.length > 0 && s.folders.every(f => collapsed.has(f.id));
   const unfold = (ruleId: string) => { const f = s.rules.find(r => r.id === ruleId)?.folder; if (f) setCollapsed(c => { if (!c.has(f)) return c; const n = new Set(c); n.delete(f); return n; }); };
@@ -62,7 +63,7 @@ export default function Console() {
   const openRule = (id: string) => { setFocused(id); openDock('rule'); };
   const jumpToRule = (id: string) => { unfold(id); setPage('rules'); setLens(null); setFilter('all'); setQ(''); setTimeout(() => { grid.current?.reveal(id); openRule(id); }, 80); };
   const openZone = (zid: string) => { setPage('rules'); setLens({ zid, dir: 'in' }); setFilter('all'); setQ(''); };
-  const newRule = () => { setPage('rules'); const id = s.addRule(focused ?? undefined); setTimeout(() => { grid.current?.reveal(id); setFocused(id); }, 80); };
+  const newRule = () => { setPage('rules'); if (focused) unfold(focused); const id = s.addRule(focused ?? undefined); setFresh(id); setTimeout(() => { grid.current?.reveal(id); openRule(id); }, 80); };
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -104,11 +105,13 @@ export default function Console() {
                 <span className="sp" />
                 <Input ref={search} className="search" contentBefore={<Search16Regular />} contentAfter={<kbd>/</kbd>} placeholder={t('Filter Rules by name, object, ID or ticket')} value={q} onChange={(_, d) => setQ(d.value)} />
                 <button className="jump" onClick={() => setPalette('all')}>{t('Jump to')}<kbd>Ctrl K</kbd></button>
+                <div className="vgroup">
                 <Tooltip content={t(allCollapsed ? 'Open all Folders' : 'Close all Folders')} relationship="label"><button className="ib opt" onClick={() => setCollapsed(allCollapsed ? new Set() : new Set(s.folders.map(f => f.id)))}>{allCollapsed ? <ArrowMaximizeVertical20Regular /> : <ArrowMinimizeVertical20Regular />}</button></Tooltip>
                 <Tooltip content={t(dense ? 'Comfortable rows' : 'Compact rows')} relationship="label"><button className={`ib opt ${dense ? 'on' : ''}`} onClick={() => setDense(!dense)}><TextLineSpacing20Regular /></button></Tooltip>
                 <Tooltip content={t('Show what sits above and below the Rules')} relationship="label"><button className={`ib opt ${bands ? 'on' : ''}`} onClick={() => setBands(!bands)}><LockClosed16Regular /></button></Tooltip>
                 <Tooltip content={t('Side panel')} relationship="label"><button className={`ib ${dock.open ? 'on' : ''}`} onClick={() => setDock(d => ({ ...d, open: !d.open, auto: false }))}><PanelRight20Regular /></button></Tooltip>
-                <Button icon={<FolderAdd16Regular />} onClick={() => setFolderFor(sel)}>{t('Folder')}</Button>
+                </div>
+                <Button icon={<FolderAdd16Regular />} onClick={() => setFolderFor(sel)} title={t('New Folder')}><span className="lbl">{t('Folder')}</span></Button>
                 <Button appearance="primary" icon={<Add16Regular />} onClick={newRule}>{t('New Rule')}</Button>
               </header>
 
@@ -157,7 +160,7 @@ export default function Console() {
                 <div className="seg2" role="tablist"><button className={dock.tab === 'rule' ? 'on' : ''} onClick={() => setDock({ ...dock, tab: 'rule' })}>{t('Rule')}</button><button className={dock.tab === 'cs' ? 'on' : ''} onClick={() => setDock({ ...dock, tab: 'cs' })}>{t('Change set')}{s.edits.length > 0 && <i className="cnt">{s.edits.length}</i>}</button></div>
                 <span className="sp" /><button className="ib" title={t('Close')} onClick={() => setDock({ ...dock, open: false, auto: false })}><Dismiss16Regular /></button>
               </div>
-              {dock.tab === 'rule' ? <div className="dock-b"><Inspector id={focused} onMoveTo={setMoveIds} onZone={openZone} /></div> : <>
+              {dock.tab === 'rule' ? <div className="dock-b"><RuleEditor id={focused} fresh={fresh} onMoveTo={setMoveIds} onMoveToFolder={setFolderFor} onZone={openZone} /></div> : <>
                 <div className="subtabs">{(['changes', 'preview', 'order', 'approval', 'policy'] as CsTab[]).map(k => <button key={k} className={dock.cs === k ? 'on' : ''} onClick={() => setDock({ ...dock, cs: k })}>{k === 'order' && lang === 'de' ? 'Reihenfolge' : t({ changes: 'Changes', preview: 'Preview', order: 'Write order', approval: 'Approval', policy: 'Policy' }[k])}{k === 'order' && pv.unorderable ? <Warning16Filled className="b-red" /> : null}</button>)}</div>
                 <div className="dock-b">
                   {dock.cs === 'changes' && <ChangesList onFocus={jumpToRule} />}{dock.cs === 'preview' && <PreviewView pv={pv} />}{dock.cs === 'order' && <WriteOrderView pv={pv} />}
@@ -204,58 +207,6 @@ function CommitBar({ onOpen }: { onOpen: (tab: CsTab) => void }) {
       {s.state !== 'Open' && <Button size="small" appearance="primary" disabled={!ap.done || pv.unorderable} onClick={() => s.commit()}>{t('Commit')}</Button>}
       <EmergencyDialog open={em} onClose={() => setEm(false)} />
     </footer>
-  );
-}
-
-// ---------- Inspector: one Rule in full, and what it becomes in Azure.
-function Inspector({ id, onMoveTo, onZone }: { id: string | null; onMoveTo: (ids: string[]) => void; onZone: (zid: string) => void }) {
-  const s = useStore(); const { t } = useT();
-  const r = id ? s.rules.find(x => x.id === id) : undefined;
-  if (!r) return <div className="empty"><b>{t('No Rule selected')}</b><p>{t('Click a Rule to see its objects in full and what it becomes in Azure.')}</p></div>;
-  const pl = placement(r); const c = cost(r); const also = alsoChanged.get(r.id); const del = s.status.get(r.id)?.deleted;
-  const side = (ids: string[], svc?: boolean) => ids.map(x => { const o = svc ? { name: svcById.get(x)?.name ?? x, kind: 'svc' as const, value: svcById.get(x)?.value ?? '', cov: [] as string[] } : ref(x); return (
-    <div key={x} className={`orow t-${o.kind}`}><Glyph kind={o.kind} /><b>{o.name}</b><span className="mono">{o.kind === 'vnet' || o.kind === 'group' ? '' : o.value}</span>
-      {!svc && (o.kind === 'zone' ? <a className="link" onClick={() => onZone(x.slice(5))}>{t('open Zone')}</a> : <span className="cov">{o.cov.length ? `${o.cov.length} ${t(o.cov.length === 1 ? 'Zone' : 'Zones')}` : t('outside every Zone')}</span>)}</div>); });
-  const srcCov = [...new Set(r.src.flatMap(x => ref(x).cov))];
-  const whyOut = !pl.src.length ? null : r.action === 'deny' ? 'Deny Rules land on both sides.' : pl.dst.length ? 'These Zones have a strict Egress posture.' : 'The destination lies outside every Zone, so the source side decides.';
-  return (
-    <div className="insp">
-      <div className="insp-h"><span className="no">{s.numbers.get(r.id) ?? '—'}</span><h2>{r.name}</h2></div>
-      <div className="insp-s"><span className={`act ${r.action}`}>{r.action === 'allow' ? <Checkmark12Filled /> : <Dismiss12Filled />}{t(r.action === 'allow' ? 'Allow' : 'Deny')}</span>
-        <Switch checked={r.enabled} disabled={del} onChange={(_, d) => s.setEnabled([r.id], d.checked)} label={t(r.enabled ? 'Enabled' : 'disabled')} /></div>
-
-      <div className="flowbox">
-        <h3>{t('From')}</h3>{side(r.src)}
-        <div className="flowsep"><ArrowRight12Filled />{t('to')}</div>{side(r.dst)}
-        <div className="flowsep">{t('on')}</div>{side(r.svc, true)}
-      </div>
-
-      <h3>{t('In Azure')}</h3>
-      <p className="lead">{c.nsgRules ? <><b>{c.nsgRules} {t(c.nsgRules === 1 ? 'NSG rule' : 'NSG rules')}</b> {t('on')} <b>{c.nsgs} {t(c.nsgs === 1 ? 'Managed NSG' : 'Managed NSGs')}</b></> : t('No NSG rule: neither side covers a Zone.')}</p>
-      <div className="landing">
-        <div className={`side ${pl.src.length ? 'writes' : ''}`}><span className="lbl">{t('Source side')}</span>
-          <b>{!srcCov.length ? t('outside every Zone') : `${srcCov.length} ${t(srcCov.length === 1 ? 'Zone' : 'Zones')}`}</b>
-          <span className="verdict">{!srcCov.length ? t('Nothing to write.') : !pl.src.length ? t('No NSG rule here. Outbound is open, the destination decides.') : `${t('Outbound NSG rule on')} ${pl.src.length} ${t('of')} ${srcCov.length}. ${t(whyOut ?? '')}`}</span>
-          {pl.src.slice(0, 3).map(zid => <span key={zid} className="mono">{zoneById.get(zid)!.nsg}</span>)}{pl.src.length > 3 && <span className="muted">{pl.src.length - 3} {t('more')}</span>}</div>
-        <ArrowRight12Filled className="flow" />
-        <div className={`side ${pl.dst.length ? 'writes' : ''}`}><span className="lbl">{t('Destination side')}</span>
-          <b>{!pl.dst.length ? t('outside every Zone') : `${pl.dst.length} ${t(pl.dst.length === 1 ? 'Zone' : 'Zones')}`}</b>
-          <span className="verdict">{pl.dst.length ? t('Inbound NSG rule on each. This side decides.') : t('Nothing to write.')}</span>
-          {pl.dst.slice(0, 3).map(zid => <span key={zid} className="mono">{zoneById.get(zid)!.nsg}</span>)}{pl.dst.length > 3 && <span className="muted">{pl.dst.length - 3} {t('more')}</span>}</div>
-      </div>
-
-      {(r.policy || r.importNote || r.layerWarn || also) && <><h3>{t('Needs attention')}</h3>
-        {r.policy && <div className="note red"><ShieldError16Filled />{r.policy}</div>}
-        {r.importNote && <div className="note amber"><Warning16Filled />Import note ({r.importNote}): from nsg-legacy-017, rule “allow-sql”, priority 310, inbound.</div>}
-        {r.layerWarn && <div className="note amber"><LayerDiagonal16Regular />Security layer: {r.layerWarn}.</div>}
-        {also && <div className="note red"><PeopleSwap16Regular />{t('also changed in')} “{also.set}” {t('by')} {also.by}.</div>}</>}
-
-      <h3>{t('Details')}</h3>
-      <dl className="facts"><dt>{t('Ticket')}</dt><dd>{r.ticket || '—'}</dd><dt>{t('Owner')}</dt><dd>{r.owner}</dd><dt>{t('Expiry')}</dt><dd>{r.expiry ?? t('never')}</dd>
-        <dt>{t('Hits')}</dt><dd>{r.hits == null ? t('No flow data for this Rule') : `${compact(r.hits)}, ${t('data about 70 minutes old')}`}</dd><dt>{t('Comment')}</dt><dd>{r.comment || '—'}</dd><dt>Rule ID</dt><dd className="mono">{r.id}</dd></dl>
-
-      <div className="insp-a"><Button size="small" icon={<Copy16Regular />} onClick={() => s.clone([r.id])}>{t('Clone')}</Button><Button size="small" icon={<ArrowSort16Regular />} onClick={() => onMoveTo([r.id])}>{t('Move to…')}</Button><Button size="small" icon={<Delete16Regular />} onClick={() => s.remove([r.id])}>{t('Delete')}</Button></div>
-    </div>
   );
 }
 

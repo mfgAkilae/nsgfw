@@ -139,7 +139,7 @@ export const RuleGrid = forwardRef<RuleGridHandle, Props>(function RuleGrid(p, r
     }
     return filtering ? out.filter(e => !isFolder(e) || (e as FolderView).shown > 0) : out;
   }, [s.entries, s.rules, s.status, p.rows, p.scoped, p.quick, p.filter, p.collapsed, sorted, filtering]);
-  const gridCtx = useMemo(() => ({ toggle: (id: string) => pRef.current.onToggle(id), open: (id: string) => pRef.current.onFocus?.(id) }), []);
+  const gridCtx = useMemo(() => ({ toggle: (id: string) => pRef.current.onToggle(id), open: (id: string) => pRef.current.onOpen?.(id) }), []);
 
   const cols = useMemo<ColDef[]>(() => [
     { colId: 'no', headerName: t('No.'), width: 80, pinned: 'left', rowDrag: true, cellClass: 'c-no', resizable: false, comparator: (_a, _b, na, nb) => (sRef.current.numbers.get(na.data.id) ?? 0) - (sRef.current.numbers.get(nb.data.id) ?? 0),

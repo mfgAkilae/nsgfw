@@ -179,6 +179,30 @@ h3, h4 { font-size: 12.5px; font-weight: 600; color: var(--ink3); margin: 22px 0
 .subtabs button:hover { color: var(--ink); } .subtabs button.on { color: var(--ink); font-weight: 600; box-shadow: inset 0 -2px 0 var(--accent); }
 .subtabs + .dock-b { padding-top: 14px; }
 
+/* rule editor */
+.efield { font: inherit; color: var(--ink); background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 4px 7px; margin: -5px -8px; width: calc(100% + 16px); outline: 0; resize: none; min-width: 0; }
+.efield:hover { border-color: var(--line); background: var(--surface); } .efield:focus { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-tint); }
+.efield::placeholder { color: var(--ink3); }
+.ename { font-size: 18px; font-weight: 700; letter-spacing: -.01em; margin: -5px -8px; }
+.insp-h { align-items: center !important; } .insp-h .no { flex-shrink: 0; margin-right: 6px; }
+.actseg button.on.allow { background: var(--allow-tint); color: var(--allow); } .actseg button.on.deny { background: var(--deny-tint); color: var(--deny); }
+.infolder { display: inline-flex; align-items: center; gap: 7px; border: 0; background: none; color: var(--ink2); font-size: 12.5px; padding: 4px 8px; margin: -6px 0 12px -8px; border-radius: 6px; cursor: pointer; }
+.infolder:hover { background: var(--hover); color: var(--ink); } .infolder svg { color: var(--accent-text); }
+.addb { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; color: var(--accent-text); font-size: 12.5px; font-weight: 600; padding: 3px 8px; border-radius: 6px; cursor: pointer; }
+.addb:hover, .addb.on { background: var(--accent-tint); }
+.flowbox .flowsep { margin: 12px 0 4px; } .flowbox .flowsep:first-child { margin-top: 8px; }
+.rmb { border: 0; background: none; color: var(--ink3); width: 20px; height: 20px; border-radius: 5px; cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 0; }
+.orow:hover .rmb, .rmb:focus-visible { opacity: 1; } .rmb:hover { background: var(--deny-tint); color: var(--deny); }
+.flowbox .orow { grid-template-columns: 14px minmax(0, auto) minmax(0, 1fr) auto 20px; }
+.inl-pick { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 6px 0 4px; } .inl-pick .picker-sel { display: none; } .inl-pick .picker-list { max-height: 200px; }
+.inl-pick .picker-row { grid-template-columns: 96px 1fr; } .inl-pick .picker-row .addr, .inl-pick .picker-row .cov { display: none; }
+.form { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px 12px; align-items: baseline; font-size: 13px; } .form label { color: var(--ink3); } .form .ro { color: var(--ink2); }
+.note.info { background: var(--sunken); color: var(--ink2); }
+.insp.gone { opacity: .6; }
+.vgroup { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 1px; } .vgroup .ib { width: 30px; height: 28px; border-radius: 6px; }
+.dock { animation: slidein .16s ease-out; } @keyframes slidein { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.pal, .ctx { animation: pop .12s ease-out; } @keyframes pop { from { transform: scale(.97); opacity: 0; } to { transform: none; opacity: 1; } }
+
 /* inspector */
 .insp-h { display: flex; gap: 10px; align-items: baseline; } .insp-h h2 { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: -.01em; line-height: 1.25; }
 .insp-h .no { font-size: 13px; }
@@ -349,7 +373,8 @@ table.mini th { font-weight: 500; color: var(--ink3); font-size: 12px; }
 
 /* prototype controls: deliberately not part of the design */
 .proto-b { border: 1.5px dashed color-mix(in srgb, var(--rail-ink) 60%, transparent); }
-/* narrow content (side panel open on a small screen): drop what the panel and the commit bar already show */
-@container (max-width: 1000px) { .cs-pill, .chipbar .hint { display: none; } }
-@container (max-width: 860px) { .jump { font-size: 0; gap: 0; padding: 0 6px; } .ib.opt { display: none; } .lens-facts .bar > span { width: 36px; } }
+/* narrow content (side panel open on a small screen): keep every control, drop words first, then the view options */
+@container (max-width: 1080px) { .chipbar .hint { display: none; } .jump { font-size: 0; gap: 0; padding: 0 6px; } .phead .lbl { display: none; } .phead .fui-Button:has(.lbl) { min-width: 0; padding: 0 8px; } }
+@container (max-width: 900px) { .ib.opt { display: none; } .lens-facts .bar > span { width: 36px; } }
+@container (max-width: 760px) { .vgroup { display: none; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

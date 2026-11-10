@@ -92,13 +92,18 @@ function useStoreValue() {
     entries, rules, folders, edits, status, numbers, base, state, version, scenario, setScenario, approvedBy, emergency,
     editField(id: string, field: keyof Rule, value: unknown) {
       const r = rules.find(x => x.id === id); if (!r || fmt(r[field]) === fmt(value)) return;
-      log([{ kind: 'edit', ruleId: id, field, before: fmt(r[field]), after: fmt(value) }]);
+      if (status.get(id)?.added) { mapRules(x => (x.id === id ? { ...x, [field]: value } : x)); return; }   // shaping a new Rule is part of adding it
+      const after = fmt(value);
+      setEdits(x => { const last = x[x.length - 1];
+        if (last && last.kind === 'edit' && last.ruleId === id && last.field === field) return last.before === after ? x.slice(0, -1) : [...x.slice(0, -1), { ...last, after }];
+        return [...x, { seq: ++seq.current, by: me, kind: 'edit', ruleId: id, field, before: fmt(r[field]), after }]; });
+      if (state !== 'Open') setState('Open');
       mapRules(x => (x.id === id ? { ...x, [field]: value } : x));
     },
     setEnabled(ids: string[], enabled: boolean) {
       const set = new Set(ids); const hit = rules.filter(r => set.has(r.id) && r.enabled !== enabled);
       mapRules(r => (set.has(r.id) && r.enabled !== enabled ? { ...r, enabled } : r));
-      log(hit.map(r => ({ kind: enabled ? 'enable' : 'disable', ruleId: r.id, field: 'enabled', before: String(!enabled), after: String(enabled) })));
+      log(hit.filter(r => !status.get(r.id)?.added).map(r => ({ kind: enabled ? 'enable' : 'disable', ruleId: r.id, field: 'enabled', before: String(!enabled), after: String(enabled) })));
     },
     move: relocate,
     moveToFolder(ids: string[], folderId: string | null) {
