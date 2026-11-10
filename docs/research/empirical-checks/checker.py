@@ -14,6 +14,7 @@ Checks (see ../empirical-checks.md):
   T5  one network interface PUT that changes ASG membership takes effect as a whole
   T7  one subnet PUT that swaps the subnet's NSG takes effect as a whole (source and destination side)
   T8  one private endpoint PUT that swaps its ASG: interim states and the lag after Succeeded
+  T9  which rights a private endpoint PUT that changes only its ASGs needs (runs before T8)
 """
 import json
 import select
@@ -550,8 +551,9 @@ def nic_set_asgs(nic, asgs):
     body = get(path)
     for k in ("etag", "id", "name", "type"):
         body.pop(k, None)
-    body["properties"]["ipConfigurations"][0]["properties"]["applicationSecurityGroups"] = [
-        {"id": asg_id(a)} for a in asgs]
+    # Azure requires every IP configuration of a NIC to reference the same ASG set
+    for ipc in body["properties"]["ipConfigurations"]:
+        ipc["properties"]["applicationSecurityGroups"] = [{"id": asg_id(a)} for a in asgs]
     return put_and_wait(path, body)
 
 
@@ -677,13 +679,17 @@ def pe_rules(asg_rules):
             rule("deny-443", 4000, 443, access="Deny", src="*")]
 
 
-def pe_set_asgs(asgs):
-    body = get(PE_PATH)
+def pe_set_asgs(asgs, path=PE_PATH):
+    body = get(path)
     for k in ("etag", "id", "name", "type"):
         body.pop(k, None)
     body["properties"].pop("provisioningState", None)
     body["properties"]["applicationSecurityGroups"] = [{"id": asg_id(a)} for a in asgs]
-    return put_and_wait(PE_PATH, body)
+    return put_and_wait(path, body)
+
+
+def error_code(rec):
+    return (rec.get("error") or {}).get("code")
 
 
 def t8_private_endpoint_asg_swap():
@@ -701,10 +707,17 @@ def t8_private_endpoint_asg_swap():
     if w is None:
         raise RuntimeError(f"private endpoint not reachable from both IPs: "
                            f"{PROBER.state('pe', PE_L1, 5.0)} {PROBER.state('pe', PE_L2, 5.0)}")
-    # 2. the ASG rules, with the private endpoint in asg-pe1
+    # 2. the ASG rules, with the private endpoint in asg-pe1. A PE write needs the approval action
+    #    on the linked storage account (T9); the prober's role on it may still be propagating.
+    t_wait = now()
     rec = pe_set_asgs(["asg-pe1"])
+    while error_code(rec) == "LinkedAuthorizationFailed" and now() - t_wait < 900:
+        log("T8: approval right on the storage account not in effect yet, retry in 30 s")
+        time.sleep(30)
+        rec = pe_set_asgs(["asg-pe1"])
     res["baseline_pe_write"] = {"http": rec["http"], "final": rec["final"], "error": rec.get("error"),
-                                "lro_s": round(rec["t_done"] - rec["t_sent"], 3)}
+                                "lro_s": round(rec["t_done"] - rec["t_sent"], 3),
+                                "waited_for_role_s": round(now() - t_wait, 1)}
     if rec["final"] != "Succeeded":
         raise RuntimeError(f"private endpoint PUT {rec['final']} {rec.get('error')}")
     put_and_wait(PE_NSG, {"location": loc, "tags": tags, "properties": {"securityRules": pe_rules(True)}})
@@ -720,6 +733,34 @@ def t8_private_endpoint_asg_swap():
     save("T8_private_endpoint_asg_swap", res)
 
 
+# ---------------------------------------------------------------- T9
+
+def t9_private_endpoint_write_rights():
+    """Which rights does a PE write that changes only its ASGs need? The prober holds Network
+    Contributor on the resource group and no role on the storage account stpf…, which the three
+    private endpoints link to: one auto-approved, one manual and approved by run.py, one manual
+    and still pending."""
+    out = {}
+    for pe in ("pe-auto2", "pe-manual2", "pe-pending2"):
+        path = f"{NET}/privateEndpoints/{pe}"
+        body = get(path)
+        props = body["properties"]
+        kind = "auto" if props.get("privateLinkServiceConnections") else "manual"
+        conns = props.get("privateLinkServiceConnections") or props.get("manualPrivateLinkServiceConnections") or []
+        state = [((c.get("properties") or {}).get("privateLinkServiceConnectionState") or {}).get("status")
+                 for c in conns]
+        rec = pe_set_asgs(["asg-pe2"], path)
+        r = {"connection": kind, "state_before": state, "http": rec["http"], "final": rec["final"],
+             "error_code": error_code(rec), "error": rec.get("error"),
+             "lro_s": round(rec["t_done"] - rec["t_sent"], 3)}
+        if rec["final"] == "Succeeded":
+            r["asgs_after"] = [a["id"].rsplit("/", 1)[1]
+                               for a in get(path)["properties"].get("applicationSecurityGroups") or []]
+        out[pe] = r
+        log(f"T9 {pe}: {json.dumps(r)[:500]}")
+    save("T9_private_endpoint_write_rights", out)
+
+
 # ---------------------------------------------------------------- main
 
 def main():
@@ -729,7 +770,8 @@ def main():
         wait_for_access()
         for name, fn in (("T1", t1_priorities), ("T2", t2_nsg_as_a_whole),
                          ("T3", t3_failed_put), ("T5", t5_nic_asg_as_a_whole),
-                         ("T7", t7_subnet_nsg_swap), ("T8", t8_private_endpoint_asg_swap)):
+                         ("T7", t7_subnet_nsg_swap), ("T9", t9_private_endpoint_write_rights),
+                         ("T8", t8_private_endpoint_asg_swap)):
             if name not in CFG.get("tests", ["T1", "T2", "T3", "T5"]):
                 continue
             log(f"start {name}")

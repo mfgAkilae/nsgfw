@@ -1,0 +1,1355 @@
+{
+ "config": {
+  "resourceGroup": "<rg>",
+  "srcPrefix": "10.90.1.0/24",
+  "targets": {
+   "b": "10.90.2.10",
+   "c": "10.90.2.11"
+  },
+  "tests": [
+   "T9",
+   "T8"
+  ],
+  "flips": 30,
+  "flips_large": 15,
+  "flips_nic": 15,
+  "flips_swap": 30,
+  "peTarget": "10.90.3.10",
+  "srcIps": [
+   "10.90.1.10",
+   "10.90.1.11"
+  ],
+  "vmSize": "Standard_B1s",
+  "location": "northeurope"
+ },
+ "tests": {
+  "T9_private_endpoint_write_rights": {
+   "pe-auto2": {
+    "connection": "auto",
+    "state_before": [
+     "Approved"
+    ],
+    "http": 403,
+    "final": "Rejected",
+    "error_code": "LinkedAuthorizationFailed",
+    "error": {
+     "code": "LinkedAuthorizationFailed",
+     "message": "The client '<redacted>' with object id '<redacted>' has permission to perform action 'Microsoft.Network/privateEndpoints/write' on scope '/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Network/privateEndpoints/pe-auto2'; however, it does not have permission to perform action(s) 'Microsoft.Storage/storageAccounts/PrivateEndpointConnectionsApproval/action' on the linked scope(s) '/subscriptions/<redacted>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/stpf4yhdqhjjbof7e' (respectively) or the linked scope(s) are invalid."
+    },
+    "lro_s": 0.173
+   },
+   "pe-manual2": {
+    "connection": "manual",
+    "state_before": [
+     "Approved"
+    ],
+    "http": 200,
+    "final": "Succeeded",
+    "error_code": null,
+    "error": null,
+    "lro_s": 12.118,
+    "asgs_after": [
+     "asg-pe2"
+    ]
+   },
+   "pe-pending2": {
+    "connection": "manual",
+    "state_before": [
+     "Pending"
+    ],
+    "http": 200,
+    "final": "Succeeded",
+    "error_code": null,
+    "error": null,
+    "lro_s": 13.668,
+    "asgs_after": [
+     "asg-pe2"
+    ]
+   }
+  },
+  "T8_private_endpoint_asg_swap": {
+   "reachable_without_asg_rules_after_s": 3.3855438232421875e-05,
+   "baseline_pe_write": {
+    "http": 200,
+    "final": "Succeeded",
+    "error": null,
+    "lro_s": 0.445,
+    "waited_for_role_s": 0.5
+   },
+   "asg_rules_in_effect_after_s": 3.0027015209198,
+   "swap": {
+    "flips": [
+     {
+      "i": 0,
+      "to": "asg-pe2",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 15.359,
+      "resp_s": 0.598,
+      "settled_after_done_s": 0.0,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -17.4,
+           0
+          ],
+          [
+           -4.683,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -17.405,
+           1
+          ],
+          [
+           -4.665,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.002,
+        "open_after_done_s": -4.683,
+        "open_after_resp_s": 10.078,
+        "close_after_done_s": -4.685,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 1,
+      "to": "asg-pe1",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 13.467,
+      "resp_s": 0.565,
+      "settled_after_done_s": 0.251,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -15.5,
+           0
+          ],
+          [
+           -2.921,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -15.488,
+           1
+          ],
+          [
+           -2.965,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.068,
+        "open_after_done_s": -2.921,
+        "open_after_resp_s": 9.982,
+        "close_after_done_s": -2.989,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 2,
+      "to": "asg-pe2",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 13.487,
+      "resp_s": 0.428,
+      "settled_after_done_s": 0.756,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -15.54,
+           0
+          ],
+          [
+           -2.414,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -15.539,
+           1
+          ],
+          [
+           -2.439,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.045,
+        "open_after_done_s": -2.414,
+        "open_after_resp_s": 10.645,
+        "close_after_done_s": -2.459,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 3,
+      "to": "asg-pe1",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 14.408,
+      "resp_s": 0.499,
+      "settled_after_done_s": 0.502,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -16.434,
+           0
+          ],
+          [
+           -2.49,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -16.444,
+           1
+          ],
+          [
+           -2.536,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.071,
+        "open_after_done_s": -2.49,
+        "open_after_resp_s": 11.418,
+        "close_after_done_s": -2.561,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 4,
+      "to": "asg-pe2",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 65.721,
+      "resp_s": 0.452,
+      "settled_after_done_s": 0.002,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -67.778,
+           0
+          ],
+          [
+           -54.57,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -67.775,
+           1
+          ],
+          [
+           -54.598,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.04,
+        "open_after_done_s": -54.57,
+        "open_after_resp_s": 10.7,
+        "close_after_done_s": -54.61,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 5,
+      "to": "asg-pe1",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 16.856,
+      "resp_s": 2.328,
+      "settled_after_done_s": 0.253,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -19.043,
+           0
+          ],
+          [
+           -2.773,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -19.027,
+           1
+          ],
+          [
+           -2.755,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.003,
+        "open_after_done_s": -2.773,
+        "open_after_resp_s": 11.754,
+        "close_after_done_s": -2.777,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 6,
+      "to": "asg-pe2",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 14.68,
+      "resp_s": 0.481,
+      "settled_after_done_s": 0.756,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -16.736,
+           0
+          ],
+          [
+           -2.401,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -16.734,
+           1
+          ],
+          [
+           -2.45,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.055,
+        "open_after_done_s": -2.401,
+        "open_after_resp_s": 11.798,
+        "close_after_done_s": -2.456,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 7,
+      "to": "asg-pe1",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 13.117,
+      "resp_s": 0.589,
+      "settled_after_done_s": 0.506,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -15.132,
+           0
+          ],
+          [
+           -2.65,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -15.165,
+           1
+          ],
+          [
+           -2.635,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.022,
+        "open_after_done_s": -2.65,
+        "open_after_resp_s": 9.879,
+        "close_after_done_s": -2.672,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 8,
+      "to": "asg-pe2",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 13.466,
+      "resp_s": 0.443,
+      "settled_after_done_s": 0.003,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -15.537,
+           0
+          ],
+          [
+           -3.007,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -15.542,
+           1
+          ],
+          [
+           -3.001,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.027,
+        "open_after_done_s": -3.007,
+        "open_after_resp_s": 10.015,
+        "close_after_done_s": -3.035,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 9,
+      "to": "asg-pe1",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 14.56,
+      "resp_s": 0.436,
+      "settled_after_done_s": 0.255,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -16.599,
+           0
+          ],
+          [
+           -2.75,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -16.541,
+           1
+          ],
+          [
+           -2.762,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.019,
+        "open_after_done_s": -2.75,
+        "open_after_resp_s": 11.373,
+        "close_after_done_s": -2.77,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 10,
+      "to": "asg-pe2",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 14.445,
+      "resp_s": 0.547,
+      "settled_after_done_s": 0.003,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -16.429,
+           0
+          ],
+          [
+           -2.984,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -16.467,
+           1
+          ],
+          [
+           -3.001,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.042,
+        "open_after_done_s": -2.984,
+        "open_after_resp_s": 10.913,
+        "close_after_done_s": -3.027,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 11,
+      "to": "asg-pe1",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 13.437,
+      "resp_s": 0.438,
+      "settled_after_done_s": 0.256,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -15.441,
+           0
+          ],
+          [
+           -2.794,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -15.466,
+           1
+          ],
+          [
+           -2.747,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": null,
+        "open_after_done_s": -2.794,
+        "open_after_resp_s": 10.206,
+        "close_after_done_s": -2.789,
+        "both_open_s": 0.005,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 12,
+      "to": "asg-pe2",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 13.534,
+      "resp_s": 0.601,
+      "settled_after_done_s": 0.004,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -15.653,
+           0
+          ],
+          [
+           -3.012,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -15.644,
+           1
+          ],
+          [
+           -3.004,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.039,
+        "open_after_done_s": -3.012,
+        "open_after_resp_s": 9.922,
+        "close_after_done_s": -3.051,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 13,
+      "to": "asg-pe1",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 13.036,
+      "resp_s": 0.663,
+      "settled_after_done_s": 0.509,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -15.084,
+           0
+          ],
+          [
+           -2.46,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -15.075,
+           1
+          ],
+          [
+           -2.476,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.055,
+        "open_after_done_s": -2.46,
+        "open_after_resp_s": 9.913,
+        "close_after_done_s": -2.515,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 14,
+      "to": "asg-pe2",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 13.262,
+      "resp_s": 0.497,
+      "settled_after_done_s": 0.762,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -15.423,
+           0
+          ],
+          [
+           -2.38,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -15.414,
+           1
+          ],
+          [
+           -2.435,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.074,
+        "open_after_done_s": -2.38,
+        "open_after_resp_s": 10.385,
+        "close_after_done_s": -2.454,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 15,
+      "to": "asg-pe1",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 14.658,
+      "resp_s": 0.437,
+      "settled_after_done_s": 0.509,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -16.69,
+           0
+          ],
+          [
+           -2.58,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -16.682,
+           1
+          ],
+          [
+           -2.602,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.061,
+        "open_after_done_s": -2.58,
+        "open_after_resp_s": 11.641,
+        "close_after_done_s": -2.642,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 16,
+      "to": "asg-pe2",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 13.447,
+      "resp_s": 0.384,
+      "settled_after_done_s": 0.51,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -15.621,
+           0
+          ],
+          [
+           -2.512,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -15.626,
+           1
+          ],
+          [
+           -2.506,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.035,
+        "open_after_done_s": -2.512,
+        "open_after_resp_s": 10.552,
+        "close_after_done_s": -2.547,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 17,
+      "to": "asg-pe1",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 13.859,
+      "resp_s": 0.431,
+      "settled_after_done_s": 0.257,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -16.009,
+           0
+          ],
+          [
+           -2.967,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -16.022,
+           1
+          ],
+          [
+           -2.983,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.053,
+        "open_after_done_s": -2.967,
+        "open_after_resp_s": 10.46,
+        "close_after_done_s": -3.02,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 18,
+      "to": "asg-pe2",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 12.865,
+      "resp_s": 0.458,
+      "settled_after_done_s": 0.764,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -14.894,
+           0
+          ],
+          [
+           -2.45,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -14.901,
+           1
+          ],
+          [
+           -2.421,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.039,
+        "open_after_done_s": -2.45,
+        "open_after_resp_s": 9.957,
+        "close_after_done_s": -2.488,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 19,
+      "to": "asg-pe1",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 14.065,
+      "resp_s": 0.447,
+      "settled_after_done_s": 0.765,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -16.138,
+           0
+          ],
+          [
+           -2.48,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -16.158,
+           1
+          ],
+          [
+           -2.455,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": null,
+        "open_after_done_s": -2.48,
+        "open_after_resp_s": 11.138,
+        "close_after_done_s": -2.478,
+        "both_open_s": 0.002,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 20,
+      "to": "asg-pe2",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 13.428,
+      "resp_s": 0.494,
+      "settled_after_done_s": 0.513,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -15.43,
+           0
+          ],
+          [
+           -2.535,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -15.468,
+           1
+          ],
+          [
+           -2.519,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.053,
+        "open_after_done_s": -2.535,
+        "open_after_resp_s": 10.398,
+        "close_after_done_s": -2.588,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 21,
+      "to": "asg-pe1",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 14.008,
+      "resp_s": 0.55,
+      "settled_after_done_s": 0.512,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -15.982,
+           0
+          ],
+          [
+           -2.634,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -16.052,
+           1
+          ],
+          [
+           -2.612,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.031,
+        "open_after_done_s": -2.634,
+        "open_after_resp_s": 10.824,
+        "close_after_done_s": -2.665,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 22,
+      "to": "asg-pe2",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 13.415,
+      "resp_s": 0.5,
+      "settled_after_done_s": 0.513,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -15.647,
+           0
+          ],
+          [
+           -2.63,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -15.644,
+           1
+          ],
+          [
+           -2.684,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.122,
+        "open_after_done_s": -2.63,
+        "open_after_resp_s": 10.285,
+        "close_after_done_s": -2.752,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 23,
+      "to": "asg-pe1",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 35.558,
+      "resp_s": 0.631,
+      "settled_after_done_s": 0.006,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -37.643,
+           0
+          ],
+          [
+           -23.293,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -37.637,
+           1
+          ],
+          [
+           -23.367,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.104,
+        "open_after_done_s": -23.293,
+        "open_after_resp_s": 11.634,
+        "close_after_done_s": -23.397,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 24,
+      "to": "asg-pe2",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 142.983,
+      "resp_s": 0.665,
+      "settled_after_done_s": 0.009,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -145.012,
+           0
+          ],
+          [
+           -130.857,
+           1
+          ],
+          [
+           -4.137,
+           0
+          ],
+          [
+           -4.137,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -145.001,
+           1
+          ],
+          [
+           -130.841,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.053,
+        "open_after_done_s": -130.857,
+        "open_after_resp_s": 11.46,
+        "close_after_done_s": -130.91,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 1
+       }
+      }
+     },
+     {
+      "i": 25,
+      "to": "asg-pe1",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 15.493,
+      "resp_s": 0.469,
+      "settled_after_done_s": 0.008,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -17.517,
+           0
+          ],
+          [
+           -4.372,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -17.532,
+           1
+          ],
+          [
+           -4.375,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.04,
+        "open_after_done_s": -4.372,
+        "open_after_resp_s": 10.653,
+        "close_after_done_s": -4.412,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 26,
+      "to": "asg-pe2",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 15.048,
+      "resp_s": 0.425,
+      "settled_after_done_s": 0.011,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -17.202,
+           0
+          ],
+          [
+           -4.415,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -17.173,
+           1
+          ],
+          [
+           -4.373,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.032,
+        "open_after_done_s": -4.415,
+        "open_after_resp_s": 10.208,
+        "close_after_done_s": -4.447,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 27,
+      "to": "asg-pe1",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 13.824,
+      "resp_s": 0.544,
+      "settled_after_done_s": 1.041,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -15.836,
+           0
+          ],
+          [
+           -2.487,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -15.858,
+           1
+          ],
+          [
+           -2.098,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": null,
+        "open_after_done_s": -2.487,
+        "open_after_resp_s": 10.793,
+        "close_after_done_s": -2.113,
+        "both_open_s": 0.374,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 28,
+      "to": "asg-pe2",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 14.756,
+      "resp_s": 0.762,
+      "settled_after_done_s": 0.009,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -16.767,
+           0
+          ],
+          [
+           -3.976,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -16.768,
+           1
+          ],
+          [
+           -3.968,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": 0.072,
+        "open_after_done_s": -3.976,
+        "open_after_resp_s": 10.018,
+        "close_after_done_s": -4.048,
+        "both_open_s": 0,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     },
+     {
+      "i": 29,
+      "to": "asg-pe1",
+      "http": 200,
+      "final": "Succeeded",
+      "lro_s": 14.688,
+      "resp_s": 0.519,
+      "settled_after_done_s": 0.008,
+      "targets": {
+       "pe": {
+        "transitions_rel_done": {
+         "opening": [
+          [
+           -16.856,
+           0
+          ],
+          [
+           -4.208,
+           1
+          ]
+         ],
+         "closing": [
+          [
+           -16.854,
+           1
+          ],
+          [
+           -4.134,
+           0
+          ]
+         ]
+        },
+        "both_closed_s": null,
+        "open_after_done_s": -4.208,
+        "open_after_resp_s": 9.961,
+        "close_after_done_s": -4.195,
+        "both_open_s": 0.012,
+        "opening_port_failures_after_first_open": 0
+       }
+      }
+     }
+    ],
+    "summary": {
+     "flips": 30,
+     "flips_with_both_open": 4,
+     "flips_with_both_closed_over_100ms": 2,
+     "flips_with_both_closed_over_150ms": 0,
+     "open_after_done_s": {
+      "min": -130.857,
+      "median": -2.75,
+      "max": -2.38
+     },
+     "close_after_done_s": {
+      "min": -130.91,
+      "median": -2.77,
+      "max": -2.113
+     },
+     "both_open_s": {
+      "min": 0,
+      "median": 0,
+      "max": 0.374
+     },
+     "lro_s": {
+      "min": 12.865,
+      "median": 14.065,
+      "max": 142.983
+     },
+     "both_closed_s": {
+      "min": 0.002,
+      "median": 0.045,
+      "max": 0.122
+     }
+    }
+   }
+  }
+ }
+}

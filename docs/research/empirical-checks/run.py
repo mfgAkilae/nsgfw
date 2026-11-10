@@ -38,6 +38,7 @@ ARM = "https://management.azure.com"
 HERE = os.path.dirname(os.path.abspath(__file__))
 NET_API, COMPUTE_API = "2024-05-01", "2024-07-01"
 NETWORK_CONTRIBUTOR = "4d97b98b-1d4f-4787-a291-c67834d212e7"
+STORAGE_ACCOUNT_CONTRIBUTOR = "17d1049b-9a84-46fb-8f53-869881c3d3ab"
 
 
 class Az:
@@ -156,9 +157,12 @@ def template():
             deps.append(rid(f"{net}/publicIPAddresses", pip))
         ipcs = [{"name": "ipconfig1", "properties": ipc}]
         if ip2:  # T8 tells two ASGs on a private endpoint apart by source IP
+            # Azure rejects a NIC whose IP configurations reference different ASG sets
+            # (AllIpConfigurationsOnANicMustBelongToTheSameApplicationSecurityGroups)
             ipcs.append({"name": "ipconfig2", "properties": {
                 "subnet": subnet_id(subnet), "primary": False,
-                "privateIPAllocationMethod": "Static", "privateIPAddress": ip2}})
+                "privateIPAllocationMethod": "Static", "privateIPAddress": ip2,
+                "applicationSecurityGroups": ipc["applicationSecurityGroups"]}})
         return {"type": f"{net}/networkInterfaces", "apiVersion": NET_API, "name": n, "location": loc,
                 "dependsOn": deps, "properties": {"ipConfigurations": ipcs}}
 
@@ -202,13 +206,24 @@ def template():
     mi = rid("Microsoft.ManagedIdentity/userAssignedIdentities", "id-prober")
     st = "[variables('st')]"
     stpe = "[resourceId('Microsoft.Storage/storageAccounts', variables('stpe'))]"
+    stpf = "[resourceId('Microsoft.Storage/storageAccounts', variables('stpf'))]"
+
+    def pe_t9(name, connections):
+        conn = {"privateLinkServiceId": stpf, "groupIds": ["blob"]}
+        if connections.startswith("manual"):
+            conn["requestMessage"] = "nsgfw T9"
+        return {"type": f"{net}/privateEndpoints", "apiVersion": NET_API, "name": name, "location": loc,
+                "dependsOn": [rid(f"{net}/virtualNetworks", "vnet-checks"), stpf],
+                "properties": {"subnet": subnet_id("pe"), "customNetworkInterfaceName": f"nic-{name}",
+                               connections: [{"name": "blob", "properties": conn}]}}
     return {
         "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
         "contentVersion": "1.0.0.0",
         "parameters": {"location": {"type": "string"}, "otherLocation": {"type": "string"}, "vmSize": {"type": "string"},
                        "adminPassword": {"type": "securestring"}},
         "variables": {"st": "[concat('stnsgfw', uniqueString(resourceGroup().id))]",
-                      "stpe": "[concat('stpe', uniqueString(resourceGroup().id))]"},
+                      "stpe": "[concat('stpe', uniqueString(resourceGroup().id))]",
+                      "stpf": "[concat('stpf', uniqueString(resourceGroup().id))]"},
         "resources": [
             {"type": "Microsoft.ManagedIdentity/userAssignedIdentities", "apiVersion": "2023-01-31",
              "name": "id-prober", "location": loc},
@@ -254,6 +269,23 @@ def template():
                  "ipConfigurations": [{"name": "blob", "properties": {
                      "groupId": "blob", "memberName": "blob", "privateIPAddress": "10.90.3.10"}}],
                  "applicationSecurityGroups": [{"id": rid(f"{net}/applicationSecurityGroups", "asg-pe1")}]}},
+            # T8: the prober may approve connections to stpe, so it can rewrite pe-blob (see T9)
+            {"type": "Microsoft.Authorization/roleAssignments", "apiVersion": "2022-04-01",
+             "scope": "[concat('Microsoft.Storage/storageAccounts/', variables('stpe'))]",
+             "name": "[guid(resourceGroup().id, 'id-prober', 'storage-account-contributor-stpe')]",
+             "dependsOn": [mi, stpe],
+             "properties": {
+                 "roleDefinitionId": f"[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '{STORAGE_ACCOUNT_CONTRIBUTOR}')]",
+                 "principalId": f"[reference({mi[1:-1]}, '2023-01-31').principalId]",
+                 "principalType": "ServicePrincipal"}},
+            # T9: three private endpoints to stpf, on which the prober holds no role
+            {"type": "Microsoft.Storage/storageAccounts", "apiVersion": "2023-05-01", "name": "[variables('stpf')]",
+             "location": loc, "kind": "StorageV2", "sku": {"name": "Standard_LRS"},
+             "properties": {"minimumTlsVersion": "TLS1_2", "allowBlobPublicAccess": False,
+                            "allowSharedKeyAccess": False, "publicNetworkAccess": "Disabled"}},
+            pe_t9("pe-auto2", "privateLinkServiceConnections"),
+            pe_t9("pe-manual2", "manualPrivateLinkServiceConnections"),
+            pe_t9("pe-pending2", "manualPrivateLinkServiceConnections"),
             {"type": f"{net}/publicIPAddresses", "apiVersion": NET_API, "name": "pip-prober", "location": loc,
              "sku": {"name": "Standard"}, "properties": {"publicIPAllocationMethod": "Static"}},
             nic("nic-a", "src", "10.90.1.10", ["asg-x"], pip="pip-prober", ip2="10.90.1.11"),
@@ -267,6 +299,7 @@ def template():
             "miClientId": {"type": "string", "value": f"[reference({mi[1:-1]}, '2023-01-31').clientId]"},
             "miPrincipalId": {"type": "string", "value": f"[reference({mi[1:-1]}, '2023-01-31').principalId]"},
             "storageAccount": {"type": "string", "value": st},
+            "storageAccountT9": {"type": "string", "value": "[variables('stpf')]"},
         },
     }
 
@@ -365,6 +398,16 @@ def main():
         outs = az.call("GET", f"{rgp}/providers/Microsoft.Resources/deployments/checks", api="2024-03-01")[2]["properties"]["outputs"]
         mi_client, mi_principal, sa = (outs[k]["value"] for k in ("miClientId", "miPrincipalId", "storageAccount"))
         scrub_ids += [mi_client, mi_principal]
+        if "T9" in a.tests.split(","):  # approve pe-manual2 as the owner; pe-pending2 stays pending
+            stpf = outs["storageAccountT9"]["value"]
+            conns = az.call("GET", f"{rgp}/providers/Microsoft.Storage/storageAccounts/{stpf}/privateEndpointConnections",
+                            api="2023-05-01")[2].get("value", [])
+            for c in conns:
+                if c["properties"]["privateEndpoint"]["id"].lower().endswith("/pe-manual2"):
+                    az.call("PUT", c["id"], {"properties": {"privateLinkServiceConnectionState": {
+                        "status": "Approved", "description": "nsgfw T9"}}}, api="2023-05-01")
+                    print("T9: approved the connection of pe-manual2", flush=True)
+            time.sleep(30)
         expiry = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=6)).strftime("%Y-%m-%dT%H:%M:%SZ")
         sas = az.call("POST", f"{rgp}/providers/Microsoft.Storage/storageAccounts/{sa}/ListServiceSas", {
             "canonicalizedResource": f"/blob/{sa}/results", "signedResource": "c", "signedPermission": "rcwl",
