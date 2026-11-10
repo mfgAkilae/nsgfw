@@ -2,16 +2,19 @@
 """Run the empirical checks in a dedicated test subscription. Python standard library only.
 
   python3 run.py --secret sp.json [--location northeurope] [--other-location swedencentral] [--vm-size Standard_B1s]
-                 [--tests T1,T2,T3,T5] [--keep] [--out results/]
+                 [--tests T1,T2,T3,T5,T7,T8] [--flips 20] [--keep] [--out results/]
 
 sp.json is the output of `az ad sp create-for-rbac` (appId, password, tenant), optionally with
-subscriptionId. Without it, the service principal must see exactly one subscription.
+subscriptionId. `--secret -` reads the same JSON from stdin, so the credential never touches
+the disk. Without subscriptionId, the service principal must see exactly one subscription.
 Instead of --secret, --az takes tokens from a signed-in Azure CLI.
 
 What it does:
+  0. preflight: lists resource groups left over from earlier runs and checks the BS-family quota;
   1. creates the resource group rg-nsgfw-checks-<timestamp>, tagged with an expiry date;
-  2. deploys three Linux VMs without inbound access, NSGs, ASGs, a storage account and a
-     user-assigned identity with Network Contributor on that resource group;
+  2. deploys three Linux VMs without inbound access, NSGs, ASGs, two storage accounts (results,
+     and the target of a private endpoint), the private endpoint and a user-assigned identity
+     with Network Contributor on that resource group;
   3. starts checker.py on vm-a through Run Command and waits for results.json in the storage
      account;
   4. downloads the results with every subscription, tenant and principal ID replaced;
@@ -141,16 +144,36 @@ def template():
     nsg = lambda n, rules: {"type": f"{net}/networkSecurityGroups", "apiVersion": NET_API, "name": n,
                             "location": loc, "properties": {"securityRules": rules}}
 
-    def nic(n, subnet, ip, asgs, pip=None):
-        ipc = {"subnet": {"id": f"[resourceId('{net}/virtualNetworks/subnets', 'vnet-checks', '{subnet}')]"},
+    subnet_id = lambda s: {"id": f"[resourceId('{net}/virtualNetworks/subnets', 'vnet-checks', '{s}')]"}
+
+    def nic(n, subnet, ip, asgs, pip=None, ip2=None):
+        ipc = {"subnet": subnet_id(subnet), "primary": True,
                "privateIPAllocationMethod": "Static", "privateIPAddress": ip,
                "applicationSecurityGroups": [{"id": rid(f"{net}/applicationSecurityGroups", a)} for a in asgs]}
         deps = [rid(f"{net}/virtualNetworks", "vnet-checks")] + [rid(f"{net}/applicationSecurityGroups", a) for a in asgs]
         if pip:
             ipc["publicIPAddress"] = {"id": rid(f"{net}/publicIPAddresses", pip)}
             deps.append(rid(f"{net}/publicIPAddresses", pip))
+        ipcs = [{"name": "ipconfig1", "properties": ipc}]
+        if ip2:  # T8 tells two ASGs on a private endpoint apart by source IP
+            ipcs.append({"name": "ipconfig2", "properties": {
+                "subnet": subnet_id(subnet), "primary": False,
+                "privateIPAllocationMethod": "Static", "privateIPAddress": ip2}})
         return {"type": f"{net}/networkInterfaces", "apiVersion": NET_API, "name": n, "location": loc,
-                "dependsOn": deps, "properties": {"ipConfigurations": [{"name": "ipconfig1", "properties": ipc}]}}
+                "dependsOn": deps, "properties": {"ipConfigurations": ipcs}}
+
+    def tcp_rule(name, prio, direction, access, src, dst, ports):
+        return {"name": name, "properties": {
+            "priority": prio, "direction": direction, "access": access, "protocol": "Tcp",
+            "sourceAddressPrefix": src, "sourcePortRange": "*", "destinationAddressPrefix": dst,
+            "destinationPortRange": ports}}
+
+    def swap_rules(port):
+        """T7: both swap NSGs deny the probe port 5001 in both directions and differ on one port."""
+        return [tcp_rule(f"in-allow-{port}", 200, "Inbound", "Allow", "10.90.1.0/24", "*", str(port)),
+                tcp_rule(f"out-allow-{port}", 200, "Outbound", "Allow", "*", "10.90.2.0/24", str(port)),
+                tcp_rule("in-deny-probe-ports", 4000, "Inbound", "Deny", "*", "*", "5001-5006"),
+                tcp_rule("out-deny-probe-ports", 4000, "Outbound", "Deny", "*", "*", "5001-5006")]
 
     def vm(n, nic_name, custom_data=None, identity=False):
         os_profile = {"computerName": n, "adminUsername": "nsgfw",
@@ -178,12 +201,14 @@ def template():
 
     mi = rid("Microsoft.ManagedIdentity/userAssignedIdentities", "id-prober")
     st = "[variables('st')]"
+    stpe = "[resourceId('Microsoft.Storage/storageAccounts', variables('stpe'))]"
     return {
         "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
         "contentVersion": "1.0.0.0",
         "parameters": {"location": {"type": "string"}, "otherLocation": {"type": "string"}, "vmSize": {"type": "string"},
                        "adminPassword": {"type": "securestring"}},
-        "variables": {"st": "[concat('stnsgfw', uniqueString(resourceGroup().id))]"},
+        "variables": {"st": "[concat('stnsgfw', uniqueString(resourceGroup().id))]",
+                      "stpe": "[concat('stpe', uniqueString(resourceGroup().id))]"},
         "resources": [
             {"type": "Microsoft.ManagedIdentity/userAssignedIdentities", "apiVersion": "2023-01-31",
              "name": "id-prober", "location": loc},
@@ -201,17 +226,37 @@ def template():
              "name": "[concat(variables('st'), '/default/results')]",
              "dependsOn": ["[resourceId('Microsoft.Storage/storageAccounts', variables('st'))]"]},
             asg("asg-x"), asg("asg-y"), asg("asg-d1"), asg("asg-d2"), asg("asg-other", "[parameters('otherLocation')]"),
+            asg("asg-pe1"), asg("asg-pe2"),
             nsg("nsg-src", []), nsg("nsg-dst", [open5001, deny]), nsg("nsg-scratch", []),
+            nsg("nsg-swap-a", swap_rules(5002)), nsg("nsg-swap-b", swap_rules(5003)),
+            nsg("nsg-pe", [tcp_rule("allow-443-from-src", 300, "Inbound", "Allow", "10.90.1.0/24", "*", "443")]),
             {"type": f"{net}/virtualNetworks", "apiVersion": NET_API, "name": "vnet-checks", "location": loc,
-             "dependsOn": [rid(f"{net}/networkSecurityGroups", "nsg-src"), rid(f"{net}/networkSecurityGroups", "nsg-dst")],
+             "dependsOn": [rid(f"{net}/networkSecurityGroups", n) for n in ("nsg-src", "nsg-dst", "nsg-pe")],
              "properties": {"addressSpace": {"addressPrefixes": ["10.90.0.0/16"]}, "subnets": [
                  {"name": "src", "properties": {"addressPrefix": "10.90.1.0/24",
                                                 "networkSecurityGroup": {"id": rid(f"{net}/networkSecurityGroups", "nsg-src")}}},
                  {"name": "dst", "properties": {"addressPrefix": "10.90.2.0/24",
-                                                "networkSecurityGroup": {"id": rid(f"{net}/networkSecurityGroups", "nsg-dst")}}}]}},
+                                                "networkSecurityGroup": {"id": rid(f"{net}/networkSecurityGroups", "nsg-dst")}}},
+                 {"name": "pe", "properties": {"addressPrefix": "10.90.3.0/24",
+                                               "networkSecurityGroup": {"id": rid(f"{net}/networkSecurityGroups", "nsg-pe")},
+                                               "privateEndpointNetworkPolicies": "Enabled"}}]}},
+            {"type": "Microsoft.Storage/storageAccounts", "apiVersion": "2023-05-01", "name": "[variables('stpe')]",
+             "location": loc, "kind": "StorageV2", "sku": {"name": "Standard_LRS"},
+             "properties": {"minimumTlsVersion": "TLS1_2", "allowBlobPublicAccess": False,
+                            "allowSharedKeyAccess": False, "publicNetworkAccess": "Disabled"}},
+            {"type": f"{net}/privateEndpoints", "apiVersion": NET_API, "name": "pe-blob", "location": loc,
+             "dependsOn": [rid(f"{net}/virtualNetworks", "vnet-checks"), stpe,
+                           rid(f"{net}/applicationSecurityGroups", "asg-pe1")],
+             "properties": {
+                 "subnet": subnet_id("pe"), "customNetworkInterfaceName": "nic-pe-blob",
+                 "privateLinkServiceConnections": [{"name": "blob", "properties": {
+                     "privateLinkServiceId": stpe, "groupIds": ["blob"]}}],
+                 "ipConfigurations": [{"name": "blob", "properties": {
+                     "groupId": "blob", "memberName": "blob", "privateIPAddress": "10.90.3.10"}}],
+                 "applicationSecurityGroups": [{"id": rid(f"{net}/applicationSecurityGroups", "asg-pe1")}]}},
             {"type": f"{net}/publicIPAddresses", "apiVersion": NET_API, "name": "pip-prober", "location": loc,
              "sku": {"name": "Standard"}, "properties": {"publicIPAllocationMethod": "Static"}},
-            nic("nic-a", "src", "10.90.1.10", ["asg-x"], pip="pip-prober"),
+            nic("nic-a", "src", "10.90.1.10", ["asg-x"], pip="pip-prober", ip2="10.90.1.11"),
             nic("nic-b", "dst", "10.90.2.10", ["asg-d1"]),
             nic("nic-c", "dst", "10.90.2.11", []),
             vm("vm-a", "nic-a", identity=True),
@@ -243,9 +288,25 @@ def blob(sas_base, sas, name):
         raise
 
 
+def preflight(az, sub, location, cores=3):
+    """Read-only checks before anything is created."""
+    groups = az.call("GET", f"/subscriptions/{sub}/resourcegroups", api="2021-04-01")[2].get("value", [])
+    left = [g["name"] for g in groups if (g.get("tags") or {}).get("purpose") == "nsgfw-empirical-checks"]
+    print(f"preflight: {len(groups)} resource groups, left over from earlier runs: {left or 'none'}", flush=True)
+    usages = az.call("GET", f"/subscriptions/{sub}/providers/Microsoft.Compute/locations/{location}/usages",
+                     api="2024-07-01")[2].get("value", [])
+    for u in usages:
+        if u["name"]["value"] in ("standardBSFamily", "cores"):
+            free = u["limit"] - u["currentValue"]
+            print(f"preflight: {u['name']['value']} in {location}: {u['currentValue']} of {u['limit']} used",
+                  flush=True)
+            if free < cores:
+                sys.exit(f"preflight: {cores} cores needed, {free} free")
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--secret")
+    ap.add_argument("--secret", help="sp.json, or - to read the same JSON from stdin")
     ap.add_argument("--az", action="store_true")
     ap.add_argument("--location", default="northeurope")
     ap.add_argument("--other-location", default="swedencentral")
@@ -256,7 +317,10 @@ def main():
     ap.add_argument("--out", default=os.path.join(HERE, "results"))
     ap.add_argument("--max-minutes", type=int, default=120)
     a = ap.parse_args()
-    secret = json.load(open(a.secret)) if a.secret else None
+    if a.secret == "-":
+        secret = json.load(sys.stdin)
+    else:
+        secret = json.load(open(a.secret)) if a.secret else None
     az = Az(secret, a.az)
 
     sub = (secret or {}).get("subscriptionId")
@@ -274,6 +338,7 @@ def main():
             if az.call("GET", f"/subscriptions/{sub}/providers/{ns}", api="2021-04-01")[2].get("registrationState") == "Registered":
                 break
             time.sleep(10)
+    preflight(az, sub, a.location)
 
     stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
     rg = f"rg-nsgfw-checks-{stamp}"
@@ -303,13 +368,19 @@ def main():
         cfg = {"subscriptionId": sub, "resourceGroup": rg, "miClientId": mi_client, "srcPrefix": "10.90.1.0/24",
                "targets": {"b": "10.90.2.10", "c": "10.90.2.11"}, "sasUrl": f"{sas_base}?{sas}",
                "tests": a.tests.split(","), "flips": a.flips, "flips_large": max(a.flips // 2, 4),
-               "flips_nic": max(a.flips // 2, 4), "vmSize": a.vm_size, "location": a.location}
+               "flips_nic": max(a.flips // 2, 4), "flips_swap": a.flips,
+               "peTarget": "10.90.3.10", "srcIps": ["10.90.1.10", "10.90.1.11"],
+               "vmSize": a.vm_size, "location": a.location}
         code = base64.b64encode(open(os.path.join(HERE, "checker.py"), "rb").read()).decode()
         cfgb = base64.b64encode(json.dumps(cfg).encode()).decode()
         print("starting checker on vm-a", flush=True)
         print(run_command(az, f"{rgp}/providers/Microsoft.Compute/virtualMachines/vm-a", [
             f"echo {code} | base64 -d > /opt/checker.py",
             f"echo {cfgb} | base64 -d > /opt/checker.json",
+            # the NIC's second IP configuration, in case cloud-init did not add it (T8)
+            "dev=$(ip -4 route show default | awk '{print $5; exit}'); "
+            "ip -4 addr show dev $dev | grep -q 10.90.1.11/ || ip addr add 10.90.1.11/24 dev $dev; "
+            "ip -4 -brief addr show dev $dev",
             "nohup python3 /opt/checker.py /opt/checker.json > /var/log/nsgfw-checker.log 2>&1 &",
             "sleep 2; echo started; tail -n 5 /var/log/nsgfw-checker.log"]), flush=True)
         seen = None
@@ -344,6 +415,9 @@ def main():
                 time.sleep(20)
             else:
                 print(f"{rg} still deleting; check it in the portal", flush=True)
+            groups = az.call("GET", f"/subscriptions/{sub}/resourcegroups", api="2021-04-01")[2].get("value", [])
+            left = [g["name"] for g in groups if (g.get("tags") or {}).get("purpose") == "nsgfw-empirical-checks"]
+            print(f"test resource groups left in the subscription: {left or 'none'}", flush=True)
             print(f"total {round((time.time() - t_start) / 60, 1)} minutes", flush=True)
 
 

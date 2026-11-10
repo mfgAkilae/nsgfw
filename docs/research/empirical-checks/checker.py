@@ -12,6 +12,8 @@ Checks (see ../empirical-checks.md):
   T2  one NSG PUT takes effect as a whole, and the effect time after the LRO
   T3  a failed NSG PUT applies nothing
   T5  one network interface PUT that changes ASG membership takes effect as a whole
+  T7  one subnet PUT that swaps the subnet's NSG takes effect as a whole (source and destination side)
+  T8  one private endpoint PUT that swaps its ASG: interim states and the lag after Succeeded
 """
 import json
 import select
@@ -187,11 +189,12 @@ def rule_summary(nsg):
 # ---------------------------------------------------------------- prober
 
 class Prober:
-    """K staggered workers per (target, port) pair open new TCP connections.
+    """K staggered workers per (target, label) pair open new TCP connections.
 
-    Each record is (t_start, target, port, ok) with ok = 1 connected, 0 timeout
-    (NSG drop), -1 refused or other error. SO_LINGER 0 closes with RST, so the
-    prober leaves no TIME_WAIT sockets behind.
+    Each record is (t_start, target, label, ok) with ok = 1 connected, 0 timeout
+    (NSG drop), -1 refused or other error. The label is the port for plain pairs, or
+    any name for pairs that also bind a source IP. SO_LINGER 0 closes with RST, so
+    the prober leaves no TIME_WAIT sockets behind.
     """
 
     def __init__(self, interval=0.02, workers=4, timeout=0.1):
@@ -199,9 +202,16 @@ class Prober:
         self.records, self.lock = [], threading.Lock()
         self.pairs, self.stop_evt, self.threads = [], threading.Event(), []
 
-    def _probe(self, ip, port):
+    def _probe(self, ip, port, src=None):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        if src:
+            try:
+                s.bind((src, 0))
+            except OSError:  # the source IP is not on the VM: record it instead of dying
+                s.close()
+                time.sleep(self.timeout)
+                return now(), -2
         s.setblocking(False)
         t = now()
         ok = 0
@@ -214,31 +224,41 @@ class Prober:
             s.close()
         return t, ok
 
-    def _worker(self, tgt, ip, port, offset):
-        period = self.interval * self.workers
+    def _worker(self, tgt, ip, label, port, src, period, offset):
         nxt = now() + offset
         while not self.stop_evt.is_set():
             d = nxt - now()
             if d > 0:
                 time.sleep(d)
-            t, ok = self._probe(ip, port)
+            t, ok = self._probe(ip, port, src)
             with self.lock:
-                self.records.append((t, tgt, port, ok))
+                self.records.append((t, tgt, label, ok))
             nxt += period
             if nxt < now():
                 nxt = now()
 
     def start(self, ports):
+        """ports: ints, probed on every target in TARGETS at the default rate, or dicts
+        {tgt, ip, label, port, src?, interval?, workers?} for one pair. A closed port holds
+        each worker for the timeout, so a pair probes a closed port every
+        max(interval, timeout / workers)."""
         self.stop()
         self.stop_evt.clear()
         self.records = []
-        for tgt, ip in TARGETS.items():
-            for port in ports:
-                for k in range(self.workers):
-                    th = threading.Thread(target=self._worker,
-                                          args=(tgt, ip, port, k * self.interval), daemon=True)
-                    th.start()
-                    self.threads.append(th)
+        specs = []
+        for p in ports:
+            if isinstance(p, int):
+                specs += [{"tgt": tgt, "ip": ip, "label": p, "port": p} for tgt, ip in TARGETS.items()]
+            else:
+                specs.append(p)
+        for sp in specs:
+            interval, workers = sp.get("interval", self.interval), sp.get("workers", self.workers)
+            for k in range(workers):
+                th = threading.Thread(target=self._worker, daemon=True, args=(
+                    sp["tgt"], sp["ip"], sp["label"], sp["port"], sp.get("src"),
+                    interval * workers, k * interval))
+                th.start()
+                self.threads.append(th)
 
     def stop(self):
         self.stop_evt.set()
@@ -273,9 +293,10 @@ def wait_stable(expect, hold=3.0, timeout=90):
     return None
 
 
-def analyse_flip(records, rec, opening, closing, targets):
+def analyse_flip(records, rec, opening, closing, targets, probe=None):
     """Per target: when the opening port first connected, when the closing port last
-    connected, and whether both were open at the same time."""
+    connected, and whether both were open at the same time. `probe` names a port that
+    both states deny: every connect on it is a leak."""
     out = {}
     for tgt in targets:
         o = sorted(r[0] for r in records if r[1] == tgt and r[2] == opening and r[3] == 1)
@@ -308,27 +329,38 @@ def analyse_flip(records, rec, opening, closing, targets):
                             if first_open and last_close_ok and last_close_ok > first_open else 0),
             "opening_port_failures_after_first_open": reclose,
         }
+        if probe is not None:
+            leaks = sorted(r[0] for r in records if r[1] == tgt and r[2] == probe and r[3] == 1)
+            d["probe_attempts"] = sum(1 for r in records if r[1] == tgt and r[2] == probe)
+            d["probe_open_count"] = len(leaks)
+            d["probe_open_first_rel_done_s"] = round(leaks[0] - rec["t_done"], 3) if leaks else None
+            d["probe_open_last_rel_done_s"] = round(leaks[-1] - rec["t_done"], 3) if leaks else None
         out[tgt] = d
     return out
 
 
-def flip_series(name, n, states, write, ports_of, targets=("b", "c"), extra=None):
+def flip_series(name, n, states, write, ports_of, targets=("b", "c"), extra=None,
+                closed_also=(), probe=None):
     """Alternate between two states n times. states: [A, B]; write(state) does the ARM write
-    and returns the put_and_wait record; ports_of(state) -> (open_port, closed_port)."""
+    and returns the put_and_wait record; ports_of(state) -> (open_port, closed_port).
+    closed_also: ports both states deny; probe: the one whose connects count as leaks."""
     flips = []
     for i in range(n):
         target_state = states[(i + 1) % 2]
         opening, closing = ports_of(target_state)
         t_mark = now() - 2
         rec = write(target_state)
-        settle = wait_stable({(t, opening): 1 for t in targets} | {(t, closing): 0 for t in targets})
+        settle = wait_stable({(t, opening): 1 for t in targets} | {(t, closing): 0 for t in targets}
+                             | {(t, c): 0 for t in targets for c in closed_also})
         time.sleep(1)
         recs = PROBER.snapshot(t_mark)
         f = {"i": i, "to": target_state, "http": rec["http"], "final": rec["final"],
              "lro_s": round(rec["t_done"] - rec["t_sent"], 3),
              "resp_s": round(rec["t_resp"] - rec["t_sent"], 3),
              "settled_after_done_s": round(settle, 3) if settle is not None else None,
-             "targets": analyse_flip(recs, rec, opening, closing, targets)}
+             "targets": analyse_flip(recs, rec, opening, closing, targets, probe)}
+        if rec.get("error"):
+            f["error"] = rec["error"]
         if extra:
             f.update(extra(target_state))
         flips.append(f)
@@ -352,7 +384,14 @@ def summarise(flips):
          "flips_with_both_open": sum(1 for f in flips
                                      if any(t["both_open_s"] > 0 for t in f["targets"].values())),
          "flips_with_both_closed_over_100ms": sum(
-             1 for f in flips if any((t.get("both_closed_s") or 0) > 0.1 for t in f["targets"].values()))}
+             1 for f in flips if any((t.get("both_closed_s") or 0) > 0.1 for t in f["targets"].values())),
+         "flips_with_both_closed_over_150ms": sum(
+             1 for f in flips if any((t.get("both_closed_s") or 0) > 0.15 for t in f["targets"].values()))}
+    if any("probe_open_count" in t for f in flips for t in f["targets"].values()):
+        s["flips_with_probe_open"] = sum(1 for f in flips
+                                         if any(t.get("probe_open_count") for t in f["targets"].values()))
+        s["probe_open_total"] = sum(t.get("probe_open_count", 0) for f in flips for t in f["targets"].values())
+        s["probe_attempts_total"] = sum(t.get("probe_attempts", 0) for f in flips for t in f["targets"].values())
     vals["both_closed_s"] = [t["both_closed_s"] for f in flips for t in f["targets"].values()
                              if t.get("both_closed_s") is not None]
     for k, v in vals.items():
@@ -548,6 +587,139 @@ def t5_nic_asg_as_a_whole():
     save("T5_nic_asg_as_a_whole", res)
 
 
+# ---------------------------------------------------------------- T7
+
+# Both swap NSGs deny the probe port 5001 in both directions. nsg-swap-a allows 5002 and
+# nsg-swap-b allows 5003, inbound from src and outbound to dst. A subnet without an NSG
+# lets 5001 through, so any connect on 5001 during a swap shows a moment without an NSG.
+SWAP_PORTS = {"nsg-swap-a": (5002, 5003), "nsg-swap-b": (5003, 5002)}
+PROBE_PORT = 5001
+SUBNET_READ_ONLY = ("provisioningState", "ipConfigurations", "ipConfigurationProfiles",
+                    "privateEndpoints", "purpose", "resourceNavigationLinks", "serviceAssociationLinks")
+
+
+def subnet_path(name):
+    return f"{NET}/virtualNetworks/vnet-checks/subnets/{name}"
+
+
+def subnet_set_nsg(subnet, nsg):
+    """One subnet PUT that changes only the NSG association, as a swap at onboarding does."""
+    body = get(subnet_path(subnet))
+    for k in ("etag", "id", "name", "type"):
+        body.pop(k, None)
+    for k in SUBNET_READ_ONLY:
+        body["properties"].pop(k, None)
+    body["properties"]["networkSecurityGroup"] = {"id": f"{NET}/networkSecurityGroups/{nsg}"}
+    return put_and_wait(subnet_path(subnet), body)
+
+
+def t7_series(name, subnet):
+    """The probe port gets ten workers, one probe every 10 ms per target even while closed."""
+    specs = []
+    for tgt, ip in TARGETS.items():
+        specs.append({"tgt": tgt, "ip": ip, "label": PROBE_PORT, "port": PROBE_PORT,
+                      "interval": 0.01, "workers": 10})
+        specs += [{"tgt": tgt, "ip": ip, "label": p, "port": p} for p in (5002, 5003)]
+    PROBER.start(specs)
+    rec = subnet_set_nsg(subnet, "nsg-swap-a")
+    if rec["final"] != "Succeeded":
+        raise RuntimeError(f"{name}: baseline subnet write {rec['final']} {rec.get('error')}")
+    expect = ({(t, 5002): 1 for t in TARGETS} | {(t, 5003): 0 for t in TARGETS}
+              | {(t, PROBE_PORT): 0 for t in TARGETS})
+    if wait_stable(expect, timeout=600) is None:
+        raise RuntimeError(f"{name}: baseline never reached: "
+                           f"{ {f'{t}:{p}': PROBER.state(t, p, 3.0) for (t, p) in expect} }")
+    t_series = now()  # from here on every connect on the probe port is a leak
+    res = flip_series(name, CFG.get("flips_swap", 30), list(SWAP_PORTS),
+                      lambda s: subnet_set_nsg(subnet, s), lambda s: SWAP_PORTS[s],
+                      closed_also=(PROBE_PORT,), probe=PROBE_PORT)
+    allrecs = PROBER.snapshot(t_series)
+    res["probe_port_whole_series"] = {
+        t: {"attempts": sum(1 for r in allrecs if r[1] == t and r[2] == PROBE_PORT),
+            "connects": sum(1 for r in allrecs if r[1] == t and r[2] == PROBE_PORT and r[3] == 1)}
+        for t in TARGETS}
+    log(f"{name}: probe port over the whole series {json.dumps(res['probe_port_whole_series'])}")
+    return res
+
+
+def t7_subnet_nsg_swap():
+    res = {}
+    # destination side: src keeps nsg-src (no custom rules, outbound open), dst swaps
+    res["destination_side_dst"] = t7_series("T7-dst", "dst")
+    save("T7_subnet_nsg_swap", res)
+    # source side: dst gets nsg-dst with only an allow for the probe ports, src swaps
+    cur = get(DST)
+    put_and_wait(DST, {"location": cur["location"], "tags": cur.get("tags", {}),
+                       "properties": {"securityRules": [rule("allow-src-5001-5006", 200, "5001-5006")]}})
+    rec = subnet_set_nsg("dst", "nsg-dst")
+    if rec["final"] != "Succeeded":
+        raise RuntimeError(f"T7-src: dst back to nsg-dst {rec['final']} {rec.get('error')}")
+    res["source_side_src"] = t7_series("T7-src", "src")
+    save("T7_subnet_nsg_swap", res)
+
+
+# ---------------------------------------------------------------- T8
+
+# The private endpoint pe-blob (blob of a storage account) listens on 443 only. NSG rules on a
+# private endpoint ignore the source port, so the two ASGs are told apart by source IP:
+# asg-pe1 admits 443 from vm-a's first IP, asg-pe2 from its second IP.
+PE_PATH = f"{NET}/privateEndpoints/pe-blob"
+PE_NSG = f"{NET}/networkSecurityGroups/nsg-pe"
+PE_L1, PE_L2 = "443-from-src1", "443-from-src2"
+
+
+def pe_rules(asg_rules):
+    src1, src2 = CFG["srcIps"]
+    if not asg_rules:
+        return [rule("allow-443-from-src", 300, 443)]
+    return [rule("pe1-443-from-src1", 300, 443, src=f"{src1}/32", dst_asgs=[asg_id("asg-pe1")]),
+            rule("pe2-443-from-src2", 301, 443, src=f"{src2}/32", dst_asgs=[asg_id("asg-pe2")]),
+            rule("deny-443", 4000, 443, access="Deny", src="*")]
+
+
+def pe_set_asgs(asgs):
+    body = get(PE_PATH)
+    for k in ("etag", "id", "name", "type"):
+        body.pop(k, None)
+    body["properties"].pop("provisioningState", None)
+    body["properties"]["applicationSecurityGroups"] = [{"id": asg_id(a)} for a in asgs]
+    return put_and_wait(PE_PATH, body)
+
+
+def t8_private_endpoint_asg_swap():
+    src1, src2 = CFG["srcIps"]
+    pe_ip = CFG["peTarget"]
+    PROBER.start([{"tgt": "pe", "ip": pe_ip, "label": PE_L1, "port": 443, "src": src1},
+                  {"tgt": "pe", "ip": pe_ip, "label": PE_L2, "port": 443, "src": src2}])
+    cur = get(PE_NSG)
+    loc, tags = cur["location"], cur.get("tags", {})
+    res = {}
+    # 1. both source IPs reach the private endpoint while no ASG rule is involved
+    put_and_wait(PE_NSG, {"location": loc, "tags": tags, "properties": {"securityRules": pe_rules(False)}})
+    w = wait_stable({("pe", PE_L1): 1, ("pe", PE_L2): 1}, timeout=900)
+    res["reachable_without_asg_rules_after_s"] = w
+    if w is None:
+        raise RuntimeError(f"private endpoint not reachable from both IPs: "
+                           f"{PROBER.state('pe', PE_L1, 5.0)} {PROBER.state('pe', PE_L2, 5.0)}")
+    # 2. the ASG rules, with the private endpoint in asg-pe1
+    rec = pe_set_asgs(["asg-pe1"])
+    res["baseline_pe_write"] = {"http": rec["http"], "final": rec["final"], "error": rec.get("error"),
+                                "lro_s": round(rec["t_done"] - rec["t_sent"], 3)}
+    if rec["final"] != "Succeeded":
+        raise RuntimeError(f"private endpoint PUT {rec['final']} {rec.get('error')}")
+    put_and_wait(PE_NSG, {"location": loc, "tags": tags, "properties": {"securityRules": pe_rules(True)}})
+    w = wait_stable({("pe", PE_L1): 1, ("pe", PE_L2): 0}, timeout=900)
+    res["asg_rules_in_effect_after_s"] = w
+    if w is None:
+        raise RuntimeError(f"ASG rules on the private endpoint never took effect: "
+                           f"{PROBER.state('pe', PE_L1, 5.0)} {PROBER.state('pe', PE_L2, 5.0)}")
+    save("T8_private_endpoint_asg_swap", res)
+    ports = {"asg-pe1": (PE_L1, PE_L2), "asg-pe2": (PE_L2, PE_L1)}
+    res["swap"] = flip_series("T8-pe", CFG.get("flips_swap", 30), ["asg-pe1", "asg-pe2"],
+                              lambda s: pe_set_asgs([s]), lambda s: ports[s], targets=("pe",))
+    save("T8_private_endpoint_asg_swap", res)
+
+
 # ---------------------------------------------------------------- main
 
 def main():
@@ -556,7 +728,8 @@ def main():
         log("waiting for role assignment")
         wait_for_access()
         for name, fn in (("T1", t1_priorities), ("T2", t2_nsg_as_a_whole),
-                         ("T3", t3_failed_put), ("T5", t5_nic_asg_as_a_whole)):
+                         ("T3", t3_failed_put), ("T5", t5_nic_asg_as_a_whole),
+                         ("T7", t7_subnet_nsg_swap), ("T8", t8_private_endpoint_asg_swap)):
             if name not in CFG.get("tests", ["T1", "T2", "T3", "T5"]):
                 continue
             log(f"start {name}")
