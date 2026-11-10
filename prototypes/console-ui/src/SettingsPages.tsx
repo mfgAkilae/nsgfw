@@ -203,7 +203,7 @@ export function InstanceSettings({ onReview }: { onReview: () => void }) {
           {toolPaths.map(p => <tr key={p.what}><td>{t(p.from === 'deployment' ? 'deployment' : 'added by an admin')}</td><td><b>{t(p.what)}</b></td><td className="mono">{p.dst}</td><td className="mono">{p.svc}</td><td className="muted">{p.reason ? t(p.reason) : ''}</td></tr>)}</tbody></table>
         {admin && <Button size="small" icon={<Add16Regular />} style={{ marginTop: 8 }}>{t('Add Tool path')}</Button>}</section>
 
-      <section className="set"><h3>{t('Access contact')} <span className="tag amber">{t('proposal')}</span></h3>
+      <section className="set"><h3>{t('Access contact')}</h3>
         <p className="muted">{t('Shown on the page for people without a Role, so they know whom to ask.')}</p>
         <div className="frow"><Textarea disabled={!admin} value={contact} onChange={(_, d) => setContact(d.value)} style={{ flex: 1 }} />{admin && contact !== se.contact && <Button size="small" appearance="primary" onClick={() => se.setContact(contact)}>{t('Save')}</Button>}</div></section>
 

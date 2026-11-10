@@ -129,7 +129,7 @@ function ApprovalCard({ s, onSelect }: { s: ScopeRef; onSelect: (s: ScopeRef) =>
   const raiseOnly = !se.levelBlock(s, 'four-eyes') && levels.some(l => se.levelBlock(s, l));
   return (
     <div className="card">
-      <div className="card-h"><h3>{t(isInst ? 'Instance default Approval level' : 'Approval level')}</h3><span className="muted">{t(isInst ? 'Applies wherever no Environment or Scope below sets its own.' : 'Each Affected Zone of a Change set needs the level of its Scope.')}</span></div>
+      <div className="card-h"><h3>{t(isInst ? 'Instance default Approval level' : 'Approval level')}</h3>{se.isAdminAt(s) && <StepUpLock />}<span className="muted">{t(isInst ? 'Applies wherever no Environment or Scope below sets its own.' : 'Each Affected Zone of a Change set needs the level of its Scope.')}</span></div>
       <div className="lvl-row">
         <div className="lvl-now"><span className={`lvl big l-${eff.level}`}>{t(eff.level)}</span>
           <div><b>{t(levelText[eff.level])}</b><div className="muted">{setHere ? t('Set here.') : <>{t('Inherited from')} <a className="link" onClick={() => onSelect(eff.from)}>{t(scopeName(eff.from))}</a>.</>}</div></div></div>

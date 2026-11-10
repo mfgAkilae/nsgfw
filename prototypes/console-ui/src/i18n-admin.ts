@@ -26,7 +26,8 @@ export const deAdmin: Record<string, string> = {
   'You see': 'Sie sehen', 'Rules: those that land on your Scopes.': 'Regeln: die, die auf Ihre Scopes wirken.', 'through your open Change set': 'über Ihr offenes Änderungspaket',
   'Visible to you because it decides traffic in an Affected Zone of your open Change set.': 'Sichtbar, weil sie Verkehr in einer betroffenen Zone Ihres offenen Änderungspakets entscheidet.', 'through your Change set': 'über Ihr Paket',
   'Setting': 'Einstellung', 'Running connections': 'Laufende Verbindungen', 'flushConnection is off. A connection that this Change set closes keeps running until it ends. Revoked access does not end running sessions.': 'flushConnection ist aus. Eine Verbindung, die dieses Änderungspaket schließt, läuft weiter, bis sie endet. Entzogener Zugriff beendet laufende Sitzungen nicht.',
-  'Go to Admin': 'Zu Admin',
+  'Go to Admin': 'Zu Admin', 'Changing an Approval level': 'Eine Freigabestufe ändern',
+  'The Managed NSGs of the Zones in your Scopes against their Azure limits. Every Zone name stays available in the object picker.': 'Die verwalteten NSGs der Zonen in Ihren Scopes gegen ihre Azure-Limits. Jeder Zonenname bleibt in der Objektauswahl verfügbar.',
   // Admin shell, Setup, Health
   'Admin': 'Admin', 'Audit': 'Audit', 'Setup': 'Einrichtung', 'Health': 'Zustand', 'Environments': 'Umgebungen', 'Alert channel': 'Alarmkanal', 'Audit log': 'Audit-Log',
   'What a new instance needs before people work in it. This page stays until every step is done.': 'Was eine neue Instanz braucht, bevor Menschen darin arbeiten. Die Seite bleibt, bis jeder Schritt erledigt ist.',

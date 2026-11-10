@@ -59,10 +59,18 @@ Answers [Prototype: Access, audit, settings and health views](https://github.com
 - **Health** is a strip with one status per check, then only the problems, grouped by what is missing (one missing action with its Zones, its effect and its fix).
 - **Setup** is a checklist page for an instance admin that stays until every step is done; each step opens the normal settings page.
 
+Decided after the first pass, 2026-11-10:
+
+- German Role names: Leser, Bearbeiter, Freigebender (as the Approval level), Admin.
+- The no-access page names an **access contact**, a new instance setting that an instance admin sets.
+- Changing an **Approval level** also needs a sign-in from the last 15 minutes, like Approval, Emergency Commit and Role assignment changes.
+- The **Zone overview** lists only the Zones in the person's Scopes; every Zone name stays available in the object picker.
+- The **Access** page is for admins only; everybody else sees their own Roles in the avatar menu.
+
 Built on top, for review:
 
 - **Session**: the avatar opens "your access" (sign-in time, when the session ends, every Role with its Scope and where it comes from, sign in again, sign out). An idle warning five minutes before the 60-minute limit, a warning before the 8-hour end, and a signed-out screen that says nothing is lost because every edit is already in the Change set.
-- **No access** page for a principal without a Role: who is signed in, the object ID to copy, a copyable access request, and an access contact (a new instance setting, a proposal).
+- **No access** page for a principal without a Role: who is signed in, the object ID to copy, a copyable access request, and the access contact.
 - **Audit log**: chain status on top (intact, verified at, the accepted fork at a recovery entry; red when broken), chips per kind with counts, a Scope filter, a time range, text search, and a detail panel with Scopes, the hashes and the entry as exported. Automatic actions of the tool (removed ASG members, disabled expired Rules) carry the actor "nsgfw".
 - **Environments**: the list with mode, Zones, Approval level and the state of the Azure access check; per Environment the access check with the missing actions and "Show what to run" (Terraform module or script), "Overwrite automatically" (lost subnet associations and marker tags only), `flushConnection` with what off means, patterns, Terraform settings, flow data. "Add Environment" is a wizard: Scope, Deployment mode, the role assignments to create with a check, settings.
 - **Instance**: the Internal address space as prefixes; a change goes into the current Change set as an edit, touches every destination-enforced Zone and needs their Approval. Settle time, Tool paths, the access contact, ingress (shown only; Terraform sets it), identity facts.
@@ -71,7 +79,7 @@ Built on top, for review:
 
 Prototype controls (flask button) switch the persona (instance admin, Environment admin, approver, editor, viewer of one Zone, no Role), set the sign-in age, trigger the idle warning, the sign-out, the session end and a denied action, and switch to an on-premises runtime or a broken audit chain. URL parameters reach any state directly: `?page=admin&sec=access|audit|health|envs|instance|alert|setup`, `?as=ia|envadmin|approver|editor|viewer|none`.
 
-Simplifications: the Change set's Approval still uses one level per Environment, so a level set on a VNet or Zone shows in Access but not yet in the commit bar. The persona switch keeps the Change set, so every persona is its Author. Zones, Objects and Change sets pages are not filtered by Coverage yet.
+Simplifications: the Change set's Approval still uses one level per Environment, so a level set on a VNet or Zone shows in Access but not yet in the commit bar. The persona switch keeps the Change set, so every persona is its Author. The Objects and Change sets pages are not filtered by Coverage yet.
 
 ## The design
 

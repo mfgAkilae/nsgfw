@@ -165,7 +165,7 @@ export default function Console() {
                 onFocus={focusRule} onOpen={openRule} onQuick={setQ} onSelection={setSel} onMoveTo={setMoveIds} onReady={reportReady(lens ? `Zone lens, ${rows.length} Rules` : 'Rule base, 10,000 Rules')} /></div>
             </>}
 
-            {page === 'zones' && <><header className="phead"><h1>{t('Zones')}</h1><span className="sub">{t('Every Managed NSG against its Azure limits. Click a Zone to see the Rules that land on it.')}</span></header><ZoneGrid onOpen={x => openZone(x.id)} /></>}
+            {page === 'zones' && <><header className="phead"><h1>{t('Zones')}</h1><span className="sub">{t(se.myZones ? 'The Managed NSGs of the Zones in your Scopes against their Azure limits. Every Zone name stays available in the object picker.' : 'Every Managed NSG against its Azure limits. Click a Zone to see the Rules that land on it.')}</span></header><ZoneGrid only={se.myZones} onOpen={x => openZone(x.id)} /></>}
             {page === 'objects' && <><header className="phead"><h1>{t('Objects')}</h1><span className="sub">{t('Every object and where it is used.')}</span></header><ObjectLibrary onZone={openZone} onShowRules={name => { setPage('rules'); setLens(null); setFilter('all'); setQ(name); }} /></>}
             {page === 'admin' && <AdminPage sec={adminSec} setSec={setAdminSec} onZones={() => setPage('zones')} onRule={jumpToRule} onReview={() => setReview(true)} />}
             {page === 'sets' && <><header className="phead"><h1>{t('Change sets')}</h1><span className="sub">{t('What waits for you, and where every Change set stands.')}</span></header><ChangeSetsPage onFilter={k => { setPage('rules'); setLens(null); setFilter(k); }} onReview={() => { setPage('rules'); openDock('cs', 'preview'); }} /></>}

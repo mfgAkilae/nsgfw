@@ -87,10 +87,12 @@ function useSessionValue() {
     setLevel(s: ScopeRef, to: Level | null) {
       const b = levelBlock(s, to); if (b) { setDenied({ what: `Changing the Approval level of ${scopeName(s)}`, need: b, have: describe(roleAt(grants, s)) }); return; }
       const before = levelOf(s).level;
+      stepUp('Changing an Approval level', () => {
       setLv(x => { const n = { ...x }; if (to) n[key(s)] = to; else delete n[key(s)]; return n; });
       if (s.kind === 'env') { const e = envs.find(e => e.id === s.id); if (e) e.level = to ?? lv['instance:instance'] ?? 'four-eyes'; }   // the Change set views read the Environment level
       log({ cat: 'setting', action: 'Changed Approval level', object: `${scopeName(s)}: ${before} to ${to ?? 'inherited'}`, scopes: [s], result: 'ok' });
       toast(`Approval level of ${scopeName(s)} is now ${to ?? 'inherited'}.`);
+      });
     },
     envSettings, setEnv(env: string, patch: Partial<EnvSettings>, what: string) {
       setEnvSettings(x => ({ ...x, [env]: { ...x[env], ...patch } }));

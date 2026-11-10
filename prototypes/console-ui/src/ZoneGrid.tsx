@@ -21,16 +21,18 @@ const flagText: Record<Flag, [string, string]> = {
 export const Flags = ({ z }: { z: Zone }) => <span className="badges">{z.flags.map(f => <span key={f} className={`zflag ${flagText[f][1]}`}>{flagText[f][0]}</span>)}{z.inherited && <span className="zflag">Inherited defaults</span>}</span>;
 export const EgressBadge = ({ e }: { e: Zone['egress'] }) => { const { t } = useT(); return <span className={`egress ${e === 'strict' ? 'strict' : ''}`}>{e === 'strict' ? t('strict') : t('destination decides')}</span>; };
 
-export function ZoneGrid({ onOpen }: { onOpen?: (z: Zone) => void }) {
+export function ZoneGrid({ onOpen, only }: { onOpen?: (z: Zone) => void; only?: Set<string> | null }) {
   const { t, lang } = useT();
+  // Issue 38: under the read filter the overview lists only the Zones in the person's Scopes.
+  const mine = useMemo(() => (only ? zones.filter(z => only.has(z.id)) : zones), [only]);
   const [tab, setTab] = useState<'zones' | 'cand'>('zones');
   const [q, setQ] = useState(''); const [zf, setZf] = useState('all');
   const zfilters = useMemo(() => { const f: [string, string, string, (z: Zone) => boolean][] = [
     ['all', 'All', '', () => true], ['flagged', 'Flagged', 'c-deny', z => z.flags.length > 0], ['limit', 'Near a limit', 'c-expiring', z => z.flags.includes('limit')], ['drift', 'Drift', 'c-deny', z => z.flags.includes('drift')],
     ['policy', 'Policy finding', 'c-findings', z => z.flags.includes('policy')], ['perm', 'Missing permission', 'c-findings', z => z.flags.includes('perm')], ['import', 'Import notes', 'c-expiring', z => z.flags.includes('import')],
     ['strict', 'Strict egress', 'c-disabled', z => z.egress === 'strict'], ['inherited', 'Inherited defaults', 'c-disabled', z => z.inherited]];
-    return f.map(([k, label, cls, fn]) => ({ k, label, cls, fn, n: zones.filter(fn).length })); }, []);
-  const shown = useMemo(() => (zf === 'all' ? zones : zones.filter(zfilters.find(x => x.k === zf)!.fn)), [zf, zfilters]);
+    return f.map(([k, label, cls, fn]) => ({ k, label, cls, fn, n: mine.filter(fn).length })); }, [mine]);
+  const shown = useMemo(() => (zf === 'all' ? mine : mine.filter(zfilters.find(x => x.k === zf)!.fn)), [zf, zfilters, mine]);
   const subUse = useMemo(() => { const m = new Map<string, number>(); zones.forEach(z => m.set(`${z.sub} · ${z.region}`, (m.get(`${z.sub} · ${z.region}`) ?? 0) + 1)); return [...m].sort((a, b) => b[1] - a[1])[0]; }, []);
   const zcols = useMemo<ColDef<Zone>[]>(() => [
     { field: 'name', headerName: t('Zone'), width: 180, pinned: 'left', cellRenderer: (x: ICellRendererParams<Zone>) => <a className="link" style={{ fontWeight: 600 }} onClick={() => onOpen?.(x.data!)}>{x.value}</a> },
@@ -57,7 +59,7 @@ export function ZoneGrid({ onOpen }: { onOpen?: (z: Zone) => void }) {
     <>
       <div className="zbar">
         <div className="seg2" role="tablist">
-          <button className={tab === 'zones' ? 'on' : ''} onClick={() => setTab('zones')}>{t('Zones')} {zones.length.toLocaleString()}</button>
+          <button className={tab === 'zones' ? 'on' : ''} onClick={() => setTab('zones')}>{t('Zones')} {mine.length.toLocaleString()}</button>
           <button className={tab === 'cand' ? 'on' : ''} onClick={() => setTab('cand')}>{t('Candidates')} {candidates.length}</button>
         </div>
         <Input className="search" contentBefore={<Search16Regular />} placeholder={t('Search Zones…')} value={q} onChange={(_, d) => setQ(d.value)} />
