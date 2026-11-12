@@ -51,11 +51,11 @@ An Address object whose ASG members an administrator selects in the tool. The to
 _Avoid_: ASG (the Azure resource), application group, dynamic group
 
 **External ASG object**:
-An Address object that stands for exactly one Unmanaged ASG. Others own that ASG and its membership. The tool reads its ASG members but never changes them or the ASG.
+An Address object that stands for exactly one Unmanaged ASG. Others own that ASG and its membership. The tool reads its ASG members but never changes them or the ASG. A network interface is a member when its IPv4 IP configuration is in the ASG, whatever its IPv6 IP configuration holds.
 _Avoid_: ASG reference (an NSG rule's reference to an ASG)
 
 **ASG member**:
-A network interface or private endpoint that belongs to an ASG object, or any network interface, including scale-set and AKS node interfaces, that belongs to the Unmanaged ASG of an External ASG object. A network interface is a member as a whole, with all its IP addresses. A private endpoint member counts by its IP addresses and never sits in a Managed ASG.
+A network interface or private endpoint that belongs to an ASG object, or any network interface, including scale-set and AKS node interfaces, that belongs to the Unmanaged ASG of an External ASG object. A network interface is a member as a whole, with all its IP addresses; an ASG reference stands for its IPv4 addresses, and its IPv6 addresses always reach NSGs through the IP fallback. A private endpoint member counts by its IP addresses and never sits in a Managed ASG.
 _Avoid_: member (on its own: the entries of an Address group)
 
 **Address group**:
@@ -86,7 +86,7 @@ _Avoid_: tool NSG, owned NSG
 Any NSG that is not a Managed NSG, including every NIC-level NSG. Shown read-only.
 
 **Managed ASG**:
-An ASG that the tool created for one ASG object in one VNet, or that an administrator adopted into an ASG object, tagged as managed by the tool. It holds only network interfaces. Each Managed ASG belongs to exactly one ASG object.
+An ASG that the tool created for one ASG object in one VNet, or that an administrator adopted into an ASG object, tagged as managed by the tool. It holds only network interfaces, and only through their IPv4 addresses. Each Managed ASG belongs to exactly one ASG object.
 _Avoid_: tool ASG
 
 **Unmanaged ASG**:
