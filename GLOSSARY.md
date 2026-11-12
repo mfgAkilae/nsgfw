@@ -177,7 +177,7 @@ The part of the tool that converts the Rule base into Managed NSGs, NSG rules, A
 ### Change workflow
 
 **Change set**:
-A named set of pending edits to the Rule base, based on one Version and isolated from every other Change set until its Commit. It is Open, Submitted, Approved, Committed or Discarded.
+A set of pending edits to the Rule base, based on one Version and isolated from every other Change set until its Commit. It carries an ID, a mandatory description and an optional ticket reference, and it is Open, Submitted, Approved, Committed or Discarded.
 _Avoid_: draft, candidate configuration, transaction, session
 
 **Author**:
@@ -187,6 +187,14 @@ _Avoid_: creator
 **Change set owner**:
 The one person who manages a Change set: adds co-editors, submits it for Approval and discards it. Always written in full, because "owner" alone is the Rule's owner.
 _Avoid_: owner, assignee
+
+**Co-editor**:
+A person whom the Change set owner added to a Change set, who may edit it and commit it once it is Approved. A Change set owner who hands the Change set over becomes a co-editor.
+_Avoid_: collaborator, contributor
+
+**Current Change set**:
+The one Change set of a person that receives their edits. A person may have several open Change sets and switches which one is current.
+_Avoid_: active Change set, working copy
 
 **Rebase**:
 Moving a Change set that is not yet committed onto the latest Version after another Commit.

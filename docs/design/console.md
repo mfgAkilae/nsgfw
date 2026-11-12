@@ -1,6 +1,6 @@
 # Console
 
-Status: confirmed by the map owner in [Prototype: Console UI][t25], 2026-11-10, after seven passes over a clickable prototype. It records how the console looks and behaves for the surfaces that prototype covers: the Rule base, Folders, the Change set from the first edit to Submit, the Zone overview and the object library. The prototype on the branch [`prototype/console-ui`][proto] is the primary source; it is throwaway code with mock data and is never merged. The surfaces it does not cover are listed under [Not covered yet](#not-covered-yet) with the ticket or the increment that designs each. Extended and confirmed on 2026-11-10 in [Prototype: Zone detail, Flow view and object editors][t35], in the same console: the Zone detail with the Security layers, the Flow view, the Zone settings, the object editor and the part of onboarding that ticket covers. [After Submit](#after-submit) adds what happens to a Change set once its author is done, and [Deployments, Drift and Import](#deployments-drift-and-import) what happens after the Commit, what changes outside the tool, and the way in for existing NSGs. Amended on 2026-11-12 by [Review: Grill review of the complete design package][t23]: it adds [Change set lifecycle](#change-set-lifecycle) and the behaviour decided in that review, which no prototype shows yet.
+Status: confirmed by the map owner in [Prototype: Console UI][t25], 2026-11-10, after seven passes over a clickable prototype. It records how the console looks and behaves for the surfaces that prototype covers: the Rule base, Folders, the Change set from the first edit to Submit, the Zone overview and the object library. The prototype on the branch [`prototype/console-ui`][proto] is the primary source; it is throwaway code with mock data and is never merged. The surfaces it does not cover are listed under [Not covered yet](#not-covered-yet) with the ticket or the increment that designs each. Extended and confirmed on 2026-11-10 in [Prototype: Zone detail, Flow view and object editors][t35], in the same console: the Zone detail with the Security layers, the Flow view, the Zone settings, the object editor and the part of onboarding that ticket covers. [After Submit](#after-submit) adds what happens to a Change set once its author is done, and [Deployments, Drift and Import](#deployments-drift-and-import) what happens after the Commit, what changes outside the tool, and the way in for existing NSGs. Amended on 2026-11-12 by [Review: Grill review of the complete design package][t23]: it adds [Change set lifecycle](#change-set-lifecycle) and the behaviour decided in that review. [Recovery mode and Change set management](#recovery-mode-and-change-set-management) adds the two surfaces that review found missing.
 
 ## One console
 
@@ -109,7 +109,8 @@ A Change set is Open, Submitted, Approved, Committed or Discarded. It is Approve
 | Open, Submitted | Emergency Commit, with a reason | An admin in every Affected Zone whose Approval is missing | Committed. The Approval afterwards stays open per Affected Zone. |
 | Open, Submitted, Approved | Grant or withdraw a Pre-check waiver | An admin | The state and the Approvals stay. The waiver survives a Rebase while the finding stays the same. |
 | Open, Submitted, Approved | Add co-editors | The Change set owner | The state stays. |
-| Open, Submitted, Approved | Hand over to another Change set owner | The Change set owner or an admin; for a Change set without Affected Zones, an instance admin | The state stays. The new Change set owner may submit, commit and discard. |
+| Open, Submitted, Approved | Change the description or the ticket reference | The Change set owner and the co-editors | The state, the Approvals and a schedule stay. The audit log records it, and the Commit dialog lists it as changed since the Approval. |
+| Open, Submitted, Approved | Hand over to another Change set owner | The Change set owner or an admin; for a Change set without Affected Zones, an instance admin | The state stays. The new Change set owner may submit, commit and discard. The former Change set owner becomes a co-editor. |
 | Open, Submitted, Approved | Take over a Change set of the tool | Any editor who can see it. Once an approver rejected it or a Rebase left a conflict: an admin of one of its Affected Zones | That person becomes its Change set owner and an Author, and the tool stops regenerating it. The rules for the Commit still apply. |
 | Open, Submitted | Dismiss a Change set of the tool that was rejected or has a conflict, with a reason | An admin of one of its Affected Zones | Discarded. The dismissal is audited, and the tool does not prepare the Change set again for the same cause. |
 | Open, Submitted, Approved | Discard | The Change set owner or an admin; for a Change set without Affected Zones, an instance admin | Discarded. |
@@ -158,7 +159,7 @@ Decided with the map owner in [Prototype: Change set review, conflicts and Versi
 
 ### Commit
 
-- Commit always opens a short dialog. It shows what goes out per Environment (written directly in ARM mode, one pull request per write step in Terraform mode, or no Deployment when no Managed NSG changes, and how many writes wait for another Environment); when (now, or at a date and time in the Instance's time zone); the Approvals with who gave them and when; what changed since the Approval (Preview differences after a clean Rebase, and the Folder edits made since); the Pre-check waivers in force; and, when the Change set closes a Tool path, the paths with a mandatory reason. Submit asks for that reason too.
+- Commit always opens a short dialog. It shows what goes out per Environment (written directly in ARM mode, one pull request per write step in Terraform mode, or no Deployment when no Managed NSG changes, and how many writes wait for another Environment); when (now, or at a date and time in the Instance's time zone); the Approvals with who gave them and when; what changed since the Approval (Preview differences after a clean Rebase, the Folder edits made since, and a changed description or ticket reference); the Pre-check waivers in force; and, when the Change set closes a Tool path, the paths with a mandatory reason. Submit asks for that reason too.
 - A scheduled Commit shows in the commit bar with Move and Cancel. An edit that reopens the Change set clears the schedule, and so does a rejection or a withdrawn Approval. A Folder edit keeps it, as it keeps the Approvals.
 - Roles and Approval levels are evaluated at the Commit, not at the Approval and not when the Commit was scheduled. An Approval counts only for the Zones in which its giver holds the approver Role at that moment, and the level that counts is the one in force then. For a scheduled Commit, or one that waits for a Re-translation, the person who scheduled it must hold the needed Roles when it runs. When something is missing, the Commit does not run: the Change set stays Approved, or returns to Submitted when an Approval is missing, loses its schedule and names what is missing.
 - A Commit of the tool (a Rule expiry, an automatic Adopt) never closes a Tool path, because nobody confirms it. The tool holds that one Rule or member change back, alerts the admins and the Rule owner with high severity, and [Health](#health) lists it. A person then commits it with the usual confirmation and reason.
@@ -392,16 +393,55 @@ Decided with the map owner in [Prototype: Deployment, Drift and Import views][t3
 
 Übernehmen (Adopt), Überschreiben (Overwrite), Import-Hinweis (Import note), Schritt (step), ersetzt (superseded), Deployter Stand (Deployed state), Datenvertrag (Data contract), Übergabe (Handover), nicht automatisch übernehmbar (not adoptable automatically), Import-Snapshot, Neu importieren (Re-import), Snapshot behalten (Keep snapshot), leer beginnen (start empty), Verhalten erhalten (Preserve behaviour). Deployment, Drift, Pull Request and Apply stay English.
 
+## Recovery mode and Change set management
+
+Decided with the map owner in [Prototype: Recovery mode and Change set management views][t43], 2026-11-12, over the same prototype: four questions before building and four after the first pass. The mode itself is [ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md); this section is how the console shows it.
+
+### The Recovery screen
+
+- While Recovery mode lasts, the rail gets a Recovery entry on top, in amber, and the console opens there. Every other page shows an amber band: since when, "Nothing reaches Azure except Overwrite; Commits and Deployments wait", how many differences are open, and Open Recovery. Without the mode the entry and the band are gone. Rejected: a section under Admin with a banner, because the admin would have to look for it.
+- The head names the trigger and its time and holds End Recovery mode. The screen is wide, like Review, in three columns.
+- Left, what happened: the trigger in a sentence (a restore marker from the `instance` module, Version tags in Azure above the newest Version in the database, another Tool identity, or an admin with a reason), and for a recovery the database's Version beside the highest Version tag in Azure, with how many Versions the database lacks. Then what is off while the mode lasts, each with its effect here: sign-in (only `InstanceAdmin`, how many sessions ended, bearer tokens refused), Commits and Emergency Commits, the Deployment that stopped after its writes in flight, the schedules and queued Commits that were cleared and whose Authors were told, allow Rules past expiry that stay on, automatic Overwrite and Adopt, and the pull requests of each Terraform Environment with how many of its differences are still neither adopted nor confirmed. Then what still runs: the Drift poll, and Overwrite in ARM Environments. Last, where the ID sequences continue and the recovery entry of the audit chain with the restored last entry it chains to.
+- Middle, the differences in the three groups of ADR 0019, each with its own colour mark: changed in Azure, unknown to the database (lost onboardings), missing in Azure. Chips filter by group and by Environment; a bar shows how many are resolved. A row shows what differs, the resource, the Environment with its Deployment mode, the `nsgfw-version` tag Azure carries, and the state.
+- Right, one difference: database beside Azure with the changed cells marked, why it differs (for example "Version 1294 wrote them"), and what the audit export shows about Rules the database lost. Then the ways out, each with what it does:
+  - Overwrite (changed in Azure) and Re-create (missing in Azure), in ARM Environments only: one write of the database's state, now, after a dialog that lists the flows it closes or opens. No Approval; audited.
+  - Adopt: a Change set that waits until the mode ends and then goes to Approval. It is locked, with the reason, where the NSG rule belongs to a Rule the database does not know, because the tool does not rebuild lost Rules. For a missing Managed NSG it reads Remove the Zone.
+  - Onboard again with Import, for a lost onboarding: an onboarding Change set that waits until the mode ends; its NSG rules become new Rules with new Rule IDs. A Managed ASG of a lost onboarding comes back with that onboarding.
+  - Confirm, in Terraform Environments, where Recovery mode has no single-resource Overwrite. A confirmed difference stays Drift; once every difference of a root module is adopted or confirmed, the Environment gets pull requests again.
+  - Leave as Drift. After the mode it is ordinary Drift; a lost onboarding left this way stays flagged in Health.
+- Ending the mode opens a dialog with a mandatory reason and a fresh sign-in. It lists the differences that stay ordinary Drift, what starts again (sign-in for every Role, Commits and Deployments with the expiry Commits that run now, the prepared Change sets that go to Approval, automatic Overwrite and Adopt, pull requests, where the Commit dialog then asks to confirm that an apply overwrites Drift), and that cleared schedules stay cleared.
+- Health shows the mode on its strip with the open differences.
+
+### Move or Copy
+
+- When the Tool identity changed, the middle column starts with Move or Copy: the recorded Tool identity and app registration beside the running ones, then two choices. Move keeps the Instance ID and every Zone; two checkboxes confirm that the old installation is shut down and that nobody starts it again with a copy of the database. Copy gives a new Instance ID. Both ask for a fresh sign-in.
+- Until the choice is made, no difference can be resolved and the mode cannot end, because two installations must not write with one Instance ID.
+- After Copy, one row per Environment shows its Zones and the NSGs and ASGs that carry the old Instance ID, a checkbox that the old Instance no longer writes there, and Confirm Handover, with a fresh sign-in. The tool then rewrites the marker tags.
+- The mode can end before every Environment has its Handover. The end dialog names those Environments; their Zones get no Deployment and no automatic Overwrite until a holder of `InstanceAdmin` confirms the Handover in Admin > Environments.
+
+### Starting the mode, and the other Roles
+
+- Admin > Instance has a Recovery mode section: whether it is on, when and why it last ended, and Start Recovery mode with a mandatory reason and a fresh sign-in. The dialog says what follows: every other session ends, only `InstanceAdmin` signs in, no Commits or Deployments and a running Deployment stops after its writes in flight, schedules are cleared with a notice, no automatic Overwrite or Adopt and no pull requests, the ID sequences jump and the audit chain gets a recovery entry.
+- Everyone without `InstanceAdmin` sees a page instead of the console: since when an admin compares the database with Azure and why (recovered from a backup, moved or copied, or the reason of a manual start), that only `InstanceAdmin` signs in until the mode ends, after a recovery that edits, Approvals and Commits after the restore point may be gone, and the access contact. The attempt is in the audit log.
+
+### Change set management
+
+- The description is mandatory and the ticket reference optional ([Grilling: Change sets, concurrency and approval][t15], point 4). Neither is asked up front: the first edit still lands in the current Change set at once. With edits and no description, the commit bar shows "Description missing" in amber. The fields sit on top of the Details tab of the Change set panel and, while the description is missing, in the head of the Review. Submit, and a Commit at the Approval level none, wait for the description. The description names the Change set everywhere after its ID. Rejected: asking for it at the first edit.
+- The Change set owner and the co-editors change the description and the ticket reference. That keeps the state and the Approvals; it is audited, and the Commit dialog lists it as changed since the Approval.
+- A person may have several open Change sets; one of them is the current Change set and receives their edits. The Change set name in the commit bar is a menu: the person's open Change sets with their state and edits, the current one ticked, and New Change set. A switch keeps every Change set's edits; Rules that another of the person's Change sets changes carry "in another Change set" like any other. The Change sets page has Make current on each and New Change set above the list. The commit bar stays visible while the person has more than one open Change set. Rejected: switching only on the Change sets page.
+- The Details tab of the Change set panel holds the description and ticket reference, the Change set owner with Hand over, the co-editors with Add and Remove (Change set owner only), the Authors with their edits, the base Version and the Affected Zones, New Change set and Discard Change set.
+- Hand over picks a person from Entra. The new Change set owner gets the Change set in the inbox; the former one becomes a co-editor. An admin of an Affected Zone hands over a Change set that is not theirs.
+- Discard ends the Change set as Discarded. The person's next open Change set becomes current, or a new one when there is none.
+- Change sets of the tool show "prepared by the tool" and their cause. Take over is open to any editor who can see the Change set, and once an approver rejected it or a Rebase left a conflict only to an admin of its Affected Zones, which the row says. Its dialog says that the person becomes Change set owner and Author (and under four-eyes then does not approve it), that the tool stops regenerating it, and which Approvals the Commit still needs. Dismiss, for a rejected or conflicted one, needs a reason and says that it ends Discarded and is not prepared again for the same cause. The inbox lists such Change sets for the admins of their Affected Zones.
+- All Change sets on the Change sets page: chips Yours (Change set owner, co-editor or Author), All, one per state including Discarded, and By the tool, each with its count, and a search over ID, description, ticket and person. A row shows the Change set owner and the co-editors, the ID, the description, the ticket reference, flags (current, description missing, rejected, conflict, Rebase needed, Emergency Commit), what it holds and how many Versions it is behind, the workflow track or "Discarded", and its actions.
+
+### German terms for issue 43
+
+Recovery-Modus (Recovery mode), Umzug (Move), Kopie (Copy), Abweichung (difference), In Azure geändert, Der Datenbank unbekannt, Fehlt in Azure, Neu anlegen (Re-create), Als Drift belassen (Leave as Drift), Beschreibung (description), Ticket-Referenz (ticket reference), Mitbearbeiter (co-editor), aktuelles Änderungspaket (current Change set), Übergeben (hand over), Übernehmen (take over), Verwerfen (dismiss and discard).
+
 ## Not covered yet
 
-Decided in [Review: Grill review of the complete design package][t23].
-
-A new prototype ticket, "Recovery mode and Change set management views", designs two surfaces before the increment plan:
-
-- The Recovery mode view: the differences, Move or Copy, and ending the mode.
-- Change set management: the description and the ticket reference, a second Change set, co-editors, the hand-over, and taking over a Change set of the tool.
-
-The remaining surfaces are each designed in their increment:
+Decided in [Review: Grill review of the complete design package][t23]. The surfaces below are each designed in their increment:
 
 - Removing a Zone ("remove from all Rules").
 - The flags "subscription left its Environment" and "Zone lost its subnet", with re-home and forget.
@@ -428,3 +468,4 @@ The remaining surfaces are each designed in their increment:
 [t15]: https://github.com/mfgAkilae/nsgfw/issues/15
 [t16]: https://github.com/mfgAkilae/nsgfw/issues/16
 [t23]: https://github.com/mfgAkilae/nsgfw/issues/23
+[t43]: https://github.com/mfgAkilae/nsgfw/issues/43

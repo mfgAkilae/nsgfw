@@ -27,7 +27,7 @@ What Recovery mode does, case by case:
 | A Deployment that runs when an admin starts the mode | stops after the writes in flight |
 | A bearer token | refused, except for holders of `InstanceAdmin` |
 | A Terraform Environment | gets no pull request, and requests for auto-merge are withdrawn, until every difference in its root module is adopted or confirmed |
-| The Handover after a Copy | one confirmation per Environment by a holder of `InstanceAdmin` in the Recovery mode view, audited |
+| The Handover after a Copy | one confirmation per Environment by a holder of `InstanceAdmin` in the Recovery mode view, audited. The mode can end before every Environment has it; the rest is confirmed in Admin > Environments ([Prototype: Recovery mode and Change set management views](https://github.com/mfgAkilae/nsgfw/issues/43)) |
 
 ## Considered Options
 
