@@ -11,6 +11,7 @@ import { AuditPage } from './AuditPage';
 import { EnvironmentsPage, InstanceSettings, AlertChannel } from './SettingsPages';
 import { useT } from './i18n';
 import './admin.css';
+import { useRec, openCount } from './rec43';   // issue 43
 
 export type AdminSec = 'setup' | 'access' | 'audit' | 'health' | 'envs' | 'instance' | 'alert';
 export function useAdminNav() {
@@ -90,6 +91,7 @@ function SetupPage({ go, onZones }: { go: (s: AdminSec, env?: string) => void; o
 function HealthPage({ go, list }: { go: (s: AdminSec, env?: string) => void; list: Problem[] }) {
   const se = useSession(); const { t } = useT(); const [open, setOpen] = useState<Set<string>>(new Set(['subnetwrite']));
   const lvl = (check: string): Health => list.some(p => p.check === check && p.level === 'bad') ? 'bad' : list.some(p => p.check === check && p.level === 'warn') ? 'warn' : 'ok';
+  const rec = useRec();
   const checks: { id: string; name: string; state: Health; text: string; at: string }[] = [
     { id: 'azure', name: 'Azure permissions', state: lvl('azure'), text: lvl('azure') === 'ok' ? 'Complete in every Environment' : `${list.filter(p => p.check === 'azure').length} actions missing`, at: 'daily 06:00 and before each Deployment' },
     { id: 'graph', name: 'Microsoft Graph', state: lvl('graph'), text: '3 of 3 permissions granted', at: 'every 15 minutes' },
@@ -97,7 +99,7 @@ function HealthPage({ go, list }: { go: (s: AdminSec, env?: string) => void; lis
     { id: 'alert', name: 'Alert channel', state: lvl('alert'), text: se.alert.kind === 'none' ? 'not set up' : 'last delivery 09:41', at: 'on every alert' },
     { id: 'schema', name: 'Database schema', state: 'ok', text: 'version 47, as the app expects', at: 'at start' },
     { id: 'chain', name: 'Audit chain', state: lvl('chain'), text: se.chainBroken ? 'broken at entry 1,284,977' : 'intact, verified 03:12', at: 'daily 03:00' },
-    { id: 'recovery', name: 'Recovery mode', state: 'ok', text: 'off', at: 'at start' },
+    { id: 'recovery', name: 'Recovery mode', state: rec.on ? 'warn' : 'ok', text: rec.on ? `on since ${rec.since}, ${openCount(rec)} differences open` : 'off', at: 'at start and in the daily reconcile' },   // issue 43
   ];
   const toggle = (id: string) => setOpen(o => { const n = new Set(o); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   return <>

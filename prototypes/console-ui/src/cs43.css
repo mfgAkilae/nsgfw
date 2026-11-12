@@ -1,0 +1,72 @@
+/* PROTOTYPE, throwaway. Issue 43: Change set management. Only the tokens of theme.tsx; app.css loads after this file,
+   so a rule that overrides one of its rules carries a doubled class. */
+
+/* ---------- the switcher in the commit bar */
+.cbar > .cs-sw, .cs-sw { display: inline-flex; align-items: center; gap: 8px; height: 34px; max-width: 280px; padding: 0 10px 0 12px; margin-right: 6px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--sunken); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; flex-shrink: 0; min-width: 0; }
+.cs-sw:hover { border-color: var(--ink3); }
+.cs-sw b { font-weight: 700; flex-shrink: 0; } .cs-sw span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink2); min-width: 0; }
+.cs-sw span.none { color: var(--amber); font-style: italic; } .cs-sw svg { flex-shrink: 0; color: var(--ink3); }
+.fui-PopoverSurface.cs-swm { width: 380px; padding: 12px 10px 10px; }
+.cs-swm .panel-h, .cs-swm > p { padding: 0 6px; } .cs-swm > p { margin: 2px 0 8px; line-height: 1.4; }
+.cs-swi { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 0 8px; width: 100%; text-align: left; padding: 8px 6px; border: 0; border-radius: 8px; background: none; color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
+.cs-swi:hover { background: var(--hover); } .cs-swi.on { background: var(--sel); }
+.cs-swi .ck { grid-row: span 2; color: var(--accent-text); padding-top: 1px; }
+.cs-swi .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .cs-swi .nm i { color: var(--amber); }
+.cs-swi .mt { font-size: 12px; color: var(--ink3); }
+.cs-swf { display: flex; gap: 6px; justify-content: space-between; border-top: 1px solid var(--line2); margin-top: 6px; padding: 10px 6px 0; }
+
+/* ---------- the Details tab */
+.csa { display: flex; flex-direction: column; }
+.csa-h { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 2px 0 6px; } .csa-h > b { font-size: 16px; font-weight: 700; white-space: nowrap; }
+.csa-l { font-size: 12.5px; font-weight: 600; margin: 12px 0 6px; color: var(--ink2); display: flex; align-items: baseline; gap: 8px; }
+.csa-l .req { font-weight: 500; color: var(--ink3); font-size: 12px; }
+.csa .fui-Textarea.need { box-shadow: 0 0 0 2px var(--amber-tint), inset 0 0 0 1px var(--amber); border-radius: 6px; }
+.csa > p.muted { margin: 6px 0 0; line-height: 1.45; }
+.csa-p { display: flex; flex-direction: column; gap: 2px; }
+.csa-pr { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 0; font-size: 13px; }
+.csa-pr div { display: flex; flex-direction: column; line-height: 1.35; min-width: 0; } .csa-pr div span { font-size: 12px; color: var(--ink3); }
+.csa-p > .fui-Button { align-self: flex-start; margin-top: 4px; }
+.csa-auth { margin-top: 8px; }
+.csa-f { display: flex; align-items: center; gap: 6px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line2); }
+.csa-f .danger:not(:disabled) { color: var(--deny); }
+.who.who { width: 28px; height: 28px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--tok); color: var(--ink2); font-size: 11px; font-weight: 700; flex-shrink: 0; }
+
+/* ---------- person picker */
+.pp-l { display: flex; flex-direction: column; max-height: 240px; overflow: auto; margin: 8px 0 4px; }
+.pp-i { display: grid; grid-template-columns: 30px auto minmax(0, 1fr); gap: 10px; align-items: center; padding: 6px 8px; border: 0; border-radius: 8px; background: none; color: var(--ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.pp-i:hover { background: var(--hover); } .pp-i.on { background: var(--sel); box-shadow: inset 0 0 0 1px var(--accent); }
+.pp-i .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk-l { margin: 4px 0 10px; padding-left: 18px; } .tk-l li { margin: 4px 0; font-size: 13px; line-height: 1.45; color: var(--ink2); }
+
+/* ---------- the list of all Change sets */
+.chipbar.cs-chips { padding-left: 0; padding-right: 0; flex-wrap: wrap; height: auto; min-height: 44px; row-gap: 8px; }
+.setrow.cs-row { grid-template-columns: 64px minmax(0, 1fr) auto auto; }
+.setspage:has(.cs-list) { max-width: 1240px; }
+.setrow.cs-row.static { cursor: default; } .setrow.cs-row.static:hover { background: none; }
+.setrow.cs-row.gone .set-n, .setrow.cs-row.gone .avs { opacity: .55; }
+.avs { display: flex; align-items: center; } .avs .who + .who { margin-left: -5px; box-shadow: 0 0 0 2px var(--surface); }
+.avs .who.co { background: var(--sel); color: var(--accent-text); }
+.cs-row .set-n b { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; min-width: 0; } .cs-row .set-n b .tag { font-weight: 650; } .cs-row .set-n b > i.none { color: var(--amber); font-weight: 500; }
+.cs-id { font-weight: 700; color: var(--ink3); font-variant-numeric: tabular-nums; flex-shrink: 0; } .cs-id:empty { display: none; }
+.cs-tk { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; color: var(--ink2); background: var(--tok); border-radius: 5px; padding: 0 6px; flex-shrink: 0; }
+.cs-tk svg { width: 13px; height: 13px; color: var(--ink3); }
+.cs-row .set-n .muted { white-space: normal; line-height: 1.4; }
+.cs-gone { font-size: 12.5px; color: var(--ink3); padding: 0 12px; }
+.cs-act { display: flex; gap: 6px; align-items: center; justify-content: flex-end; min-width: 0; }
+.cs-act:empty { display: none; }
+.cs-lock { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--ink3); white-space: nowrap; }
+.setspage .cs-head { display: flex; align-items: center; gap: 10px; margin: 22px 0 8px; } .setspage .cs-head h3 { margin: 0; }
+@media (max-width: 1100px) { .setrow.cs-row .track { display: none; } }
+
+/* ---------- the line under the Review title */
+.rv-csl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 6px; font-size: 13px; color: var(--ink2); }
+.rv-csl b { color: var(--ink); font-weight: 600; }
+.rv-csl button.link { border: 0; background: none; padding: 0; font: inherit; }
+.rv-csl.need .d { width: min(440px, 50vw); } .rv-csl.need .tk { width: 190px; }
+.rv-csl.need .d { box-shadow: 0 0 0 2px var(--amber-tint); }
+.rv-csl .hint { display: inline-flex; align-items: center; gap: 6px; color: var(--amber); font-weight: 600; } .rv-csl .hint svg { flex-shrink: 0; }
+
+/* A crowded commit bar keeps the label of the current step only. */
+@media (max-width: 1720px) { .cbar .track li:not(.on) span { display: none; } }
+.setspage > * { flex-shrink: 0; }

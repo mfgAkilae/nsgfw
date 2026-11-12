@@ -35,9 +35,15 @@ import { DeployView } from './DeployView';
 import { OnboardingScreen } from './Onboarding';
 import { SnapshotHost } from './ImportNote';
 import { navBus, type Go37 } from './ops37';
+// Issue 43: Recovery mode and Change set management.
+import { RecoveryPage, RecoveryBand, RecoverySignIn } from './Recovery';
+import { useRec, startRec, type Trigger } from './rec43';
+import { CsSwitcher, DescFlag, CsAbout, useCsSwitch } from './CsManage';
+import { useCs, openMine } from './cs43';
+import { DatabaseWarning20Regular } from '@fluentui/react-icons';
 
-type Page = 'rules' | 'zones' | 'objects' | 'sets' | 'versions' | 'deploy' | 'admin';
-type CsTab = 'changes' | 'preview' | 'order' | 'approval' | 'policy';
+type Page = 'rules' | 'zones' | 'objects' | 'sets' | 'versions' | 'deploy' | 'admin' | 'recovery';
+type CsTab = 'about' | 'changes' | 'preview' | 'order' | 'approval' | 'policy';
 const typing = () => { const el = document.activeElement as HTMLElement | null; return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable || !!el.closest('.ag-root-wrapper')); };
 
 export default function Console() {
@@ -46,6 +52,9 @@ export default function Console() {
   const se = useSession(); const adminNav = useAdminNav(); const [adminSec, setAdminSec] = useState<AdminSec>('setup');
   const rf = useReadFilter(s.rules, pv.affected.map(a => a.zone), s.edits.length > 0); const ro = se.readOnly;
   const [page, setPage] = useState<Page>('rules');
+  const rec = useRec(); const cs43 = useCs(); const sw = useCsSwitch();   // issue 43
+  // Recovery mode opens on its screen when it starts during the session; a deep link sets the page itself.
+  const recWas = useRef(rec.on); useEffect(() => { if (rec.on && !recWas.current) setPage('recovery'); if (!rec.on && page === 'recovery') setPage('rules'); recWas.current = rec.on; }, [rec.on]);
   const [lens, setLens] = useState<{ zid: string; dir: 'in' | 'out' } | null>(null);
   const [filter, setFilter] = useState<FilterKey>('all'); const [q, dq, setQ] = useDebounced();
   const [dense, setDense] = useState(false); const [bands, setBands] = useState(true);
@@ -96,10 +105,15 @@ export default function Console() {
     'as-viewer': 'as=viewer', 'as-editor': 'as=editor', 'as-approver': 'as=approver', 'as-env-admin': 'page=admin&sec=access&as=envadmin', 'no-access': 'as=none', 'zones-as-approver': 'page=zones&as=approver',
     // issue 37: ?page=deploy&dtab=deployments|drift&env=prod|nonprod|sandbox, ?deployment=<id>, ?onboardMany=c903,c904
     'deployments': 'page=deploy', 'drift': 'page=deploy&dtab=drift', 'deployment': 'deployment=d-1289-prod', 'deployment-running': 'deployment=d-1290-prod', 'deployment-failed': 'deployment=d-1289-prod',
-    'deployment-terraform': 'deployment=d-1290-nonprod', 'onboard-import': 'onboardMany=c903', 'onboard-many': 'onboardMany=c903,c904,c905', 'environment-terraform': 'page=admin&sec=envs&env=nonprod' };
+    'deployment-terraform': 'deployment=d-1290-nonprod',
+    // issue 43: ?rec=marker|version|identity|manual starts Recovery mode; ?cs=new opens a second Change set
+    'recovery': 'rec=marker&page=recovery', 'recovery-identity': 'rec=identity&page=recovery', 'recovery-manual': 'rec=manual&page=recovery', 'recovery-version': 'rec=version&page=recovery',
+    'recovery-band': 'rec=marker&page=rules', 'recovery-signin': 'rec=marker&as=editor', 'start-recovery': 'page=admin&sec=instance', 'change-sets': 'page=sets', 'change-set-details': 'dock=about', 'onboard-import': 'onboardMany=c903', 'onboard-many': 'onboardMany=c903,c904,c905', 'environment-terraform': 'page=admin&sec=envs&env=nonprod' };
   useEffect(() => { const p = new URLSearchParams(HASH[location.hash.slice(1)] ?? location.search); const zid = p.get('zone'); const pg = p.get('page'); const zt = p.get('ztab'); const b = p.get('bands');
     if (zid && zoneById.has(zid)) { openZone(zid); if (p.get('dir') === 'out') setLens({ zid, dir: 'out' }); if (zt === 'flows' || zt === 'settings') setTimeout(() => setZtab(zt), 0); if (b) setTimeout(() => setOpenBands(new Set(b.split(',').map(x => `sys-${x}`))), 0); }
-    if (pg === 'zones' || pg === 'objects' || pg === 'sets' || pg === 'versions' || pg === 'deploy' || pg === 'admin') setPage(pg);
+    const rc = p.get('rec') as Trigger | null; if (rc) { recWas.current = true; startRec(rc, rc === 'manual' ? { by: 'Robin Hale', reason: 'The database server is restored from backup tonight; checking Azure first.', since: '08:02' } : {}); }
+    if (pg === 'zones' || pg === 'objects' || pg === 'sets' || pg === 'versions' || pg === 'deploy' || pg === 'admin' || pg === 'recovery') setPage(pg);
+    if (p.get('dock') === 'about') setDock(d => ({ ...d, open: true, tab: 'cs', cs: 'about' }));
     const sec = p.get('sec'); if (sec) setAdminSec(sec as AdminSec); const as = p.get('as'); if (as) se.setPersona(as);
     const oc = candidates.find(c => c.id === p.get('onboard')); if (oc) { setPage('zones'); if (oc.nsg && !oc.reason) setOnbIds([oc.id]); else setOnb(oc); }   // issue 37: with an existing NSG, the wide onboarding screen
     const ob = p.get('obj'); if (ob) openObject(ob);
@@ -131,18 +145,19 @@ export default function Console() {
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h);
   });
 
-  const nav: [Page, string, JSX.Element][] = [['rules', 'Rules', <TextBulletListSquare20Regular />], ['zones', 'Zones', <Grid20Regular />], ['objects', 'Objects', <Box20Regular />], ['sets', 'Change sets', <BranchFork20Regular />], ['versions', 'Versions', <History20Regular />], ['deploy', 'Deployments', <CloudArrowUp20Regular />], ['admin', adminNav.label, <ShieldPerson20Regular />]];
+  const nav: [Page, string, JSX.Element][] = [...(rec.on ? [['recovery', 'Recovery', <DatabaseWarning20Regular />] as [Page, string, JSX.Element]] : []), ['rules', 'Rules', <TextBulletListSquare20Regular />], ['zones', 'Zones', <Grid20Regular />], ['objects', 'Objects', <Box20Regular />], ['sets', 'Change sets', <BranchFork20Regular />], ['versions', 'Versions', <History20Regular />], ['deploy', 'Deployments', <CloudArrowUp20Regular />], ['admin', adminNav.label, <ShieldPerson20Regular />]];
   const chips: [FilterKey, string][] = [['all', 'All'], ['deny', 'Deny'], ['disabled', 'Disabled'], ['expiring', 'Expiring'], ['findings', 'With findings'], ['unused', 'No hits'], ['layers', 'Layer warnings'], ['imported', 'Import notes']];
-  const showBar = s.edits.length > 0 || s.state !== 'Open';
+  const showBar = s.edits.length > 0 || s.state !== 'Open' || openMine(cs43).length > 1;   // issue 43: the switcher stays reachable
 
   // A principal without any Role sees only the no-access page (ADR 0013).
+  if (rec.on && !se.persona.entraAdmin) return <><RecoverySignIn /><div className="na-proto"><ProtoButton /></div></>;   // issue 43
   if (se.persona.id === 'none') return <><NoAccessPage /><SessionLayer changeSet="CHG-5120" /><div className="na-proto"><ProtoButton /></div></>;
 
   return (
     <div className="app">
       <nav className="rail" aria-label="Main">
         <Brand />
-        {nav.map(([k, label, icon]) => <button key={k} className={`rail-b ${page === k ? 'on' : ''}`} aria-current={page === k} onClick={() => setPage(k)}>{icon}<span>{k === 'sets' && lang === 'de' ? 'Pakete' : t(label)}</span>{k === 'admin' && adminNav.worst !== 'ok' && <i className={`hpip h-${adminNav.worst}`} />}{k === 'deploy' && deployNav.worst !== 'ok' && <i className={`hpip h-${deployNav.worst}`} />}</button>)}
+        {nav.map(([k, label, icon]) => <button key={k} className={`rail-b ${page === k ? 'on' : ''} ${k === 'recovery' ? 'rc-rail' : ''}`} aria-current={page === k} onClick={() => setPage(k)}>{icon}<span>{k === 'sets' && lang === 'de' ? 'Pakete' : t(label)}</span>{k === 'admin' && adminNav.worst !== 'ok' && <i className={`hpip h-${adminNav.worst}`} />}{k === 'deploy' && deployNav.worst !== 'ok' && <i className={`hpip h-${deployNav.worst}`} />}</button>)}
         <span className="rail-sp" />
         <ProtoButton />
         <InboxButton onOpen={() => setPage('sets')} />
@@ -156,6 +171,7 @@ export default function Console() {
       </nav>
 
       <div className="main">
+        {page !== 'recovery' && <RecoveryBand onOpen={() => setPage('recovery')} />}
         <div className="work">
           <section className="content">
             {page === 'rules' && <>
@@ -210,6 +226,7 @@ export default function Console() {
             {page === 'versions' && <><header className="phead"><h1>{t('Versions')}</h1><span className="sub">{t('Every committed Version: what it changed, its Deployments, Revert and Restore.')}</span></header><VersionsPage /></>}
             {page === 'deploy' && <DeploymentsPage tab={dtab} setTab={setDtab} env={denv} setEnv={setDenv} sel={dsel} />}
             {page === 'admin' && <AdminPage sec={adminSec} setSec={setAdminSec} onZones={() => setPage('zones')} onRule={jumpToRule} onReview={() => setReview(true)} />}
+            {page === 'recovery' && <RecoveryPage />}
             {page === 'sets' && <><header className="phead"><h1>{t('Change sets')}</h1><span className="sub">{t('What waits for you, and where every Change set stands.')}</span></header><ChangeSetsPage onFilter={k => { setPage('rules'); setLens(null); setFilter(k); }} onReview={() => { setPage('rules'); openDock('cs', 'preview'); }} /></>}
           </section>
 
@@ -220,9 +237,9 @@ export default function Console() {
                 <span className="sp" /><button className="ib" title={t('Close')} onClick={() => setDock({ ...dock, open: false, auto: false })}><Dismiss16Regular /></button>
               </div>
               {dock.tab === 'obj' && objId ? <div className="dock-b"><ObjectEditor id={objId} onZone={openZone} onShowRules={name => { setPage('rules'); setLens(null); setFilter('all'); setQ(name); }} /></div> : dock.tab === 'rule' ? <div className="dock-b"><RuleEditor id={focused} fresh={fresh} onMoveTo={setMoveIds} onMoveToFolder={setFolderFor} onZone={openZone} onObject={openObject} /></div> : <>
-                <div className="subtabs">{(['changes', 'preview', 'order', 'approval', 'policy'] as CsTab[]).map(k => <button key={k} className={dock.cs === k ? 'on' : ''} onClick={() => setDock({ ...dock, cs: k })}>{k === 'order' && lang === 'de' ? 'Reihenfolge' : t({ changes: 'Changes', preview: 'Preview', order: 'Write order', approval: 'Approval', policy: 'Policy' }[k])}{k === 'order' && pv.unorderable ? <Warning16Filled className="b-red" /> : null}</button>)}</div>
+                <div className="subtabs">{(['about', 'changes', 'preview', 'order', 'approval', 'policy'] as CsTab[]).map(k => <button key={k} className={dock.cs === k ? 'on' : ''} onClick={() => setDock({ ...dock, cs: k })}>{k === 'order' && lang === 'de' ? 'Reihenfolge' : t({ about: 'Details', changes: 'Changes', preview: 'Preview', order: 'Write order', approval: 'Approval', policy: 'Policy' }[k])}{k === 'order' && pv.unorderable ? <Warning16Filled className="b-red" /> : null}</button>)}</div>
                 <div className="dock-b">
-                  {dock.cs === 'changes' && <ChangesList onFocus={jumpToRule} />}{dock.cs === 'preview' && <PreviewView pv={pv} />}{dock.cs === 'order' && <WriteOrderView pv={pv} />}
+                  {dock.cs === 'about' && <CsAbout />}{dock.cs === 'changes' && <ChangesList onFocus={jumpToRule} />}{dock.cs === 'preview' && <PreviewView pv={pv} />}{dock.cs === 'order' && <WriteOrderView pv={pv} />}
                   {dock.cs === 'approval' && <ApprovalView pv={pv} />}{dock.cs === 'policy' && <PolicyView pv={pv} />}
                 </div>
               </>}
@@ -238,7 +255,7 @@ export default function Console() {
         {showBar && <CommitBar onOpen={cs => openDock('cs', cs)} onReview={() => setReview(true)} />}
       </div>
 
-      {palette && <Palette mode={palette} onClose={() => setPalette(false)} run={{ all: () => { setPage('rules'); setLens(null); }, rule: jumpToRule, zone: openZone, page: setPage, newRule, review: () => setReview(true), theme: toggle, lang: () => setLang(lang === 'en' ? 'de' : 'en') }} />}
+      {palette && <Palette mode={palette} onClose={() => setPalette(false)} run={{ newSet: () => { sw.newSet(); openDock('cs', 'about'); }, all: () => { setPage('rules'); setLens(null); }, rule: jumpToRule, zone: openZone, page: setPage, newRule, review: () => setReview(true), theme: toggle, lang: () => setLang(lang === 'en' ? 'de' : 'en') }} />}
       <MoveDialog ids={moveIds} onClose={() => setMoveIds(null)} />
       <SessionLayer changeSet="CHG-5120" />
       {onb && <OnboardPanel c={onb} onClose={() => setOnb(null)} onDone={zid => { setOnb(null); openZone(zid); setZtab('settings'); }} />}
@@ -258,14 +275,14 @@ function CommitBar({ onOpen, onReview }: { onOpen: (tab: CsTab) => void; onRevie
   );
   return (
     <footer className={`cbar ${pv.unorderable || deny ? 'blocked' : ''}`}>
-      <b>CHG-5120</b>
+      <CsSwitcher onAbout={() => onOpen('about')} />
       <Track at={ap.eff === 'Approved' ? 3 : s.state === 'Submitted' ? 2 : 0} />
       <button onClick={() => onOpen('changes')}><b>{s.edits.length}</b>{t(s.edits.length === 1 ? 'edit' : 'edits')}</button>
       <button onClick={() => onOpen('preview')}>{pv.nsgs.length ? <><b>{pv.nsgs.length}</b>{t('Managed NSGs change')}</> : t('Nothing changes in Azure')}</button>
       {pv.nsgs.length > 0 && <button onClick={() => onOpen('order')} className={pv.unorderable ? 'bad' : ''}>{pv.unorderable ? <><Warning16Filled />{t('Cannot be ordered')}</> : <><b>{Math.max(1, pv.steps.length)}</b>{t(pv.steps.length > 1 ? 'write steps' : 'write step')}</>}</button>}
       <button onClick={() => onOpen('approval')}>{need.length ? <><b>{got}/{need.length}</b>{t('Approvals')}</> : t('No Approval needed')}</button>
       {deny > 0 && <button className="bad" onClick={() => onOpen('policy')}><ShieldError16Filled /><b>{deny}</b>{t('Policy finding blocks')}</button>}
-      <BarFlags pv={pv} />
+      <BarFlags pv={pv} /><DescFlag onOpen={() => onOpen('about')} />
       <span className="sp" />
       {g.commit && <span className="commit-why"><LockClosed12Regular />{t(g.commit)}</span>}
       <CsButtons pv={pv} onReview={onReview} onPolicy={() => onOpen('policy')} />
@@ -296,12 +313,12 @@ function FolderPicker({ ids, onClose, onDone }: { ids: string[]; onClose: () => 
 }
 
 // ---------- Jump palette (Ctrl K): every Rule, Zone and action from one field.
-type Run = { all: () => void; rule: (id: string) => void; zone: (zid: string) => void; page: (p: Page) => void; newRule: () => void; review: () => void; theme: () => void; lang: () => void };
+type Run = { newSet: () => void; all: () => void; rule: (id: string) => void; zone: (zid: string) => void; page: (p: Page) => void; newRule: () => void; review: () => void; theme: () => void; lang: () => void };
 function Palette({ onClose, run, mode }: { onClose: () => void; run: Run; mode: 'all' | 'zone' }) {
   const s = useStore(); const { t } = useT(); const [q, setQ] = useState(''); const [i, setI] = useState(0);
   const items = useMemo(() => {
     const ql = q.trim().toLowerCase(); const out: { group: string; label: string; sub?: string; kind?: string; go: () => void }[] = [];
-    const cmds: [string, () => void][] = [['New Rule', run.newRule], ['Review Change set', run.review], ['Go to Rule base', () => run.page('rules')], ['Go to Zones', () => run.page('zones')],
+    const cmds: [string, () => void][] = [['New Rule', run.newRule], ['New Change set', run.newSet], ['Review Change set', run.review], ['Go to Rule base', () => run.page('rules')], ['Go to Zones', () => run.page('zones')],
       ['Go to Objects', () => run.page('objects')], ['Go to Change sets', () => run.page('sets')], ['Go to Versions', () => run.page('versions')], ['Go to Admin', () => run.page('admin')], ['Switch light and dark mode', run.theme], ['Switch language', run.lang]];
     if (mode === 'zone') out.push({ group: 'Actions', label: t('All Zones: show the whole Rule base'), go: run.all });
     else cmds.filter(([l]) => !ql || t(l).toLowerCase().includes(ql)).slice(0, ql ? 4 : 8).forEach(([l, go]) => out.push({ group: 'Actions', label: t(l), go }));

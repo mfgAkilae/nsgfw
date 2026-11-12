@@ -10,6 +10,8 @@ import { envs, zoneById, entries as baseEntries } from './data';
 import { useApproval, usePreview } from './ChangeViews';
 import { useFindings } from './Policy';
 import { useFlow, useCsId, CUR, CUR_NAME, TOOL_PATHS, nowLabel } from './flow';
+import { useCsSwitch, useCsGate } from './CsManage';   // issue 43
+import { useRec } from './rec43';
 import { useT } from './i18n';
 import { useSession, useGate, StepUpLock } from './session';   // issue 38: step-up and the Commit gate per Affected Zone
 
@@ -148,23 +150,25 @@ export function CsButtons({ pv, name = CUR_NAME, onReview, onPolicy, emergency =
   const need = a.byEnv.some(x => x.env.level !== 'none'); const rb = cs === CUR && !!f.pending; const sched = f.schedule[cs];
   const deny = fx.ran ? fx.blocking.length : 0; const stop = pv.unorderable || rb;
   // Discarding another Change set resets only its own store: the store's discard() also clears the current Change set's Zone and Object edits (issue 35).
-  const discard = cs === CUR ? s.discard : () => s.rebaseOnto(s.version, () => baseEntries, () => [], false);
+  const sw = useCsSwitch(); const cg = useCsGate(); const rec = useRec();   // issue 43: the description, the owner submits, Recovery mode stops Commits
+  const discard = cs === CUR ? sw.discard : () => s.rebaseOnto(s.version, () => baseEntries, () => [], false);
+  const own = cs === CUR; const descWhy = own ? cg.submitWhy : null; const recWhy = rec.on ? 'Recovery mode: no Commits until an InstanceAdmin ends it.' : null;
   const submit = () => { f.runCheck(cs, 'Submit', s.edits.length); if (fx.blocking.length) { onPolicy?.(); return; } if (tps.length) setDlg('submit'); else s.submit(); };
   const g = useGate(pv.affected, s.approvedBy);
   const ho = useHandover(); const snap = useSnapshot(); const hoOpen = cs === CUR && ho.needed && !ho.confirmed; const snapStale = cs === CUR && snap.stale;   // issue 37
-  const commitReady = s.edits.length > 0 && a.done && !stop && !deny && !g.commit && !snapStale;
+  const commitReady = s.edits.length > 0 && a.done && !stop && !deny && !g.commit && !snapStale && !recWhy && !(own && !need && cg.missing);
   return (
     <>
-      {emergency && need && <Button size="small" appearance="subtle" icon={<Flash16Regular />} disabled={!s.edits.length || pv.unorderable || !!g.emergency} title={g.emergency ? t(g.emergency) : undefined} onClick={() => setDlg('emergency')}>{t('Emergency Commit')}<StepUpLock /></Button>}
-      <Button size="small" appearance="subtle" onClick={discard} disabled={!s.edits.length}>{t('Discard')}</Button>
+      {emergency && need && <Button size="small" appearance="subtle" icon={<Flash16Regular />} disabled={!s.edits.length || pv.unorderable || !!g.emergency || !!recWhy || (own && cg.missing)} title={recWhy ? t(recWhy) : own && cg.missing ? t('Add a description first. It goes into the Version and the audit log.') : g.emergency ? t(g.emergency) : undefined} onClick={() => setDlg('emergency')}>{t('Emergency Commit')}<StepUpLock /></Button>}
+      <Button size="small" appearance="subtle" onClick={discard} disabled={!s.edits.length || (own && !cg.canDiscard)} title={own && !cg.canDiscard ? t('The Change set owner or an admin discards.') : undefined}>{t('Discard')}</Button>
       {onReview && <Button size="small" onClick={onReview}>{t('Review')}</Button>}
-      {s.state === 'Open' && need && <Button size="small" appearance="primary" icon={<Send16Regular />} disabled={!s.edits.length || stop || deny > 0 || hoOpen} onClick={submit} title={rb ? t('Resolve the conflicts of the Rebase first') : hoOpen ? t('Confirm the handover in the Review first') : undefined}>{t('Submit for Approval')}</Button>}
+      {s.state === 'Open' && need && <Button size="small" appearance="primary" icon={<Send16Regular />} disabled={!s.edits.length || stop || deny > 0 || hoOpen || !!descWhy} onClick={submit} title={rb ? t('Resolve the conflicts of the Rebase first') : hoOpen ? t('Confirm the handover in the Review first') : descWhy ? t(descWhy) : undefined}>{t('Submit for Approval')}</Button>}
       {s.state === 'Submitted' && !a.done && cs === CUR && <Button size="small" className="proto" onClick={() => s.approveAs('kim', a.byEnv.map(x => x.env.id))}>{t('Approve as kim (prototype)')}</Button>}
       {(s.state !== 'Open' || !need) && (sched
         ? <><span className="sched"><CalendarClock16Regular />{sched === QUEUED ? t('Waits for the Re-translation') : `${t('Scheduled for')} ${sched}`}</span><Button size="small" appearance="subtle" onClick={() => setDlg('commit')}>{t('Move')}</Button>
             <Button size="small" appearance="subtle" onClick={() => f.setSchedule(cs, undefined)}>{t('Cancel schedule')}</Button>
             {sched !== QUEUED && <Button size="small" className="proto" onClick={() => { f.setSchedule(cs, undefined); const n = s.version + 1; s.commit(); f.bumpLatest({ n, name, by: 'you', at: sched, kind: 'scheduled', nsgs: pv.nsgs.length, edits: s.edits.length }); }}>{t('Run it now (prototype)')}</Button>}</>
-        : <Button size="small" appearance="primary" disabled={!commitReady} onClick={() => setDlg('commit')} title={snapStale ? t('Choose Re-import or Keep snapshot first') : g.commit ? t(g.commit) : wait.length && pv.nsgs.length ? t('Commits after the Re-translation') : undefined}>{t('Commit…')}</Button>)}
+        : <Button size="small" appearance="primary" disabled={!commitReady} onClick={() => setDlg('commit')} title={recWhy ? t(recWhy) : own && !need && cg.missing ? t('Add a description first. It goes into the Version and the audit log.') : snapStale ? t('Choose Re-import or Keep snapshot first') : g.commit ? t(g.commit) : wait.length && pv.nsgs.length ? t('Commits after the Re-translation') : undefined}>{t('Commit…')}</Button>)}
       <CommitDialog pv={pv} name={name} open={dlg === 'commit'} onClose={() => setDlg(null)} />
       <EmergencyDialog name={name} open={dlg === 'emergency'} onClose={() => setDlg(null)} />
       <SubmitConfirm open={dlg === 'submit'} onClose={() => setDlg(null)} onSubmit={s.submit} />

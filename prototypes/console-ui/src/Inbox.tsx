@@ -8,6 +8,7 @@ import { useT } from './i18n';
 import { useDeployInbox } from './Deployments';
 import { useDriftInbox } from './Drift';
 import { useImportInbox } from './ImportNote';
+import { useToolInbox } from './CsManage';   // issue 43
 
 type Kind = 'approval' | 'emergency' | 'conflict' | 'rejected' | 'expiry' | 'retrans' | 'deploy' | 'drift' | 'import';
 export interface Item { id: string; kind: Kind; text: string; when: string; action: string; go: () => void; tone?: string }
@@ -19,6 +20,7 @@ export const toneOf = (k: Kind) => kinds.find(x => x[0] === k)![2];
 export function useInbox(onFilter: (k: 'expiring') => void): Item[] {
   const f = useFlow(); const out: Item[] = [];
   const i37 = [...useDeployInbox(), ...useDriftInbox(), ...useImportInbox()];
+  const i43 = useToolInbox(() => document.querySelector('.cs-list')?.scrollIntoView({ behavior: 'smooth' }));   // issue 43
   if (f.pending) out.push({ id: 'conflict', kind: 'conflict', text: `Your Change set “${CUR_NAME}” needs a Rebase onto Version ${f.pending.version}: ${f.pending.mode === 'full' ? 3 : 1} ${f.pending.mode === 'full' ? 'conflicts' : 'conflict'}. ${f.pending.by} committed “${f.pending.set}”.`, when: 'just now', action: 'Resolve', go: () => f.setRebaseOpen(true) });
   if (!f.decisions['cs-2'] && f.latest < 1291) out.push({ id: 'cs-2', kind: 'approval', text: 'kim asks you to approve “Q4 cleanup of expired Rules”: 63 Affected Zones, Production at four-eyes. jo approved Non-production.', when: 'yesterday 16:20', action: 'Review', go: () => f.openCs('cs-2') });
   if (!f.decisions['cs-5']) out.push({ id: 'cs-5', kind: 'emergency', text: 'sam made an Emergency Commit, Version 1287 “Hotfix: block ext-partner-0339”. It is in Azure and needs an Approval afterwards.', when: 'yesterday 09:41', action: 'Review', go: () => f.openCs('cs-5') });
@@ -26,6 +28,7 @@ export function useInbox(onFilter: (k: 'expiring') => void): Item[] {
   if (f.retrans && !f.decisions['rt-1']) out.push({ id: 'rt-1', kind: 'retrans', text: 'Engine 1.6.0 translates the Rule base differently in Production. The Re-translation needs your Approval; Commits that change Production wait for it.', when: 'today 06:00', action: 'Review', go: () => f.openCs('rt-1') });
   if (f.csState['cs-6'] !== 'Submitted') out.push({ id: 'cs-6', kind: 'rejected', text: 'jo rejected your Change set “Open RDP for vendor”: “Use the jump hosts, not RDP from the Internet.”', when: 'yesterday 16:02', action: 'Open', go: () => f.openCs('cs-6') });
   out.push({ id: 'exp', kind: 'expiry', text: '14 of your Rules expire within 7 days. The tool turns expired allow Rules off without Approval; expired deny Rules get a Change set.', when: 'today 07:00', action: 'Show Rules', go: () => onFilter('expiring') });
+  i43.forEach(x => out.push(x));
   i37.forEach(x => out.push({ id: x.id, kind: x.kind, text: x.text, when: x.when, action: x.action, go: x.go, tone: x.tone }));
   return out;
 }

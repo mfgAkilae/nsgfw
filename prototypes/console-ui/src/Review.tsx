@@ -10,6 +10,8 @@ import { Track } from './Pages';
 import { Chip } from './ObjectPicker';
 import { useT } from './i18n';
 import { useSession } from './session';
+import { CUR_NAME } from './flow';   // issue 43: the name follows the current Change set
+import { CsLine } from './CsManage';
 
 // Issue 36: the same screen serves the approver and the other Change sets; each part can be replaced.
 export function Review({ onClose, onRule, title, summary, banner, left, middle, right, track, warnAt, readOnly }: { onClose: () => void; onRule: (id: string) => void; title?: string; summary?: ReactNode; banner?: ReactNode;
@@ -23,7 +25,7 @@ export function Review({ onClose, onRule, title, summary, banner, left, middle, 
   return (
     <div className="review" role="dialog" aria-label={t('Review')}>
       <header className="rv-h">
-        <div><h1>{t('Review')} {title ?? 'CHG-5120 Release app0042'}</h1>
+        <div><h1>{t('Review')} {title ?? CUR_NAME}</h1>{!title && <CsLine />}
           <p>{summary ?? <>{ruleCount} {t(ruleCount === 1 ? 'Rule' : 'Rules')} {t('changed')}. {pv.nsgs.length} {t('Managed NSGs change')} {t('in')} {ap.byEnv.length} {t(ap.byEnv.length === 1 ? 'Environment' : 'Environments')}. {pv.unorderable ? t('Cannot be ordered') : `${Math.max(1, pv.steps.length)} ${t(pv.steps.length > 1 ? 'write steps' : 'write step')}`}. {need ? `${need} ${t('Approvals')}` : t('No Approval needed')}.</>}</p></div>
         <span className="sp" /><Track at={track ?? (s.state === 'Committed' ? 4 : ap.eff === 'Approved' ? 3 : s.state === 'Submitted' ? 2 : 0)} warnAt={warnAt} labels />
         <button className="ib" title={t('Close')} onClick={onClose}><Dismiss20Regular /></button>

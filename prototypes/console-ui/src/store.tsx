@@ -10,6 +10,7 @@ export interface Edit { seq: number; kind: 'add' | 'edit' | 'move' | 'delete' | 
 export interface St { added?: boolean; deleted?: boolean; moved?: boolean; changed?: Set<string> }
 export interface ChangeSet { id: string; name: string; owner: string; state: CsState; base: number; authors: string[]; edits: number; affected: number; rebase?: boolean; emergency?: boolean; scheduled?: string; mine?: boolean }
 export type Scenario = 'auto' | 'crossing' | 'unorderable';
+export interface Snapshot { entries: Entry[]; edits: Edit[]; state: CsState; approvedBy: Record<string, string>; version: number; emergency: string | null; space: string[]; seq: number }
 
 export const otherSets: ChangeSet[] = [
   { id: 'cs-2', name: 'Q4 cleanup of expired Rules', owner: 'kim', state: 'Submitted', base: 1290, authors: ['kim'], edits: 14, affected: 63 },
@@ -184,6 +185,10 @@ export function useStoreValue() {
       setEntries(fixEntries); setEdits(es => fixEdits(es, () => ++seq.current)); setVersion(v);
       if (!keep) { setState('Open'); setApprovedBy({}); }
     },
+    // Issue 43: switching the current Change set. The store holds one Change set at a time; the others wait as snapshots.
+    snapshot(): Snapshot { return { entries, edits, state, approvedBy, version, emergency, space, seq: seq.current }; },
+    load(x?: Snapshot) { setEntries(x?.entries ?? initialEntries); setEdits(x?.edits ?? []); setState(x?.state ?? 'Open'); setApprovedBy(x?.approvedBy ?? {});
+      setVersion(x?.version ?? version); setEmergency(x?.emergency ?? null); setSpace(x?.space ?? initialSpace); seq.current = x?.seq ?? seq.current; },
   };
   return api;
 }

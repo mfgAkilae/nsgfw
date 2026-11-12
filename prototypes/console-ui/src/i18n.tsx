@@ -6,6 +6,7 @@ import { deZone } from './i18n-zone';
 import { deDeploy } from './i18n-deploy';
 import { deDrift } from './i18n-drift';
 import { deImport } from './i18n-import';
+import { de43 } from './i18n43';
 
 const de: Record<string, string> = {
   'Rule base': 'Regelwerk', 'Rule': 'Regel', 'Zones': 'Zonen', 'Zone': 'Zone', 'Objects': 'Objekte', 'Change sets': 'Änderungspakete',
@@ -89,6 +90,7 @@ Object.assign(de, de36);   // issue 36
 Object.assign(de, deZone);
 // Issue 37: Deployments, Drift, onboarding with Import.
 Object.assign(de, deDeploy, deDrift, deImport);
+Object.assign(de, { ...de43, ...de });   // issue 43: existing terms win where a key is shared
 type T = (key: string) => string;
 const Ctx = createContext<{ lang: 'en' | 'de'; setLang: (l: 'en' | 'de') => void; t: T }>({ lang: 'en', setLang: () => {}, t: k => k });
 export function LangProvider({ children }: { children: ReactNode }) {

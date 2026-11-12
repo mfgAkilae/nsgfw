@@ -8,6 +8,7 @@ import { personas } from './access';
 import { useFlow } from './flow';
 import { perfBus } from './bits';
 import { useOps, setOps, type Ops37 } from './ops37';   // issue 37
+import { useRec, setRec, startRec, type Trigger } from './rec43';   // issue 43
 
 export function ProtoButton() {
   const s = useStore(); const se = useSession(); const f = useFlow(); const [perf, setPerf] = useState('');
@@ -53,6 +54,7 @@ export function ProtoButton() {
           <p className="muted">Both first add the edits the conflicts need to your Change set.</p>
         </div>
         <Proto37 />
+        <Proto43 />
         {perf && <p className="muted" style={{ margin: '10px 0 0' }}>{perf}</p>}
       </PopoverSurface>
     </Popover>
@@ -70,4 +72,17 @@ function Proto37() {
   const o = useOps();
   return <div className="proto-36"><b>Issue 37</b>{ops37.map(([k, label]) => <label key={k}><input type="checkbox" checked={o[k]} onChange={e => setOps({ [k]: e.target.checked })} /> {label}</label>)}
     <p className="muted">Deep links: #deployments, #drift, #deployment-running, #deployment-failed, #deployment-terraform, #onboard-import, #onboard-many, #environment-terraform.</p></div>;
+}
+
+// Issue 43: Recovery mode and Change set management.
+function Proto43() {
+  const r = useRec(); const se = useSession();
+  const go = (k: Trigger) => { startRec(k, k === 'manual' ? { by: se.user.name, reason: 'The database server is restored from backup tonight; checking Azure first.' } : {}); };
+  return <div className="proto-36"><b>Issue 43</b>
+    <span>Start Recovery mode, as nsgfw would:</span>
+    <button onClick={() => go('marker')}>after a recovery with a restore marker</button>
+    <button onClick={() => go('version')}>because Azure carries newer Version tags</button>
+    <button onClick={() => go('identity')}>because the Tool identity changed (Move or Copy)</button>
+    {r.on && <button onClick={() => setRec({ on: false })}>Turn it off without a reason (prototype)</button>}
+    <p className="muted">Admin &gt; Instance starts it by hand. While it is on, sign in as anyone but the Instance admin to see their page. Deep links: #recovery, #recovery-identity, #recovery-manual, #recovery-band, #recovery-signin, #change-sets, #change-set-details.</p></div>;
 }

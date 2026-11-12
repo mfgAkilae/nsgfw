@@ -6,7 +6,9 @@ import { useStore, Store, alsoChanged } from './store';
 import './app36.css';
 
 export const CUR = 'CHG-5120';
-export const CUR_NAME = 'CHG-5120 Release app0042';
+// Issue 43: the name follows the current Change set (its ID and description). A live binding, so every import sees the switch.
+export let CUR_NAME = 'CHG-5120 Release app0042';
+export const setCurName = (n: string) => { CUR_NAME = n; };
 export const nowLabel = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 export interface Waiver { by: string; reason: string; at: string }

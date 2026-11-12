@@ -1,6 +1,7 @@
 // PROTOTYPE, throwaway. Settings and setup (issue 38): Environments with their settings and the onboarding step that shows the role
 // assignments to create and checks them, the instance settings, and the alert channel. Settings are direct, audited changes; only the
 // Internal address space is part of the Rule base and changes through a Change set.
+import { StartRecovery } from './Recovery';   // issue 43
 import { useState } from 'react';
 import { DataContractSection } from './Deployments';   // issue 37
 import { Button, Input, Switch, Textarea, Spinner } from '@fluentui/react-components';
@@ -214,6 +215,7 @@ export function InstanceSettings({ onReview }: { onReview: () => void }) {
         <div className="frow"><label>{t('Exposure')}</label><div><b>{t('Public ingress with an IP filter')}</b> <span className="muted">· 198.51.100.0/24, 203.0.113.16/28, 192.0.2.10</span>
           <p className="muted">{t('Set in the instance Terraform module. nsgfw cannot change its own ingress; the default is private.')}</p></div></div></section>
 
+      <StartRecovery />   {/* issue 43 */}
       <section className="set"><h3>{t('Identity')}</h3>
         <dl className="kv wide"><dt>{t('Instance ID')}</dt><dd className="mono">a1c4e9f2-63d0-4b7e-9e1a-5f0c2b8d7a31</dd>
           <dt>{t('Tool identity')}</dt><dd>{se.onPrem ? t('Service principal of the app registration, certificate from a PEM file') : t('User-assigned managed identity, also the federated credential of the app registration')} <span className="mono muted">· {t('object ID')} 5e7f…c03a</span></dd>

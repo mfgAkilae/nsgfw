@@ -30,6 +30,7 @@ pnpm dev          # http://localhost:5199/  (?theme=dark|light, ?lang=de)
 9. Zone detail, Flow view and object editors ([Prototype: Zone detail, Flow view and object editors](https://github.com/mfgAkilae/nsgfw/issues/35)), see below. Code in `ZoneDetail.tsx`, `ObjectEditor.tsx`, `Onboard.tsx`, `zonedata.ts`, `zone.css`, `i18n-zone.ts`.
 10. After the author: [Prototype: Change set review, conflicts and Version history](https://github.com/mfgAkilae/nsgfw/issues/36). The approver decides on the Review screen, a Rebase with conflicts has a screen of its own, Policy findings come in full with the Pre-check waiver, Commit always opens a short dialog, the Versions page starts Restore and Revert, and the bell leads to the inbox in full. See [Change set review, conflicts and Version history](#change-set-review-conflicts-and-version-history-issue-36).
 11. After the Commit: [Prototype: Deployment, Drift and Import views](https://github.com/mfgAkilae/nsgfw/issues/37). A Deployments entry in the rail with a status strip per Environment, the Deployment history and a Drift tab; a wide Deployment view per Commit; a wide onboarding screen with the Import choices; Import notes on Rules; the Import snapshot and the foreign-IaC Handover. See [Deployments, Drift and Import](#deployments-drift-and-import-issue-37).
+12. Recovery mode and Change set management: [Prototype: Recovery mode and Change set management views](https://github.com/mfgAkilae/nsgfw/issues/43). See [Recovery mode and Change set management](#recovery-mode-and-change-set-management-issue-43).
 
 The map owner called the third pass clearly better and asked for two more, then for Folders and two further passes. The brief for the third pass: much better design, dark and light mode, clear and very pleasant to look at, functional, and as few clicks as possible to the main functions.
 
@@ -248,3 +249,25 @@ Measured in headless Chromium on the dev machine, dev build:
 - Grid option objects and callbacks need a stable identity. If the console re-renders between two clicks with new option objects, the grid rebuilds its columns and swallows the double click that starts editing. The same holds for `redrawRows`: mark the focused row with a style rule instead.
 - Never set `position` on a cell class: cells are absolutely positioned, and one relative cell pushes the rest of the row down.
 - The current major is 36; the prototype pins 33.3.2. Check the changes before building.
+
+## Recovery mode and Change set management (issue 43)
+
+Decided with the map owner on 2026-11-12 before building:
+
+- **Recovery mode has a screen of its own.** While the mode lasts, the rail gets a Recovery entry on top, the console opens there, and every other page shows an amber band ("Nothing reaches Azure except Overwrite"). Without the mode both are gone.
+- **The description is asked at Submit, not up front.** The commit bar shows "Description missing" in amber, the field sits on top of the Details tab of the Change set panel and on top of the Review. Submit, and a Commit at the level none, wait for it. The ticket reference stays optional.
+- **A switcher in the commit bar.** The Change set name is a menu of the person's open Change sets and "New Change set". The Change sets page also has "Make current".
+- **Hand-over: the former owner stays a co-editor.**
+
+Built on top, for review:
+
+- **Recovery screen**: left, what happened (the trigger, database Version against the highest Version tag in Azure), what is off (sign-in, Commits and Deployments with the stopped Deployment, cleared schedules, expiry, automatic Overwrite and Adopt, pull requests in Terraform Environments) and what still runs, the ID jump and the recovery entry of the audit chain. Middle, the differences in three groups (changed in Azure, unknown to the database, missing in Azure) with Environment chips and progress. Right, one difference: database against Azure, what the audit export shows about lost Rules, and the ways out: Overwrite or Re-create (ARM only, one write now, with the flows it closes or opens), Adopt (a Change set that waits until the mode ends; locked where the NSG rule belongs to a lost Rule), Onboard again with Import for a lost onboarding, Confirm (Terraform), Leave as Drift.
+- **Move or Copy** when the Tool identity changed: recorded against running identity, a checklist for Move, and after Copy one Handover per Environment. Nothing can be resolved and the mode cannot end before the choice.
+- **End Recovery mode** with a reason: what stays ordinary Drift, what starts again, which cleared schedules stay cleared. **Start Recovery mode** by hand in Admin > Instance, with a reason. Health shows the mode.
+- **Other Roles** see a page instead of the console: since when, why, that only InstanceAdmin signs in, that work after the restore point may be gone, and the access contact.
+- **Details tab** of the Change set panel: description, ticket reference, Change set owner with Hand over, co-editors with Add and Remove, the Authors with their edits, New Change set and Discard Change set.
+- **All Change sets**: chips Yours, All, every state including Discarded, and By the tool, with a search. Rows show owner and co-editors, ID, description, ticket and state. Change sets of the tool carry Take over (any editor; an admin of the Affected Zones once rejected or in conflict) and Dismiss with a reason (admins, only when rejected or in conflict). The inbox lists the ones that wait for an admin.
+
+Simplifications: the other Change sets of the person are snapshots of the one in-memory store, so Zone and Object edits (issue 35) and the issue 36 state (schedule, waivers) stay with the current slot. A taken-over Change set of the tool cannot be made current. Mock data strings of the differences stay English in German.
+
+Deep links: `#recovery`, `#recovery-identity`, `#recovery-manual`, `#recovery-band`, `#recovery-signin`, `#start-recovery`, `#change-sets`, `#change-set-details`. The flask has the triggers under "Issue 43".
