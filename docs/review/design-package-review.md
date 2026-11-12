@@ -319,3 +319,24 @@ The map owner decided all 46 points on 2026-11-12 in one grilling round, asked i
 - Q40: all five Rule checks stay in the MVP, not three. Management ports are an instance setting with the default TCP 22, 3389, 5985 and 5986. "Very many Managed NSGs" is an instance setting with the default 100. This is one more addition beyond the brief.
 
 **Deliberately left:** nothing. Every correction K1 to K31 was approved.
+
+**Decided in two follow-up rounds,** on details that came up while the outcome was written:
+
+- A deny Policy finding does not hold back a Commit of the tool that only closes traffic. The tool tries the write, and a write that Azure refuses fails on its own.
+- An Emergency Commit always creates its Version. Stage 2 of the pre-checks stops only the Deployment of an Environment with a problem.
+- A Change set of the tool whose Affected Zones have several Approval levels follows each Zone's own level. The tool commits on its own only when no Affected Zone is at the level none.
+- The test subscription of the empirical checks still exists. The nightly test needs a new principal.
+- Change set lifecycle: any editor who sees a Change set of the tool can take it over, and once it is rejected or conflicted only an admin of its Affected Zones; a dismissed one ends Discarded; a withdrawn Approval leaves the Change set Approved while another approver still covers the same Zones; an Emergency Commit goes directly from Open; "admin" for a Change set without Affected Zones means an admin of the instance Scope.
+- The 30 s follow any write of a Zone that holds a private endpoint, NSG or subnet, that another write waits for.
+- Batching in Terraform mode holds back the pull request, not the Version.
+- A blocking Import note also stops a Commit that needs no Submit.
+- The management-port warning counts port ranges and the service any when a management port lies inside, and a source group that contains any.
+- The badge "outbound restricted" marks a Zone whose Inherited default "outbound to Internet" is off.
+- The tool runs on the Consumption profile of a workload profiles environment.
+- The tool merges a pull request itself only when the Environment setting for it is on, which is off by default.
+
+**Restored, not newly decided:** an Adopt that only closes traffic stays automatic, and a Rule counts as changed when the Coverage of an Object it uses changes without an edit. Both were decided before the review and were missing from its first list.
+
+**Checked after writing:** an independent reader compared the written outcome with the decisions and found 17 places where a decision was missing in one file or differed between two. All are fixed.
+
+**Left to the increments,** because no design decision hangs on them: the value of the rate limit for principals without a Role; how the default HCL reads the tags that exist, and how azapi handles tags; what the Recovery check at startup covers, and how the tool knows that it has handled a restore marker; what "confirmed" means for a difference in a Terraform Environment in Recovery mode; how reads outside a Deployment count against the ARM read budget; how `*`, a service tag and a single prefix count in the 250,000 product; where the region data for private endpoint support lives; the hash function and key encoding of NSG rule names; which OpenTofu versions the tests run; whether Azure DevOps needs the same merge check as GitHub.
