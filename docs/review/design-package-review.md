@@ -14,6 +14,8 @@ The increment plan should not be cut yet. Three findings block it:
 
 Behind them sit 43 smaller decisions and a list of corrections that need no decision. The weakest part of the package is the trail of amended ADRs: 0004, 0009, 0010 and 0018 no longer say plainly what was decided.
 
+The map owner decided all 46 points on the same day. [Outcome](#outcome) records what was adopted and what was decided differently from the recommendation below.
+
 ## Method
 
 Seven independent reviewers, each with a fresh context and one lens, read the package without access to each other's work:
@@ -300,3 +302,20 @@ Recommended: write K1 to K31 as listed.
 - Three remarks rest on a reviewer's own knowledge and need a check when their increment starts: the references a network interface PUT re-sends (Q33), `Microsoft.Network/applicationGateways/read` for detecting Application Gateway v2 (Q33), and how azapi handles tags (Q34).
 - How concurrent audit inserts from `api` and `worker` keep one chain is left to the data model.
 - The German terms in `console.md` were not checked against the glossary.
+
+## Outcome
+
+The map owner decided all 46 points on 2026-11-12 in one grilling round, asked in rounds of four in plain language. The decided wording is in the resolution of [Review: Grill review of the complete design package](https://github.com/mfgAkilae/nsgfw/issues/23) and in the documents themselves.
+
+**Adopted as recommended:** Q1 to Q39 and Q41 to Q46, with these notes.
+
+- Q38: the map owner confirmed each of the five departures from the brief on its own.
+- Q43 and Q44 produced eight ADRs: 0022 (a Version exists from its Commit), 0023 (writes ordered by Crossing flows), 0024 (membership atoms in member steps), 0025 (the write order spans Environments), 0026 (Drift by Adopt or Overwrite), 0027 (Pre-check waiver), 0028 (Re-translation), 0029 (Retired NSG). ADR 0018 and ADR 0009 are superseded.
+- Q26 produced [Prototype: Recovery mode and Change set management views](https://github.com/mfgAkilae/nsgfw/issues/43).
+- Q41: the research files now live in `docs/research/`.
+
+**Decided differently:**
+
+- Q40: all five Rule checks stay in the MVP, not three. Management ports are an instance setting with the default TCP 22, 3389, 5985 and 5986. "Very many Managed NSGs" is an instance setting with the default 100. This is one more addition beyond the brief.
+
+**Deliberately left:** nothing. Every correction K1 to K31 was approved.
