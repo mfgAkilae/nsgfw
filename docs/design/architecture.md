@@ -1,6 +1,6 @@
 # Architecture proposal
 
-Status: draft from [Prototype: Architecture proposal][t26], 2026-11-10. It puts the decisions of the closed tickets and the ADRs into one picture. It decides only what the review round left to it: the tool's own subnets are not onboardable, and the minimum azurerm version is 3.39.0. Every other hole is listed under [Gaps for the map](#gaps-for-the-map) with the ticket that now holds it. On 2026-11-10 [Grilling: Operations: restore, exit, upgrades and exposure][t29] decided gaps 2 to 7, 11 and 12, and [Grilling: Server internals at the design target][t30] decided gaps 8, 9, 10, 13 and 15. The design-package review covers this document. Terms follow [GLOSSARY.md](../../GLOSSARY.md).
+Status: draft from [Prototype: Architecture proposal][t26], 2026-11-10. It puts the decisions of the closed tickets and the ADRs into one picture. It decides only what the review round left to it: the tool's own subnets are not onboardable. Every other hole is listed under [Gaps for the map](#gaps-for-the-map) with the ticket that now holds it. On 2026-11-10 [Grilling: Operations: restore, exit, upgrades and exposure][t29] decided gaps 2 to 7, 11 and 12, and [Grilling: Server internals at the design target][t30] decided gaps 8, 9, 10, 13 and 15. Amended on 2026-11-12 by [Review: Grill review of the complete design package][t23]: a fourth Azure role `nsgfw Flow Reader`, pinned Azure facts, pre-checks in two stages, the provider rule that replaces the minimum azurerm version 3.39.0 this draft had set, and the sections [Tests and CI](#tests-and-ci) and [Zone lifecycle and marker tags](#zone-lifecycle-and-marker-tags). Terms follow [GLOSSARY.md](../../GLOSSARY.md).
 
 ## What nsgfw is
 
@@ -37,21 +37,40 @@ flowchart LR
 
 ### Repository
 
-A pnpm workspace with TypeScript project references, ESM only, `strict`, MIT licence and only permissive open-source dependencies ([ADR 0002](../adr/0002-mit-licence-and-open-source-dependencies-only.md)).
+A pnpm workspace with TypeScript project references, ESM only, `strict`, MIT licence and only permissive open-source dependencies ([ADR 0002](../adr/0002-mit-licence-and-open-source-dependencies-only.md)). The licence rule covers the code shipped in the image and its npm build graph. ADR 0002 names the exceptions: the Terraform providers under MPL-2.0 (azurerm, azapi), fonts under OFL-1.1, and the Terraform CLI (BUSL-1.1 from 1.6) as a tool the operator runs, not a dependency. `infra/` and the default HCL are also tested on OpenTofu, so that no installation needs a BUSL tool ([Review: Grill review of the complete design package][t23]).
 
 | Path | Holds |
 |---|---|
 | `apps/server` | Fastify 5 API and worker, the notification channels (inbox, e-mail, webhooks), serves the web build |
 | `apps/web` | Vite and React 19 SPA, Fluent UI React v9, AG Grid Community for the Rule base table, react-intl for English and German, TanStack Query |
-| `packages/model` | Rule base types, Zod 4 schemas, validation with error codes and parameters, the evaluation function that the packet tracer will reuse |
-| `packages/engine` | the Translation engine with the Import mapping and the constraint merge, pure, no I/O |
+| `packages/model` | Rule base types, Zod 4 schemas, validation with error codes and parameters |
+| `packages/engine` | the Translation engine with the Import mapping, the constraint merge and the Rule base evaluation function that the packet tracer will reuse ([Translation engine](translation-engine.md#evaluate-the-rule-base-evaluation-function)), pure, no I/O |
 | `packages/contract` | the Data contract generator and the default HCL of the bootstrap pull request, pure, no I/O, with its own data contract version |
 | `packages/db` | Kysely table types, the migrations and the queries; the `migrate` role needs only this package |
 | `packages/azure` | the only code that calls Azure (`@azure/identity`, `@azure/arm-network`, `@azure/arm-resourcegraph`, raw requests through the same pipeline where the SDK lacks an option) |
 | `packages/git` | the only code that calls Git providers (GitHub App, Azure DevOps) |
-| `infra/` | Terraform for the tool itself: the `instance` and `environment-access` modules |
+| `infra/` | Terraform for the tool itself: the `instance` and `environment-access` modules, tested on Terraform and on OpenTofu |
 
 The Data contract has a package of its own because its format and the engine's output change independently: a new field format is not a new engine version. Only the server sends notifications, so they stay in `apps/server` ([Grilling: Server internals at the design target][t30]).
+
+### Tests and CI
+
+Decided in [Grilling: Tech stack and repository architecture][t10], points 11 and 12.
+
+- **Tests.** Vitest runs three projects: `unit` (engine and model, with the worked examples as fixtures), `db` (a real PostgreSQL in CI) and `azure` (against a test subscription, nightly or by hand, never per pull request). Playwright runs the UI end-to-end tests.
+- **CI and delivery.** GitHub Actions builds, and images go to GHCR. CI signs in to the test subscription with OIDC workload identity federation, without a client secret, and pull requests from forks get no access. Releases follow SemVer through release-please, with the image tags `vX.Y.Z` and `main`. Dependabot proposes updates. ESLint with typescript-eslint (strict, type-checked) and Prettier check the code.
+- **The nightly integration test** is the `azure` project. It needs a dedicated test subscription without production workloads, and a principal that CI federates to. The test subscription of the empirical checks still exists; only its test principal was deleted after the checks ([Task: Empirical checks of undocumented Azure behaviour][t24]). A new principal that CI federates to is a prerequisite of the nightly test.
+
+What the nightly integration test covers, by pointer:
+
+- the deferred checks, each with the default the design keeps until the test has run ([Empirical checks](../research/empirical-checks.md#deferred-checks-nightly-integration-tests));
+- the measured behaviour the write order rests on: T1 to T5, the subnet NSG swap (T7), the lags against half the Settle time, a private endpoint target, a second region, and T10 cases 1 and 4 ([Deployment](#deployment));
+- the Resource Graph reads of the Drift poll: `ComputeResources`, subnet association changes and the rows of Azure Virtual Network Manager ([Azure inventory](#azure-inventory), [Azure roles](#azure-roles));
+- the default HCL and `infra/` on the tested provider majors, on Terraform and on OpenTofu, with the destroy order of a Managed ASG ([Deployment](#deployment));
+- hosting: the image pinned by digest, the migrate job started from Terraform, and the health port ([Hosting](#hosting), [Health endpoint](#health-endpoint));
+- Policy findings that carry a `result` next to their `policyEffect` ([From edit to Version](#from-edit-to-version)).
+
+Two of the deferred checks have a fixed place: the step-up through `auth_time` gets an integration test ([Sign-in and API access](#sign-in-and-api-access)), and the linked-access test is the first integration test of the onboarding increment ([Azure roles](#azure-roles)).
 
 ### Process roles
 
@@ -71,20 +90,20 @@ Jobs go through a durable queue in PostgreSQL (pg-boss behind the tool's own job
 | Job | Runs | Decided in |
 |---|---|---|
 | Deployment | after a Commit, at a scheduled time, on Retry, as an Emergency Commit, as a catch-up after a re-home. Holds a lease with a heartbeat; another worker takes over when it expires | [Grilling: Deployment execution and failure handling][t16] |
-| Terraform stage watch | polls the pull request state, then reads Azure until it matches the target or the apply timeout ends (default 2 hours) | [Grilling: Terraform mode workflow][t17] |
-| Drift poll | every 5 minutes per Environment (a setting): Resource Graph `resourcechanges` for watched resources, each hit confirmed with a GET. Also reads the changes of VNets, peerings, subnets, network interfaces and private endpoints into the observed [Azure inventory](#azure-inventory), refreshes Security layers and compares Data contract files on the base branch | [Grilling: Import and drift handling][t18], [Grilling: Policy and security-layer visibility][t21], [Grilling: Server internals at the design target][t30] |
-| Full reconcile | every 24 hours, all tool resources and the whole observed Azure inventory, which Environment onboarding also reads; also the Recovery check, which runs at startup too ([Backup and recovery](#backup-and-recovery)) | [Grilling: Import and drift handling][t18], [Grilling: Operations: restore, exit, upgrades and exposure][t29], [Grilling: Server internals at the design target][t30] |
+| Terraform stage watch | polls the pull request state, then reads Azure until it matches the target or the apply timeout ends (default 2 hours). It keeps the Deployed state of a superseded step current | [Grilling: Terraform mode workflow][t17], [Review: Grill review of the complete design package][t23] |
+| Drift poll | every 5 minutes per Environment (a setting): Resource Graph `resourcechanges` for watched resources, each hit confirmed with a GET. Also reads the changes of VNets, peerings, subnets, network interfaces and private endpoints into the observed [Azure inventory](#azure-inventory), refreshes Security layers and compares Data contract files on the base branch. Two reads go beyond `resourcechanges` in every poll: a `ComputeResources` query for the network interfaces of External ASG objects with scale-set or AKS members, and the NSG reference of the subnet of every Zone from `resources` ([Azure inventory](#azure-inventory)) | [Grilling: Import and drift handling][t18], [Grilling: Policy and security-layer visibility][t21], [Grilling: Server internals at the design target][t30], [Review: Grill review of the complete design package][t23] |
+| Full reconcile | every 24 hours, all tool resources and the whole observed Azure inventory, which Environment onboarding also reads, and the effective security admin rules of every VNet through the REST call ([Azure roles](#azure-roles)); also the Recovery check, which runs at startup too, before the worker starts any other job ([Backup and recovery](#backup-and-recovery)) | [Grilling: Import and drift handling][t18], [Grilling: Operations: restore, exit, upgrades and exposure][t29], [Grilling: Server internals at the design target][t30], [Review: Grill review of the complete design package][t23] |
 | Permission check | at Environment onboarding, at Zone onboarding, daily, before the first write of every Deployment | [ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) |
-| Rule expiry | notice to the owner 14 days ahead; at expiry the tool's own Commit disables the allow Rule, also while a Re-translation is open ([Engine upgrades](#engine-upgrades)) | [Grilling: Change sets, concurrency and approval][t15] |
-| Prepared Change sets | regenerated when Azure changes: an Azure inventory change that changes the translation of the latest Version, stale member IPs, External ASG object members, expired deny Rules | [Grilling: Change sets, concurrency and approval][t15] |
-| Member IP adoption | removes a deleted ASG member from its object, deny Rules included, and adopts a changed member IP, on IP-fallback NSGs and without Approval, also while a Re-translation is open | [Grilling: Review round on placement, egress posture and MVP shape][t27], [Prototype: Translation engine worked examples][t22] |
-| Lost-update check | after membership writes, Resource Graph `resourcechanges` for another writer between GET and PUT, unless `If-Match` works | [Grilling: Deployment execution and failure handling][t16] |
+| Rule expiry | notice to the owner and to the editors of the Rule's destination Zones 14 days ahead; at expiry the tool's own Commit disables the allow Rule, at every Approval level and also while a Re-translation is open ([Engine upgrades](#engine-upgrades)), unless that would close a Tool path ([No self-lockout](#no-self-lockout)) | [Grilling: Change sets, concurrency and approval][t15], [Review: Grill review of the complete design package][t23] |
+| Prepared Change sets | regenerated when Azure changes: an Azure inventory change that changes the translation of the latest Version, stale member IPs, External ASG object members, expired deny Rules. The tool submits such a Change set and commits it once its Approval is complete. At the Approval level none it does not commit on its own: the Change set waits in the inbox until a person who holds the editor Role in every Affected Zone commits it. The automatic cases are the list of Commits without Approval in [ADR 0008](../adr/0008-approval-by-affected-zones.md) | [Grilling: Change sets, concurrency and approval][t15], [Review: Grill review of the complete design package][t23] |
+| Member IP adoption | removes a deleted ASG member from its object, deny Rules included, and adopts a changed member IP, on IP-fallback NSGs and without Approval, at every Approval level and also while a Re-translation is open. The other automatic Adopt cases are in [ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md), and none of them closes a Tool path on its own ([No self-lockout](#no-self-lockout)) | [Grilling: Review round on placement, egress posture and MVP shape][t27], [Prototype: Translation engine worked examples][t22], [Review: Grill review of the complete design package][t23] |
+| Lost-update check | after membership, subnet and NSG writes, Resource Graph `resourcechanges` for another writer between GET and PUT, unless `If-Match` works | [Grilling: Deployment execution and failure handling][t16], [Review: Grill review of the complete design package][t23] |
 | Audit chain verify | daily over the whole chain, and on demand by an admin; reports a broken hash chain to the alert channel and the health view; accepts a fork only at a recovery entry | [Grilling: Access, roles and audit][t19], [ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md), [Grilling: Server internals at the design target][t30] |
 | Flow data | hits every hour per Environment, one aggregated query over 30 days (an Environment setting); Flow view queries on demand, cached for 10 minutes ([Flow view and hits](#flow-view-and-hits)) | [Research: Traffic Analytics access for the Flow view and hits][t28], [Grilling: Server internals at the design target][t30] |
 | Service-tag prefixes | daily for every region the instance uses | [Grilling: Server internals at the design target][t30] |
 | Certificate expiry | warns 30 days ahead in the admin view and the health endpoint | [Grilling: Hosting, identity and least-privilege role][t20] |
 
-**Budgets across processes** ([Grilling: Server internals at the design target][t30]). Environments share no subscription, so each write budget per subscription and region belongs to one Environment. Every ARM write of an Environment runs under its Environment write lease: the Deployment lease, which an automatic Overwrite takes as well, because it runs as a Deployment of the Deployed state. The holder keeps the write budget and the in-flight limits in memory. A new holder rebuilds the budget from the stored writes of the last 5 minutes, so nothing is counted in PostgreSQL. Read limits apply per Tool identity, and so to all processes together: every Log Analytics query takes one of 5 slots, held as PostgreSQL advisory locks, Resource Graph queries take slots the same way, and every read honours 429 with Retry-After.
+**Budgets across processes** ([Grilling: Server internals at the design target][t30]). Environments share no subscription, so each write budget per subscription and region belongs to one Environment. Every ARM write of an Environment runs under its Environment write lease: the Deployment lease, which an automatic Overwrite takes as well, because it runs as a Deployment of the Deployed state. The holder keeps the write budget and the in-flight limits in memory. A new holder rebuilds the budget from the stored writes of the last 5 minutes, so nothing is counted in PostgreSQL. Next to the write budget the holder keeps an ARM read budget per subscription and region, at half of the documented limit of 10,000 Microsoft.Network reads per 5 minutes ([ARM and Resource Graph](../research/arm-and-resource-graph.md); [Review: Grill review of the complete design package][t23]). The other read limits apply per Tool identity, and so to all processes together: every Log Analytics query takes one of 5 slots, held as PostgreSQL advisory locks, Resource Graph queries take slots the same way, and every read honours 429 with Retry-After.
 
 Group memberships are resolved through Graph at sign-in and every 15 minutes per session. That happens in `api`, on the request path. Key Vault secrets are cached in memory and refreshed every 30 minutes and after an authentication failure.
 
@@ -95,10 +114,12 @@ Group memberships are resolved through Graph at sign-in and every 15 minutes per
 In:
 
 - the Rule base of one Version: Rules, Objects, Zones with their Egress posture, Extra prefixes and Inherited defaults, the Internal address space, VNet bindings;
-- the Azure inventory of that Version: VNets with address spaces and peerings, subnets and prefixes, network interfaces and private endpoints with their IPs, the members of External ASG objects, the Environment of each subscription; the existing NSGs at Import;
+- the Azure inventory of that Version: VNets with address spaces and peerings, subnets with their prefixes and `privateEndpointNetworkPolicies`, network interfaces and private endpoints with their IPs, the members of External ASG objects, the Environment of each subscription;
+- for a Change set, its pinned Azure facts: the facts of the Azure resources it references that the Azure inventory of its base Version does not hold ([Azure inventory](#azure-inventory));
+- for an onboarding Change set, the existing NSGs from its Import snapshot. They are not part of the Azure inventory;
 - for the write plan, the peerings of the observed Azure inventory;
 - the NSG rule names and priorities of the previous Version, so priorities stay stable ([ADR 0005](../adr/0005-stable-nsg-rule-identity.md));
-- the Deployed state of every resource the Deployment touches, for the write order ([ADR 0018](../adr/0018-write-order-from-dominance-gaps.md));
+- the Deployed state of every resource the Deployment touches, for the write order ([ADR 0023](../adr/0023-writes-are-ordered-only-by-crossing-flows-with-a-settle-time.md));
 - the versioned limits data file.
 
 Out:
@@ -106,7 +127,7 @@ Out:
 - the target content of every Managed NSG and Retired NSG, with names and priorities, every NSG rule belonging to exactly one Rule;
 - Managed ASGs, their memberships and the subnet associations;
 - validation errors and warnings as codes with parameters, limit counts, Affected Zones and the Preview diff;
-- the write order: dependency edges, Crossing-flow edges and the three ASG member steps, or "not orderable" with the flows that cause it.
+- the write order: dependency edges, Crossing-flow edges and the two member steps, or "not orderable" with the flows that cause it.
 
 Every Version stores the engine version that produced its NSG rules ([Grilling: Review round on placement, egress posture and MVP shape][t27], point 20). At the design target (10,000 Rules, 20,000 Zones, 10,000 Objects) the engine translates only the Managed NSGs whose inputs change and finds Crossing flows from the flows whose decision changes, so its cost grows with the Change set, not with the estate ([Translation engine](translation-engine.md#at-the-design-target)).
 
@@ -114,7 +135,22 @@ Every Version stores the engine version that produced its NSG rules ([Grilling: 
 
 Every Version records the [Azure inventory](../../GLOSSARY.md) it was translated against ([ADR 0020](../adr/0020-versions-record-the-azure-inventory.md)). The Preview, the Commit and the write plan read it, never live Azure, so what an approver saw is what the Deployment writes. A Change set uses the Azure inventory of its base Version; a Rebase moves it to the latest one.
 
-The tool also keeps an observed Azure inventory, in PostgreSQL tables per Environment. The Drift poll reads the changes of VNets, peerings, subnets, network interfaces and private endpoints from `resourcechanges` every 5 minutes. The full reconcile and the onboarding of an Environment read everything through Resource Graph. After each Drift poll the tool translates the latest Version again with the observed Azure inventory, for the NSGs whose inputs changed. Where the result differs, it prepares an Adopt Change set, and it commits on its own what only closes traffic. Until that Change set is committed, other Commits and Deployments go ahead with their Version's Azure inventory, because the NSGs already in Azure have the same gap. The Preview marks the Zones concerned with "Azure differs, Adopt open". The write plan takes a peering as a documented tag fact only when the Version's and the observed Azure inventory both hold it.
+**Pinned Azure facts** ([Review: Grill review of the complete design package][t23]). A Change set can reference an Azure resource that the Azure inventory of its base Version does not hold: a new subnet, network interface, VNet, peering or External ASG. The Change set then pins that resource's facts from the observed Azure inventory, as the Import snapshot does for NSGs, and the Preview shows the pinned facts. When a pinned fact changes in the observed Azure inventory before the Commit, the tool pins the new value and resets the Approvals of the Affected Zones whose NSG rules change by it. At the Commit the pinned Azure facts become part of the new Version's Azure inventory.
+
+**What every Commit takes over.** Every Commit also takes over from the observed Azure inventory the facts that change no translation of the Rule base: new peerings, subnets and network interfaces that nothing references. A fact that would change the translation still enters only through Adopt. The existing NSGs at Import are not part of the Azure inventory. They live in the Import snapshot of the onboarding Change set.
+
+The tool also keeps an observed Azure inventory, in PostgreSQL tables per Environment. The Drift poll reads the changes of VNets, peerings, subnets, network interfaces and private endpoints from `resourcechanges` every 5 minutes. The full reconcile and the onboarding of an Environment read everything through Resource Graph.
+
+`resourcechanges` does not see everything, so each Drift poll adds two reads ([Review: Grill review of the complete design package][t23]):
+
+- **Scale-set and AKS members.** `resourcechanges` covers only the tables `resources`, `resourcecontainers` and `healthresources` ([Resource Graph changes](https://learn.microsoft.com/en-us/azure/governance/resource-graph/changes/resource-graph-changes), retrieved 2026-11-12), and the network interfaces of scale sets and AKS nodes live in `ComputeResources`. Each Drift poll therefore queries `ComputeResources` for the network interfaces of External ASG objects with scale-set or AKS members and diffs them against the observed Azure inventory.
+- **Subnet associations.** Each Drift poll reads the NSG reference of the subnet of every Zone from `resources` (the VNet's `properties.subnets[].networkSecurityGroup.id`), because Microsoft does not document whether an association change appears in `resourcechanges`.
+
+Both get a nightly integration test.
+
+After each Drift poll the tool translates the latest Version again with the observed Azure inventory, for the NSGs whose inputs changed. Where the result differs, it prepares an Adopt Change set. It commits on its own only the automatic Adopt cases in the list of Commits without Approval in [ADR 0008](../adr/0008-approval-by-affected-zones.md), which [ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md) defines. Every other Adopt needs the usual Approval, and at the Approval level none it waits for a person. Until that Change set is committed, other Commits and Deployments go ahead with their Version's Azure inventory, because the NSGs already in Azure have the same gap. The Preview marks the Zones concerned with "Azure differs, Adopt open". The write plan takes a peering as a documented tag fact only when the Version's and the observed Azure inventory both hold it.
+
+A Zone whose subnet is deleted in Azure, and a subscription that leaves its Environment, are flags outside Adopt: the tool prepares no Adopt for them ([Zone lifecycle and marker tags](#zone-lifecycle-and-marker-tags)).
 
 Whether a Version stores its Azure inventory as a full copy or as changes is part of the data model.
 
@@ -125,6 +161,7 @@ flowchart LR
   user["Person"] -->|"auth code + PKCE"| app["App registration: sign-in, API scope, InstanceAdmin app role, Graph application permissions"]
   app -->|"Graph"| graph["Microsoft Graph"]
   tool["Tool identity: Azure roles only"] -->|"nsgfw Reader, Writer, ASG Writer"| azure["Environments"]
+  tool -->|"nsgfw Flow Reader"| ws["Flow-data workspaces"]
   tool -->|"federated credential of"| app
   migrator["Migrator identity"] -->|"schema owner"| pg[("PostgreSQL")]
   tool -->|"runtime role"| pg
@@ -139,19 +176,23 @@ flowchart LR
 | Migrator | second user-assigned managed identity, only on the migrate job | owner password as a file in the migrate container | database schema owner |
 | GitHub App | private key in Key Vault | same | contents write, pull requests write, checks read, metadata read |
 
-Fallback in Azure if MSAL Node cannot redeem an authorization code with the managed identity as federated credential: a certificate with a non-exportable key in Key Vault, signed through Key Vault Crypto User ([ADR 0013](../adr/0013-backend-sign-in-and-separate-directory-and-azure-principals.md)). [Task: Empirical checks of undocumented Azure behaviour][t24] tests this.
+Fallback in Azure if MSAL Node cannot redeem an authorization code with the managed identity as federated credential: a certificate with a non-exportable key in Key Vault, signed through Key Vault Crypto User ([ADR 0013](../adr/0013-backend-sign-in-and-separate-directory-and-azure-principals.md)). [Task: Empirical checks of undocumented Azure behaviour][t24] showed that MSAL Node redeems the code (T6), so the fallback stays unused; the nightly test repeats the check.
 
 ### Sign-in and API access
 
-The server runs a backend-for-frontend with MSAL Node: authorization code flow with PKCE as a confidential client, a server-side session in PostgreSQL behind an httpOnly cookie, no tokens in the browser and no user access tokens kept on the server. Sessions last 8 hours, or 60 minutes idle. Approval, Emergency Commit, changes to Role assignments and changes of an Approval level need a sign-in at most 15 minutes old (OIDC `max_age`).
+The server runs a backend-for-frontend with MSAL Node: authorization code flow with PKCE as a confidential client, a server-side session in PostgreSQL behind an httpOnly cookie, no tokens in the browser and no user access tokens kept on the server. Sessions last 8 hours, or 60 minutes idle. Approval, Emergency Commit, changes to Role assignments and changes of an Approval level need a step-up: a sign-in at most 15 minutes old.
 
-The API also accepts client-credential tokens of service principals and managed identities and delegated user tokens through the one exposed scope. Rights come from the same Roles. Step-up actions stay UI-only. "Assignment required" stays off on the enterprise application; the tool's Role assignments decide, and a denied action is audited ([Grilling: Hosting, identity and least-privilege role][t20], [Grilling: Access, roles and audit][t19]).
+The server enforces the freshness of a step-up from the `auth_time` claim of the ID token. The `instance` module adds `auth_time` to the app registration as an optional ID-token claim. The redirect uses `prompt=login`, with `max_age=900` as an extra hint only, because Entra documents neither `max_age` nor `auth_time` by default ([OIDC](https://learn.microsoft.com/en-us/entra/identity-platform/v2-protocols-oidc), [optional claims](https://learn.microsoft.com/en-us/entra/identity-platform/optional-claims-reference), retrieved 2026-11-12). Without the claim the server refuses the step-up, and Health flags it. An integration test covers the step-up ([Review: Grill review of the complete design package][t23]).
+
+The API also accepts client-credential tokens of service principals and managed identities and delegated user tokens through the one exposed scope. Rights come from the same Roles. Step-up actions stay UI-only. "Assignment required" stays off on the enterprise application; the tool's Role assignments decide, and a denied action is audited ([Grilling: Hosting, identity and least-privilege role][t20], [Grilling: Access, roles and audit][t19]). Every principal in the tenant can therefore call the API, so the calls of a principal without a Role are rate-limited, and its denied actions are folded into one audit entry per principal and hour with a count ([Review: Grill review of the complete design package][t23]). In Recovery mode the API refuses bearer tokens, except for holders of `InstanceAdmin` ([Backup and recovery](#backup-and-recovery)).
 
 ### Azure roles
 
-The operator grants, the tool verifies. The tool never holds `Microsoft.Authorization/roleAssignments/write`. One set of role definitions sits at one management group, by default the tenant root; in the small profile it can sit on a subscription. Every action is explicit, and the same list drives the permission check ([ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) as amended by [Grilling: Review round on placement, egress posture and MVP shape][t27]).
+The operator grants, the tool verifies. The tool never holds `Microsoft.Authorization/roleAssignments/write`. One set of role definitions sits at one management group, by default the tenant root; in the small profile it can sit on a subscription. Every action is explicit, and the same list drives the permission check ([ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) as amended by [Grilling: Review round on placement, egress posture and MVP shape][t27] and [Review: Grill review of the complete design package][t23]).
 
-**`nsgfw Reader`**, in every Environment at the Environment's scope:
+The tool has four Azure roles: `nsgfw Reader`, `nsgfw Flow Reader`, `nsgfw Writer` and `nsgfw ASG Writer`.
+
+**`nsgfw Reader`**, in every Environment at the Environment's scope. It holds no data action and no workspace action, so it stays assignable at a management group:
 
 | Action | Why |
 |---|---|
@@ -176,26 +217,35 @@ The operator grants, the tool verifies. The tool never holds `Microsoft.Authoriz
 | `Microsoft.Network/locations/serviceTagDetails/read` | service-tag prefixes for the Security layer overlap warnings and the later packet tracer. Service tags have no Coverage, so the reason "for Coverage" in [Grilling: Hosting, identity and least-privilege role][t20] is corrected here |
 | `Microsoft.Network/locations/operations/read` | long-running operation status |
 | `Microsoft.Network/locations/operationResults/read` | long-running operation results |
-| `Microsoft.Network/virtualNetworks/listNetworkManagerEffectiveSecurityAdminRules/read` | AVNM security admin rules shown read-only |
+| `Microsoft.Network/virtualNetworks/listNetworkManagerEffectiveSecurityAdminRules/read` | AVNM security admin rules shown read-only, read per VNet through the REST call |
 | `Microsoft.PolicyInsights/checkPolicyRestrictions/read` | policy pre-check |
 | `Microsoft.Authorization/policyAssignments/read` | assignment names, messages, `enforcementMode`, `notScopes` |
 | `Microsoft.Authorization/policyDefinitions/read` | definition names |
 | `Microsoft.Authorization/policySetDefinitions/read` | initiative names |
 | `Microsoft.Authorization/policyExemptions/read` | exemptions that cover a finding |
 | `Microsoft.Network/networkWatchers/read` | find flow logs |
-| `Microsoft.Network/networkWatchers/flowLogs/read` | flow log targets, filters and workspace |
+| `Microsoft.Network/networkWatchers/flowLogs/read` | flow log targets, filters, workspace and processing interval |
+| `Microsoft.Network/networkGroupMemberships/read` | the network groups of Azure Virtual Network Manager that a VNet belongs to ("List Network Group Memberships", [Azure permissions for Networking](https://learn.microsoft.com/en-us/azure/role-based-access-control/permissions/networking), retrieved 2026-11-12) |
+| `Microsoft.Insights/eventtypes/values/read` | the Activity Log caller in the Handover evidence ("Read Activity Log events", [Azure permissions for Monitor](https://learn.microsoft.com/en-us/azure/role-based-access-control/permissions/monitor), retrieved 2026-11-12) |
+
+The Reader has 31 rows. The first 23 come from [Grilling: Hosting, identity and least-privilege role][t20], the four policy reads from [Grilling: Policy and security-layer visibility][t21], the two flow-log reads from [Research: Traffic Analytics access for the Flow view and hits][t28], and the last two from [Review: Grill review of the complete design package][t23]. The three workspace entries that the Reader held before moved to `nsgfw Flow Reader`.
+
+**`nsgfw Flow Reader`**, on the flow-data workspace only, always with the condition that limits it to the table `NTANetAnalytics`:
+
+| Action | Why |
+|---|---|
 | `Microsoft.OperationalInsights/workspaces/read` | the Environment's flow-data workspace |
 | `Microsoft.OperationalInsights/workspaces/query/read` | query the workspace |
-| data action `Microsoft.OperationalInsights/workspaces/tables/data/read`, limited to `NTANetAnalytics` by a condition on every Reader assignment | read `NTANetAnalytics`. The legacy table action `workspaces/query/NTANetAnalytics/read` stays out: Microsoft calls it no longer recommended, and `DataActionsOnly` workspaces ignore it ([ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) as amended by [Grilling: Operations: restore, exit, upgrades and exposure][t29]) |
+| data action `Microsoft.OperationalInsights/workspaces/tables/data/read` | read `NTANetAnalytics`. The legacy table action `workspaces/query/NTANetAnalytics/read` stays out: Microsoft calls it no longer recommended, and `DataActionsOnly` workspaces ignore it ([ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) as amended by [Grilling: Operations: restore, exit, upgrades and exposure][t29]) |
 
-The first 23 rows come from [Grilling: Hosting, identity and least-privilege role][t20], the four policy reads from [Grilling: Policy and security-layer visibility][t21], the flow-data reads from [Research: Traffic Analytics access for the Flow view and hits][t28].
+The Flow Reader is a role of its own because Azure does not allow a custom role with `DataActions` at management group scope ([custom roles](https://learn.microsoft.com/en-us/azure/role-based-access-control/custom-roles), retrieved 2026-11-12), and an Environment can be one management group. Rejected: a Reader assignment per subscription, because a new subscription under the management group would not join on its own ([Review: Grill review of the complete design package][t23]).
 
 **`nsgfw Writer`**, in ARM Environments only, at the Environment's scope or narrower:
 
 | Action | Why |
 |---|---|
 | `Microsoft.Network/networkSecurityGroups/write` | whole-NSG PUT with marker tags and `flushConnection` |
-| `Microsoft.Network/networkSecurityGroups/delete` | delete NSGs the tool created when their subnet is gone |
+| `Microsoft.Network/networkSecurityGroups/delete` | delete a Managed NSG or Retired NSG whose subnet is gone, whether the tool created it or adopted it in place ([Zone lifecycle and marker tags](#zone-lifecycle-and-marker-tags)) |
 | `Microsoft.Network/networkSecurityGroups/join/action` | associate a Managed NSG with a subnet |
 | `Microsoft.Network/virtualNetworks/subnets/write` | set or swap the subnet's NSG association. The tool changes nothing else on a subnet ([Grilling: Zone onboarding and NSG lifecycle][t11], point 10; corrects the reason in [Grilling: Hosting, identity and least-privilege role][t20]) |
 | `Microsoft.Network/applicationSecurityGroups/joinNetworkSecurityRule/action` | NSG rules that reference a Managed ASG or the ASG of an External ASG object |
@@ -209,9 +259,13 @@ The first 23 rows come from [Grilling: Hosting, identity and least-privilege rol
 | `Microsoft.Network/applicationSecurityGroups/joinIpConfiguration/action` | add a network interface to a Managed ASG |
 | `Microsoft.Network/networkInterfaces/write` | ASG membership of network interfaces |
 
-No role holds Compute writes. Five join actions (route table, NAT gateway, service endpoint, service endpoint policy, subnet join) stay out until [Task: Empirical checks of undocumented Azure behaviour][t24] shows that a subnet or network interface PUT needs them for references it re-sends unchanged. A missing action flags the Environment or Zone and blocks Deployments to the affected Zones before their first write. A missing read stops Drift polling there. A missing policy-name read only falls back to IDs.
+No role holds Compute writes. Five join actions (route table, NAT gateway, service endpoint, service endpoint policy, subnet join) stay out of the Writer for now. [Task: Empirical checks of undocumented Azure behaviour][t24] closed without testing whether a subnet or network interface PUT needs them for references it re-sends unchanged, because its prober held Network Contributor. The linked-access test decides them: a subnet PUT with route table, NAT gateway and service endpoints, and a network interface PUT with NSG, public IP and load-balancer pool. It is the first integration test of the onboarding increment. Until then the tool maps the error `LinkedAuthorizationFailed` to the missing action and names it ([Review: Grill review of the complete design package][t23]).
 
-Terraform Environments get the Reader only. There the Tool identity writes nothing in Azure.
+A missing action flags the Environment or Zone and blocks Deployments to the affected Zones before their first write. A missing read stops Drift polling there. A missing policy-name read only falls back to IDs. Where a right to read a Security layer is missing, the Security layer stack shows "cannot read" instead of "none".
+
+**Azure Virtual Network Manager** ([Review: Grill review of the complete design package][t23]). The tool reads the effective security admin rules per VNet through the documented REST call (`POST .../virtualNetworks/{vnet}/listNetworkManagerEffectiveSecurityAdminRules`, [Security layers and flow logs](../research/security-layers-and-flow-logs.md)), at the full reconcile and at Submit. Resource Graph stays the fast path for the Drift poll. Which right exposes the Azure Virtual Network Manager rows in Resource Graph is not documented, and a missing right returns an empty result without an error, so a nightly integration test checks that path. The band for security user rules is not part of the MVP.
+
+Terraform Environments get no write role: the Reader, and the Flow Reader on their flow-data workspace. There the Tool identity writes nothing in Azure.
 
 ### Microsoft Graph and e-mail
 
@@ -266,8 +320,8 @@ The platform, not the app, pulls the image: from `ghcr.io` and `pkg-containers.g
 flowchart TB
   admins["Administrators, private network"] --> app
   subgraph vnet["Operator VNet: tool subnets"]
-    subgraph cae["Container Apps environment, VNet-integrated, internal ingress"]
-      app["Container App: role all"]
+    subgraph cae["Container Apps environment: workload profiles, VNet-integrated, internal"]
+      app["Container App: role all, external ingress"]
       job["Container Apps Job: role migrate"]
     end
     pepg["Private endpoint: PostgreSQL"]
@@ -282,18 +336,20 @@ flowchart TB
   uami2["Migrator identity"] -.- job
 ```
 
-The default is private: internal ingress, PostgreSQL and Key Vault only through private endpoints. A Terraform variable enables public ingress with IP restrictions. Egress uses the customer's NAT gateway or user-defined routes ([Grilling: Hosting, identity and least-privilege role][t20], point 24).
+The default is private: an internal Container Apps environment, with PostgreSQL and Key Vault only through private endpoints. The app's ingress is external, which in an internal environment means reachable from the VNet only. An app with internal ingress would answer only other apps of the same environment, and a request through the environment's internal load balancer returns HTTP 404 ([ingress](https://learn.microsoft.com/en-us/azure/container-apps/ingress-overview), page date 2026-10-09, retrieved 2026-11-12). A Terraform variable enables public ingress with IP restrictions. Egress uses the customer's NAT gateway or user-defined routes ([Grilling: Hosting, identity and least-privilege role][t20], point 24).
+
+The environment is a workload profiles environment, and the tool runs on its Consumption profile. Only that type supports user-defined routes and egress through a NAT gateway; the Consumption-only type does not ([networking](https://learn.microsoft.com/en-us/azure/container-apps/networking), retrieved 2026-11-12).
 
 Two Terraform modules live in `infra/`:
 
-- **`instance`** creates the Container Apps environment, the app and the migrate job, both user-assigned identities, PostgreSQL, Key Vault, Log Analytics for the audit JSON lines, the app registration with `InstanceAdmin`, delegated scope, Azure CLI pre-authorization and federated credential, the Graph grants when allowed, and the custom role definitions. It passes the tool's own subnets and Tool paths to the app as configuration ([No self-lockout](#no-self-lockout)), sets the PostgreSQL backups ([Backup and recovery](#backup-and-recovery)) and takes the image reference ([Image source](#image-source)).
-- **`environment-access`** creates the Reader, Writer and optional ASG Writer assignments of one Environment. Every Reader assignment carries the condition that limits log reads to `NTANetAnalytics`. When the Environment's flow-data workspace lies outside the Environment, the module takes its resource ID and adds a Reader assignment on that workspace alone ([ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) as amended by [Grilling: Operations: restore, exit, upgrades and exposure][t29]). That Environment's owner runs it, so the `instance` runner needs no owner rights on every Environment.
+- **`instance`** creates the Container Apps environment, the app and the migrate job, both user-assigned identities, PostgreSQL, Key Vault, Log Analytics for the audit JSON lines, the app registration with `InstanceAdmin`, delegated scope, Azure CLI pre-authorization, federated credential and the optional ID-token claim `auth_time` ([Sign-in and API access](#sign-in-and-api-access)), the Graph grants when allowed, and the four custom role definitions. It passes the tool's own subnets and Tool paths to the app as configuration ([No self-lockout](#no-self-lockout)), sets the PostgreSQL backups, passes the restore marker after a restore ([Backup and recovery](#backup-and-recovery)) and takes the image reference ([Image source](#image-source)).
+- **`environment-access`** creates the Reader, Writer and optional ASG Writer assignments of one Environment, and the Flow Reader assignment on the Environment's flow-data workspace. The module takes the workspace's resource ID, so the workspace may lie inside or outside the Environment. The Flow Reader assignment always carries the condition that limits log reads to `NTANetAnalytics` ([ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) as amended by [Review: Grill review of the complete design package][t23]). That Environment's owner runs it, so the `instance` runner needs no owner rights on every Environment.
 
-Upgrade order: Terraform starts the migrate job on every image change before the new revision rolls out. A Container Apps Job can carry a user-assigned identity; init containers cannot in the environments the tool uses.
+Upgrade order: Terraform starts the migrate job on every image change before the new revision rolls out. The migrate step is a job because a job binds the migrator identity to one run per upgrade ([ADR 0015](../adr/0015-separate-migrate-step-protects-audit-log.md)). That init containers cannot use a managed identity is no longer the reason: in a workload profiles environment they can, on the Consumption profile ([managed identities](https://learn.microsoft.com/en-us/azure/container-apps/managed-identity), retrieved 2026-11-12). How Terraform starts the job and waits for it before the new revision was never checked, so it joins the nightly integration test. The fallback is the guard that exists: the app refuses to start on a schema older than it expects.
 
 ### Image source
 
-Releases are published to GHCR. The `instance` module takes the full image reference, pinned by digest, because a tag can move at the registry and a digest cannot. Its default is the GHCR image of the module's own release. Optionally the module creates an Azure Container Registry with an artifact cache rule for the nsgfw repository on `ghcr.io`, and the Container App pulls from it with a user-assigned managed identity that holds AcrPull. A private endpoint on that registry needs the Premium SKU and is created only on request. Without the registry, the egress must allow `ghcr.io` and `pkg-containers.githubusercontent.com`. The Compose example on-premises takes the same image reference ([Grilling: Operations: restore, exit, upgrades and exposure][t29]).
+Releases are published to GHCR. The `instance` module takes the full image reference, pinned by digest, because a tag can move at the registry and a digest cannot. Its default is the GHCR image of the module's own release. Microsoft's Container Apps pages show image references by tag only, so pulling by digest joins the nightly integration test; the fallback is a unique release tag ([Review: Grill review of the complete design package][t23]). Optionally the module creates an Azure Container Registry with an artifact cache rule for the nsgfw repository on `ghcr.io`, and the Container App pulls from it with a user-assigned managed identity that holds AcrPull. A private endpoint on that registry needs the Premium SKU and is created only on request. Without the registry, the egress must allow `ghcr.io` and `pkg-containers.githubusercontent.com`. The Compose example on-premises takes the same image reference ([Grilling: Operations: restore, exit, upgrades and exposure][t29]).
 
 Sources, retrieved 2026-11-10: the [artifact cache](https://learn.microsoft.com/en-us/azure/container-registry/artifact-cache-overview) supports GitHub Container Registry with and without credentials on every SKU (page date 2026-06-12); [private endpoints need Premium](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-private-link) (2026-06-12); Container Apps [pulls with a managed identity](https://learn.microsoft.com/en-us/azure/container-apps/managed-identity-image-pull) (2026-10-08); GitHub lists the [hosts for packages](https://docs.github.com/en/actions/reference/runners/self-hosted-runners). The Container Apps [firewall page](https://learn.microsoft.com/en-us/azure/container-apps/use-azure-firewall) (2026-05-19) lists no GHCR host.
 
@@ -310,7 +366,7 @@ Tested runtimes are Azure Container Apps and Docker Compose. Podman and Kubernet
 The first stage that ships ([Grilling: Review round on placement, egress posture and MVP shape][t27], point 12):
 
 - ARM mode, one Environment;
-- the Approval level none as a setup choice;
+- the Approval level none as a setup choice. At that level the tool commits on its own only the expiry of an allow Rule and the automatic Adopt cases, as at every level. Every other Change set it prepares (an expired deny Rule, another Adopt, a Re-translation, the Revert of a rejected Emergency Commit) waits in the inbox until a person who holds the editor Role in every Affected Zone commits it ([ADR 0008](../adr/0008-approval-by-affected-zones.md), [Review: Grill review of the complete design package][t23]);
 - public ingress with an IP filter as a supported variant;
 - role definitions that can sit on a subscription;
 - a guided installation: a script that runs the `instance` and `environment-access` modules;
@@ -323,12 +379,14 @@ Terraform mode, the read filter by Coverage, Pre-check waivers, Rule warnings fr
 
 ### From edit to Version
 
-Edits go into a Change set based on a Version. The Preview runs the engine on the Change set and shows NSGs, NSG rules, associations, ASGs, Affected Zones, limit counts, Policy findings and the write order. The policy pre-check (`checkPolicyRestrictions`) runs at Submit, on demand and before every Deployment. Approval runs per Affected Zone at the level none, approver or four-eyes ([ADR 0008](../adr/0008-approval-by-affected-zones.md)). The Commit rebases, validates and creates Version N with its NSG rules and engine version ([ADR 0007](../adr/0007-isolated-change-sets-with-optimistic-rebase.md), [Grilling: Change sets, concurrency and approval][t15]).
+Edits go into a Change set based on a Version. The Preview runs the engine on the Change set and shows NSGs, NSG rules, associations, ASGs, Affected Zones, limit counts, Policy findings and the write order. The policy pre-check (`checkPolicyRestrictions`) runs at Submit, on demand and in both stages of the pre-checks. The tool classifies a Policy finding by its `policyEffect`, never by its `result`: in Microsoft's example a field restriction carries `policyEffect: "Deny"` together with `result: "Required"` ([Azure Policy pre-check](../research/azure-policy-precheck.md); [Review: Grill review of the complete design package][t23]). Approval runs per Affected Zone at the level none, approver or four-eyes ([ADR 0008](../adr/0008-approval-by-affected-zones.md)).
+
+The pre-checks run in two stages ([Deployment](#deployment)). Stage 1 is a gate before the Version, for a Commit that a person makes or scheduled. When it fails, no Version is created and the Change set stays Approved. The Commit rebases, validates and creates Version N with its NSG rules and engine version ([ADR 0007](../adr/0007-isolated-change-sets-with-optimistic-rebase.md), [ADR 0022](../adr/0022-a-version-exists-from-its-commit-and-deployments-plan-from-the-deployed-state.md), [Grilling: Change sets, concurrency and approval][t15]). Stage 1 runs outside the serialized Commit section, so a large Change set does not hold other Commits; inside that section the Commit re-checks only that the latest Version is still its base. Stage 2 runs at the start of every Deployment of that Version.
 
 The commit bar shows NSGs, write steps and Approvals after every edit, so the Preview runs after every edit ([Grilling: Server internals at the design target][t30]):
 
 - It runs in a worker-thread pool of `api`, so the event loop never blocks, also in the role `all`. It starts about 500 ms after the last edit. Only the newest revision of a Change set computes; an older run is cancelled. The result is cached per revision, and the commit bar shows that it is computing.
-- Targets at the design target (10,000 Rules, 20,000 Zones, 10,000 Objects, 20 administrators at once): p95 within 2 s for a Change set of up to 50 changed Rules. A change of the Internal address space, a re-translation or an Import may take up to 60 s and shows its progress.
+- Targets at the design target (10,000 Rules, 20,000 Zones, 10,000 Objects, 20 administrators at once). The target counts the Managed NSGs a Change set touches, not its changed Rules, because one Rule with any can touch every Managed NSG: p95 within 2 s up to 200 Managed NSGs, and within 60 s with a progress display above that ([Review: Grill review of the complete design package][t23]). This replaces the earlier target of up to 50 changed Rules, with its separate allowance for a change of the Internal address space, a Re-translation or an Import.
 - A load test in the increment plan checks these targets with a synthetic estate of that size and 20 editors at once, and sets the container sizes (vCPU, memory) of `api` and `worker`.
 - The Commit and the Deployment plan run the same engine functions in `worker`.
 
@@ -341,8 +399,15 @@ sequenceDiagram
   participant E as engine
   participant AZ as Azure
   participant G as Git provider
-  API->>W: Version N: one Deployment per affected Environment
-  W->>AZ: pre-checks: permissions, Drift GET, checkPolicyRestrictions, live limits
+  API->>W: Commit of a person or a schedule
+  W->>AZ: stage 1: Drift GET, checkPolicyRestrictions, live limits
+  alt stage 1 fails
+    W-->>API: no Version, the Change set stays Approved
+  else stage 1 passes
+    W->>W: create Version N, one Deployment per affected Environment
+  end
+  Note over W: a Commit of the tool that only closes traffic skips stage 1
+  W->>AZ: stage 2, per Deployment: permissions, Drift GET, checkPolicyRestrictions, live limits
   W->>E: Deployed state + target
   E-->>W: writes, edges, member steps, or "not orderable"
   alt ARM Environment
@@ -364,16 +429,24 @@ sequenceDiagram
 
 Common to both modes:
 
-- **Plan from the Deployed state.** A newer Version supersedes a running or failed Deployment to the same Environment; the new one plans from each resource's Deployed state to the latest Version ([Grilling: Deployment execution and failure handling][t16]).
-- **Pre-checks before the first write.** Drift (a fresh GET from the resource provider), Policy and live limits block the whole Commit. The permission check blocks the affected Zones.
-- **Write order without phases** ([ADR 0018](../adr/0018-write-order-from-dominance-gaps.md)). Dependency order (create before reference, association after its NSG), plus one edge per Crossing flow: the NSG that closes the flow before the NSG that opens it. A service tag is evaluated both ways. ASG membership goes in three steps, planned as single joins and leaves that Azure may apply in any combination. A write behind a Crossing-flow edge or a member-step boundary starts a Settle time (instance setting, 10 s by default) after the write before it reports `Succeeded`, because `Succeeded` comes up to 0.75 s before the data plane follows. Dependency edges wait for `Succeeded` only. A cycle or a member step that fails in some combination of its atoms fails validation, and the Change set is split. A failed write delays only the writes with an edge from it, in later Deployments too. A member-step boundary holds back only the NSG writes in the VNet of the step's network interfaces and those that change a flow of their IPs.
-- **Edges across Environments** ([Grilling: Crossing flows between Environments](https://github.com/mfgAkilae/nsgfw/issues/40), ADR 0018). The plan compares every pair of Zones whose NSGs differ between the Deployed state and the latest Version, in every Environment, so it reads the Deployed state of other Environments too. A write may wait for a write of another Environment's Deployment, for `Succeeded` or until Azure shows that Terraform step, and then the Settle time. Such an edge points at the other NSG, not at a Deployment, and every Commit plans again the edges of the unfinished Deployments in the other Environments, once the writes in flight on the paired NSGs have ended. A failure or a stop over Drift on the other side leaves the write waiting, without time limit or override. A Deployment whose remaining writes wait only for other Environments takes the state "waiting", releases its Environment write lease and is queued again when the other write is done; the new lease holder waits the full Settle time.
-- **Retry unit** is one resource write. Transient errors retry with backoff for up to 30 minutes. Permanent errors (`RequestDisallowedByPolicy`, `LinkedAuthorizationFailed`, `SecurityRuleConflict`, 404, Drift) fail at once. A policy that modifies a tool-owned field fails the write ([Grilling: Policy and security-layer visibility][t21], point 9).
+- **Plan from the Deployed state.** A newer Version supersedes a running or failed Deployment to the same Environment; the new one plans from each resource's Deployed state to the latest Version ([ADR 0022](../adr/0022-a-version-exists-from-its-commit-and-deployments-plan-from-the-deployed-state.md), [Grilling: Deployment execution and failure handling][t16]).
+- **Pre-checks before the first write, in two stages** ([ADR 0022](../adr/0022-a-version-exists-from-its-commit-and-deployments-plan-from-the-deployed-state.md), [Review: Grill review of the complete design package][t23]).
+  - *Stage 1* is a gate before the Version, for a Commit that a person makes or scheduled. Drift (a fresh GET from the resource provider), a deny Policy finding without a Pre-check waiver or a live limit fails it. Then no Version is created and the Change set stays Approved. Stage 1 runs outside the serialized Commit section, so a large Change set does not hold other Commits; the Commit re-checks only that the latest Version is still its base.
+  - *Stage 2* runs at the start of every Deployment and stops only that Deployment before its first write. The permission check runs here too and blocks only the affected Zones.
+  - Commits of the tool that only close traffic (Rule expiry, a closing Adopt) skip stage 1. In their stage 2 an NSG with Drift fails on its own and the rest deploys. A deny Policy finding does not hold them back either: the tool tries the write, and a write that Azure refuses fails on its own and is reported.
+  - An Emergency Commit skips stage 1 as well. Its dialog shows the findings before the admin commits, the Version is always created, and stage 2 stops only the Deployment of an Environment that has Drift, a deny Policy finding without a Pre-check waiver or a broken live limit.
+- **Write order without phases** ([ADR 0023](../adr/0023-writes-are-ordered-only-by-crossing-flows-with-a-settle-time.md), [ADR 0024](../adr/0024-asg-membership-is-written-as-atoms-in-member-steps.md) for the member steps). Dependency order (create before reference, association after its NSG), plus one edge per Crossing flow: the NSG that closes the flow before the NSG that opens it. A service tag is evaluated both ways. ASG membership goes in two member steps, with the NSG writes they can affect in between, planned as single joins and leaves that Azure may apply in any combination. A write behind a Crossing-flow edge or a member-step boundary starts a Settle time (instance setting, 10 s by default) after the write before it reports `Succeeded`, because `Succeeded` comes up to 0.75 s before the data plane follows. Dependency edges wait for `Succeeded` only. A cycle or a member step that fails in some combination of its atoms fails validation, and the Change set is split. A failed write delays only the writes with an edge from it, in later Deployments too. A member-step boundary holds back only the NSG writes in the VNet of the step's network interfaces and those that change a flow of their IPs.
+- **Settle time for private endpoint Zones** ([Review: Grill review of the complete design package][t23]). A write of a Zone that holds a private endpoint, its NSG write or the subnet write that associates its NSG, is followed by 30 s instead of the Settle time when another write waits for it. This is a second instance setting, "Settle time for private endpoint Zones", 30 s by default. The reason: the only measurement for private endpoints (T8) took effect 9.9 to 11.8 s after the response, and no check measured an NSG PUT against private endpoint traffic ([Empirical checks](../research/empirical-checks.md)).
+- **Edges across Environments** ([Grilling: Crossing flows between Environments](https://github.com/mfgAkilae/nsgfw/issues/40), [ADR 0025](../adr/0025-the-write-order-spans-environments.md)). The plan compares every pair of Zones whose NSGs differ between the Deployed state and the latest Version, in every Environment, so it reads the Deployed state of other Environments too. A write may wait for a write of another Environment's Deployment, for `Succeeded` or until Azure shows that Terraform step, and then the Settle time. Such an edge points at the other NSG, not at a Deployment, and every Commit plans again the edges of the unfinished Deployments in the other Environments, once the writes in flight on the paired NSGs have ended. A failure or a stop over Drift on the other side leaves the write waiting, without time limit or override. A Deployment whose remaining writes wait only for other Environments takes the state "waiting", releases its Environment write lease and is queued again when the other write is done; the new lease holder waits the full Settle time.
+- **Retry unit** is one resource write. Transient errors retry with backoff for up to 30 minutes. Permanent errors (`RequestDisallowedByPolicy`, `LinkedAuthorizationFailed`, `SecurityRuleConflict`, 404, Drift) fail at once. On `LinkedAuthorizationFailed` the tool names the missing action ([Azure roles](#azure-roles)). A 403 in the middle of a Deployment makes the tool run the permission check once more; when the right is still missing, the error is permanent. A policy that modifies a tool-owned field fails the write ([Grilling: Policy and security-layer visibility][t21], point 9).
+- **A PUT that ends `Failed`.** An NSG whose PUT is accepted and ends `Failed` counts as Drift until a GET shows the old or the new content ([Review: Grill review of the complete design package][t23]). T3 could not provoke that case, so it is neither documented nor measured.
+- **Tags of others.** Only the marker tags belong to the tool, in both Deployment modes. Other tags on a Managed NSG or Managed ASG are never Drift and are kept ([Zone lifecycle and marker tags](#zone-lifecycle-and-marker-tags)).
 
 ARM mode:
 
-- one whole-NSG PUT per NSG, tags and other properties from a fresh GET; one subnet PUT for an association or swap;
-- a client-side token bucket of 500 Microsoft.Network writes per 5 minutes per subscription and region (adjustable per Environment), at most one write in flight per resource and ten per subscription and region, 429 with Retry-After honoured; the holder of the Environment write lease keeps them in memory ([Budgets across processes](#job-queue-and-jobs));
+- one whole-NSG PUT per NSG, with the tags of others and the other properties from a fresh GET; one subnet PUT for an association or swap;
+- a client-side token bucket of 500 Microsoft.Network writes per 5 minutes per subscription and region (adjustable per Environment), at most one write in flight per resource and ten per subscription and region, 429 with Retry-After honoured; the holder of the Environment write lease keeps them in memory, next to the ARM read budget ([Budgets across processes](#job-queue-and-jobs));
+- a write in retry backoff counts as in flight only while its request is running, and a superseding Deployment cancels the backoff;
 - at most one subnet write in flight per VNet, as `locks` does in the default HCL; `AnotherOperationInProgress` counts as transient;
 - `flushConnection` is an Environment setting, off by default;
 - resume after a crash: the new lease holder GETs each write in flight; target means done, Deployed state means PUT again, neither means Drift; a write that waited for a Settle time waits the full Settle time again once the earlier write shows as done;
@@ -381,15 +454,30 @@ ARM mode:
 
 The guarantee assumes that one NSG PUT takes effect as a whole and a rejected PUT applies nothing ([Task: Empirical checks of undocumented Azure behaviour][t24], T2 and T3), that a single ASG join or leave takes effect as a whole, that one subnet write that swaps the NSG takes effect as a whole ([Task: Empirical check of subnet NSG swaps and private endpoint ASG writes][t33]), and that the data plane follows a write within the Settle time. The nightly integration test re-measures these and fails when a lag exceeds half the Settle time.
 
-Terraform mode ([ADR 0010](../adr/0010-terraform-mode-data-contract-and-azure-observation.md), amended by ADR 0018):
+T2, T3 and T7 are a named, accepted exception to "documentation before tests": they have a nightly integration test and no fallback ([ADR 0023](../adr/0023-writes-are-ordered-only-by-crossing-flows-with-a-settle-time.md), [Review: Grill review of the complete design package][t23]). When the nightly test fails on one of them, the project publishes a release note, Health shows a warning from the next release on, and a Change set whose write plan has a Crossing-flow edge fails validation and must be split into two Commits until a fix ships.
+
+The lags were measured in one region only, and against VMs. The nightly test therefore gets a private endpoint target with network policies enabled, and a second region. T10 cases 1 and 4 (ASGs on the IPv4 IP configurations only of a dual-stack network interface) join the nightly test too. Their fallback: dual-stack members go fully through the IP fallback.
+
+Terraform mode ([ADR 0010](../adr/0010-terraform-mode-data-contract-and-azure-observation.md), with the write order of [ADR 0023](../adr/0023-writes-are-ordered-only-by-crossing-flows-with-a-settle-time.md)):
 
 - The tool writes one deterministic JSON Data contract per root module, placed by a path pattern per Environment. The repository owns the HCL; the tool ships a default HCL once, in a bootstrap pull request, and never touches HCL again.
 - A Deployment is one pull request, or one per step when the plan has edges or member steps. The next step's pull request opens once Azure shows the previous target and the Settle time has passed. A step that waits for a write in another Environment is its own pull request as well. An Environment has at most one open nsgfw pull request; a newer Deployment closes it as superseded.
-- The tool requests auto-merge bound to the expected head commit. Branch protection decides whether a person reviews.
-- Azure observation decides success. After the merge the tool reads every resource; a match updates the Deployed state. No match within the apply timeout means "merged, not applied".
+- A merged step is observed to its end before a newer Deployment plans, with the apply timeout as the limit. The stage watch keeps the Deployed state of a superseded step current ([Review: Grill review of the complete design package][t23]).
+- The tool batches its own Commits per Terraform Environment: at most one every 30 minutes. The Version exists from the Commit at once; only the Deployment to the Terraform Environment, that is its pull request, is batched. Commits that only close traffic go at once. Without the batching, frequent automatic Adopts would keep closing the open pull request before a person can review it.
+- The tool requests auto-merge bound to the expected head commit. Branch protection decides whether a person reviews. GitHub offers auto-merge only when it is enabled for the repository and the pull request cannot merge at once ([auto-merge](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/automatically-merging-a-pull-request), retrieved 2026-11-12). Environment onboarding therefore checks whether the repository allows auto-merge and flags it when not. A pull request that is mergeable at once, with no required review or check pending, is merged by the tool itself. The tool does this only when the Environment setting "merge pull requests automatically" is on; the setting is off until the operator switches it on. Otherwise the pull request waits for a person, and the Deployment view says so. That bypasses no protection.
+- Azure observation decides success. After the merge the tool reads every resource; a match updates the Deployed state. No match within the apply timeout means "merged, not applied". A failed observation read shows "cannot read Azure" instead, for example when the Reader assignment is gone.
 - The tool never reads Terraform state, never runs Terraform and writes nothing to Azure.
 
-Default HCL, rough shape of the three rules every replacement must keep (one resource holds an NSG's complete rule list; the subnet's NSG is set in one subnet write; the NSG resource depends on the Managed ASG resources), with the `locks` correction from [Grilling: Review round on placement, egress posture and MVP shape][t27]:
+The default HCL follows four rules, and every replacement must keep them:
+
+1. One resource holds an NSG's complete rule list.
+2. The subnet's NSG is set in one subnet write.
+3. The NSG resource depends on the Managed ASG resources, the Managed ASG sets `create_before_destroy`, and the network interface association references the ASG resource.
+4. The tags of others stay: the contract's marker tags are merged with the tags that exist.
+
+Rule three has two halves. The dependency lets Terraform create a Managed ASG before an NSG rule references it. For the way back it is not enough: Terraform destroys a dependency before it updates the resource that depends on it, unless the dependency sets `create_before_destroy`; then the dependent resource is updated first ([destroying.md](https://github.com/hashicorp/terraform/blob/v1.17.1/docs/destroying.md), retrieved 2026-11-12). Without it an apply would try to delete a Managed ASG while an NSG rule still references it. Rule four comes from [Review: Grill review of the complete design package][t23].
+
+Default HCL, rough shape, with the `locks` correction from [Grilling: Review round on placement, egress posture and MVP shape][t27]:
 
 ```hcl
 locals {
@@ -402,7 +490,9 @@ resource "azapi_resource" "nsg" {
   name      = each.value.name
   parent_id = each.value.resourceGroupId
   location  = each.value.location
-  tags      = each.value.tags
+  # Rule four: only the marker tags belong to the tool. They are merged with the
+  # tags that exist, so tags of others stay.
+  tags = merge(local.existing_nsg_tags[each.key], each.value.tags)
   body = {
     properties = {
       securityRules   = each.value.securityRules
@@ -410,8 +500,30 @@ resource "azapi_resource" "nsg" {
     }
   }
   # The contract names ASGs by resource ID, so Terraform needs this to create a
-  # Managed ASG before an NSG rule references it, and to destroy it only after.
+  # Managed ASG before an NSG rule references it. Destroying it only after the
+  # NSG update also needs create_before_destroy on the ASG (rule three).
   depends_on = [azurerm_application_security_group.asg]
+}
+
+resource "azurerm_application_security_group" "asg" {
+  for_each            = local.contract.asgs
+  name                = each.value.name
+  resource_group_name = each.value.resourceGroupName
+  location            = each.value.location
+  tags                = merge(local.existing_asg_tags[each.key], each.value.tags)
+  # Rule three: without this, Terraform destroys a Managed ASG before it
+  # updates the NSG that still references it.
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "azurerm_network_interface_application_security_group_association" "member" {
+  for_each             = local.contract.asgMemberships
+  network_interface_id = each.value.networkInterfaceId
+  # Rule three: the ASG resource, not its ID from the contract, so Terraform
+  # orders the association against the ASG.
+  application_security_group_id = azurerm_application_security_group.asg[each.value.asgKey].id
 }
 
 resource "azapi_update_resource" "subnet_nsg" {
@@ -428,9 +540,9 @@ resource "azapi_update_resource" "subnet_nsg" {
 }
 ```
 
-ASGs and memberships use `azurerm_application_security_group`, `azurerm_network_interface_application_security_group_association` and `azurerm_private_endpoint_application_security_group_association`, and existing resources get `import` blocks with `for_each`.
+ASGs and memberships use `azurerm_application_security_group` and `azurerm_network_interface_application_security_group_association`, and existing resources get `import` blocks with `for_each`. There is no private endpoint association: a private endpoint member counts by its IP addresses and never sits in a Managed ASG. The field names in the sketch are not fixed ([Translation engine](translation-engine.md#data-contract)). How the default HCL reads the tags that exist (`local.existing_nsg_tags` and `local.existing_asg_tags` in the sketch) is settled with the Terraform stage; the review did not check how azapi handles tags.
 
-Minimum versions: Terraform 1.7, for `import` with `for_each`. azapi 2.x. azurerm **3.39.0**, replacing the unreasoned 5.x in ADR 0010: the default HCL uses azurerm only for the three ASG resources above, and the newest of them, `azurerm_private_endpoint_application_security_group_association`, arrived in 3.39.0 (January 12, 2023). `azurerm_application_security_group` came in 1.2.0, the network interface association in 1.22.0. The v4 and v5 changelogs list no breaking change for the three. Source: the provider's `CHANGELOG-v1.md`, `CHANGELOG-v3.md`, `CHANGELOG-v4.md` and `CHANGELOG.md` on GitHub, retrieved 2026-11-10. Which provider majors the nightly test covers is not decided.
+Provider versions ([Review: Grill review of the complete design package][t23]): Terraform 1.7 or later, for `import` with `for_each`. azapi 2.x. For azurerm the minimum is the lowest major that the nightly integration test runs: 4.x and 5.x are tested, 3.x is expected to work and is not tested. The default HCL uses azurerm only for the two ASG resources above. `azurerm_application_security_group` came in 1.2.0, the network interface association in 1.22.0, and the v4 and v5 changelogs list no breaking change for either. Source: the provider's `CHANGELOG-v1.md`, `CHANGELOG-v4.md` and `CHANGELOG.md` on GitHub, retrieved 2026-11-10. The default HCL and `infra/` are also tested on OpenTofu, so that no installation needs the Terraform CLI, which is under BUSL-1.1 from 1.6 ([ADR 0002](../adr/0002-mit-licence-and-open-source-dependencies-only.md)).
 
 ### Handing over resources from other IaC
 
@@ -442,15 +554,50 @@ Both modes collect evidence before an NSG or ASG is adopted in place or a subnet
 
 If the other IaC keeps writing, it shows up as Drift with its actor.
 
-An NSG or ASG tagged by another Instance goes through the same Handover. The checklist item is that the other Instance is shut down or no longer writes there, and the tool then rewrites the marker tag ([ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md)).
+An NSG or ASG tagged by another Instance goes through the same Handover before it is adopted in place or swapped. An ASG tagged by another Instance can be the ASG of an External ASG object without a Handover, because the tool only reads it. The checklist item is that the other Instance is shut down or no longer writes there, and the tool then rewrites the marker tag ([ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md)).
+
+### Zone lifecycle and marker tags
+
+Decided in [Grilling: Zone onboarding and NSG lifecycle][t11], points 12 to 15 and 17 to 20, and [Grilling: Environment and tenancy model][t9], point 6, with the flags outside Adopt from [Review: Grill review of the complete design package][t23].
+
+**Removing a Zone.** A Zone that Rules still reference cannot be removed. The console shows a where-used list and offers the bulk action "remove from all Rules", which puts the Rule edits into the same Change set. The same holds for every Object. A removed Zone leaves a Retired NSG on its subnet ([ADR 0029](../adr/0029-a-removed-zone-leaves-a-retired-nsg.md)). A Retired NSG whose subnet is deleted is shown as deletable, the next Commit to its Environment deletes it, and the Preview shows the deletion.
+
+**Two flags outside Adopt.** The tool raises a flag and prepares no Adopt in two cases:
+
+- **A Zone lost its subnet.** The subnet was deleted, or its VNet was moved, which changes the subnet's resource ID. The Zone's identity is the subnet's resource ID, so a subnet re-created with the same name and ID is Drift, not a lost Zone. The subnets of a moved VNet appear as new candidates.
+- **A subscription left its Environment.** In an Environment defined by a management group, a new subscription under the management group joins the Environment on its own and has no Zones until they are onboarded. A subscription with Zones that leaves, or moves into another Environment's management group, is flagged.
+
+For a flagged Zone the latest Version keeps the old facts. The tool flags the Rules that reference the Zone, skips the writes of that Zone and changes nothing on its own, in Azure or in the Rule base. A write that waits for a skipped write keeps waiting and shows "skipped" as the state of the other side. A person resolves the flag. A lost subnet is resolved through a Change set. A subscription that left its Environment needs an admin in the instance Scope, because the flag crosses Environment boundaries ([Grilling: Access, roles and audit][t19]). The ways out:
+
+- **Remove the Zone.** For a lost subnet the Change set removes the Zone from its Rules and then the Zone, and its Commit deletes the Zone's Managed NSG, which no longer has a subnet. That holds for an NSG the tool created and for one it adopted in place. For a subscription that left, removal retires the NSGs when the tool can still write there.
+- **Re-home.** When the subscription now belongs to an Environment with the same Deployment mode, its Zones move there. They keep their IDs, names and Rules, and their NSGs keep their names and resource groups. A catch-up Deployment follows.
+- **Forget.** When the tool can no longer write to the subscription, the Zones are only removed from the Rule base. Azure stays unchanged, and the console warns that the NSGs still carry the marker tags.
+
+**Where the tool creates resources.** The resource group for Managed NSGs and Managed ASGs is an Environment setting: a name pattern with the placeholders `{vnetResourceGroup}`, `{region}` and `{subscriptionName}`, by default `{vnetResourceGroup}`. The tool never creates a resource group; when it is missing, the validation of the onboarding fails.
+
+**NSG names.** The naming pattern of an Environment takes the placeholders `{vnet}`, `{subnet}`, `{vnetResourceGroup}` and `{region}`. There is no `{zone}` placeholder, because Azure cannot rename an NSG and a renamed Zone would otherwise force a new NSG and a swap. A changed pattern applies to new NSGs only. NSG names are 1 to 80 characters long and unique per resource group, case-insensitive ([resource name rules](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules), page date 2026-08-05, retrieved 2026-11-09). When the computed name is too long or exists in the target resource group, the validation of the onboarding fails, and the Author sets an explicit NSG name for that Zone in the Change set. That name is stored and exempt from the pattern, like the name of an NSG adopted in place ([ADR 0003](../adr/0003-adopt-existing-nsgs-in-place.md)). The pattern itself is validated when the Environment settings are saved.
+
+**Marker tags.** They are the same in every Environment:
+
+| Tag | On | Holds |
+|---|---|---|
+| `nsgfw-managed-by` | every Managed NSG and Managed ASG | the Instance ID ([ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md)) |
+| `nsgfw-zone` | every Managed NSG | the Zone ID |
+| `nsgfw-version` | every Managed NSG and Managed ASG | the Version whose Deployment last changed its content ([Backup and recovery](#backup-and-recovery)) |
+
+Only these tags belong to the tool, in both Deployment modes. Other tags on a Managed NSG or Managed ASG are never Drift and are kept: ARM mode sends them from the fresh GET, and the default HCL merges the contract's marker tags with the tags that exist ([Deployment](#deployment)). An NSG or ASG that carries the Instance ID of another Instance is Unmanaged for this Instance until a Handover ([Handing over resources from other IaC](#handing-over-resources-from-other-iac)). A tag name may not contain `<`, `>`, `%`, `&`, `\`, `?` or `/`, and a tag value holds at most 256 characters ([tag resources](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/tag-resources), page date 2025-09-15, retrieved 2026-11-09).
 
 ### Drift
 
-The Drift poll reads `resourcechanges` every 5 minutes and confirms each hit with a GET, because Resource Graph is eventually consistent. A full reconcile runs every 24 hours. Drift is measured against the Deployed state. A person decides every Drift through Adopt or Overwrite; Overwrite needs no Approval. One exception: per Environment, an admin can let the tool Overwrite a removed or changed subnet association and removed marker tags on its own. It stops and reports the writer when the same Drift comes back ([Grilling: Import and drift handling][t18], [Grilling: Review round on placement, egress posture and MVP shape][t27], point 15). In Terraform mode, every apply reverts Drift in its root module anyway.
+The Drift poll reads `resourcechanges` every 5 minutes and confirms each hit with a GET, because Resource Graph is eventually consistent. It also reads the NSG reference of every Zone's subnet and the scale-set and AKS members of External ASG objects in every poll ([Azure inventory](#azure-inventory)). A full reconcile runs every 24 hours. Drift is measured against the Deployed state. Tags of others on a Managed NSG or Managed ASG are never Drift. An NSG whose PUT ended `Failed` counts as Drift until a GET shows the old or the new content.
+
+Drift is resolved by Adopt or Overwrite ([ADR 0026](../adr/0026-drift-is-resolved-by-adopt-or-overwrite.md)). A person decides which. An Overwrite writes the Deployed state back and needs neither a Change set nor an Approval; an Adopt is a Change set with the usual Approval. The tool acts on its own in two cases only, both in the list of Commits without Approval in [ADR 0008](../adr/0008-approval-by-affected-zones.md). It commits the automatic Adopt cases of [ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md). And per Environment, an admin can let the tool Overwrite a removed or changed subnet association and removed marker tags on its own. It stops and reports the writer when the same Drift comes back ([Grilling: Import and drift handling][t18], [Grilling: Review round on placement, egress posture and MVP shape][t27], point 15). In Terraform mode, every apply reverts Drift in its root module anyway.
 
 ### Flow view and hits
 
-The operator enables VNet flow logs and Traffic Analytics; the tool only reads. The workspace is an Environment setting. The worker queries `NTANetAnalytics` at workspace scope and caches hits per Rule with the time of the newest flow data, mapped through the Rule ID in `AclRule`. Data is about 1 to 2 hours old. The query limits (200 requests per 30 seconds, 5 concurrent) apply to the whole instance, because one Tool identity runs every query, so the tool aggregates and caches: one hits query per Environment every hour over a window of 30 days, an Environment setting that a shorter workspace retention caps (the hits column then shows the oldest time covered), and Flow view queries on demand, cached for 10 minutes. A query that returns no rows is not "0 hits" until the permission check (`Prefer: include-permissions=true`) has passed. Without flow data the hits column shows "—". The workspace may lie outside every Environment, with a Reader assignment on the workspace alone ([ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) as amended by [Grilling: Operations: restore, exit, upgrades and exposure][t29]). NSG flow logs retire on 2027-09-30, so only VNet flow logs are supported ([Research: Traffic Analytics access for the Flow view and hits][t28]).
+The operator enables VNet flow logs and Traffic Analytics; the tool only reads. The workspace is an Environment setting. The worker queries `NTANetAnalytics` at workspace scope and caches hits per Rule with the time of the newest flow data, mapped through the Rule ID in `AclRule`. Traffic Analytics processes flow logs every 60 minutes by default, or every 10 minutes when the operator selects accelerated processing ([traffic analytics schema](https://learn.microsoft.com/en-us/azure/network-watcher/traffic-analytics-schema#data-aggregation), retrieved 2026-11-12). The tool reads the processing interval from the flow log (`trafficAnalyticsInterval`) and shows it, so it does not assume 60 minutes. Data is about 1 to 2 hours old. The query limits (200 requests per 30 seconds, 5 concurrent) apply to the whole instance, because one Tool identity runs every query, so the tool aggregates and caches: one hits query per Environment every hour over a window of 30 days, an Environment setting that a shorter workspace retention caps (the hits column then shows the oldest time covered), and Flow view queries on demand, cached for 10 minutes. A query that returns no rows is not "0 hits" until the permission check (`Prefer: include-permissions=true`) has passed. Without flow data the hits column shows "—". A hits query that times out keeps the last value and shows its time. The Tool identity reads the workspace through `nsgfw Flow Reader`, assigned on the workspace alone, so the workspace may lie outside every Environment ([ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) as amended by [Grilling: Operations: restore, exit, upgrades and exposure][t29] and [Review: Grill review of the complete design package][t23]). NSG flow logs retire on 2027-09-30, so only VNet flow logs are supported ([Research: Traffic Analytics access for the Flow view and hits][t28]).
+
+**What Traffic Analytics costs the operator.** The Flow view and the hits need flow data that the operator pays for. Azure bills VNet flow logs per gigabyte collected, with 5 GB per month and subscription free. Traffic Analytics is billed per gigabyte processed and has no free tier, with one rate for processing every 60 minutes and one for every 10 minutes. The storage of the raw flow logs is billed separately. The workspace keeps the processed records without charge for the first 31 days, and longer retention is billed. The operator steers the cost through the scope of the flow logs (VNet, subnet or network interface), the processing interval and the retention. Prices depend on region and currency and are not repeated here. Sources: [VNet flow logs, pricing](https://learn.microsoft.com/en-us/azure/network-watcher/vnet-flow-logs-overview#pricing) and the [Network Watcher FAQ](https://learn.microsoft.com/en-us/azure/network-watcher/frequently-asked-questions#traffic-analytics), retrieved 2026-11-12; every meter with its source is in [Traffic Analytics and the Flow view](../research/traffic-analytics-flow-view.md#5-cost-drivers-for-the-operator).
 
 ### Notifications and the alert channel
 
@@ -458,15 +605,15 @@ The in-app inbox reaches the people the tickets name: committer, Change set owne
 
 ### Audit log and export
 
-The audit table is append-only for the runtime role, and every entry carries the hash of the previous one. Every entry is also written as one JSON line to stdout: Container Apps sends it to Log Analytics, and on-premises any log shipper picks it up. A REST endpoint with a cursor gives a gap-free pull. The database stays the source of truth; the export is the long-term store. Nothing is pruned in the MVP ([Grilling: Access, roles and audit][t19]).
+The audit table is append-only for the runtime role, and every entry carries the hash of the previous one. Every entry is also written as one JSON line to stdout: Container Apps sends it to Log Analytics, and on-premises any log shipper picks it up. A REST endpoint with a cursor gives a gap-free pull. The database stays the source of truth; the export is the long-term store. Nothing is pruned in the MVP ([Grilling: Access, roles and audit][t19]). To keep the log from growing through principals without a Role, their calls are rate-limited and their denied actions are folded into one audit entry per principal and hour with a count ([Sign-in and API access](#sign-in-and-api-access)).
 
 ### Health endpoint
 
 Two anonymous probes answer on a health port of their own, which the ingress does not expose. `/livez` answers while the process runs and checks no dependency. `/readyz` answers when the database is reachable and the schema matches. Both return only a status code.
 
-The detail reports missing Azure permissions per Environment and Zone, missing Graph permissions, certificate expiry, a schema older than the app expects, and a missing alert channel ([Grilling: Hosting, identity and least-privilege role][t20], point 29). It is in the admin view and in the API for every Role in the instance Scope, viewer and up, so a monitoring service principal needs no admin rights. On-premises the Compose health check calls the health port inside the container ([Grilling: Operations: restore, exit, upgrades and exposure][t29]).
+The detail reports missing Azure permissions per Environment and Zone, missing Graph permissions, certificate expiry, a schema older than the app expects, and a missing alert channel ([Grilling: Hosting, identity and least-privilege role][t20], point 29). Since [Review: Grill review of the complete design package][t23] it also reports a missing `auth_time` claim ([Sign-in and API access](#sign-in-and-api-access)), a Rule or member change that the tool holds back because it would close a Tool path ([No self-lockout](#no-self-lockout)), and the warning after a failed nightly test of T2, T3 or T7 ([Deployment](#deployment)). It is in the admin view and in the API for every Role in the instance Scope, viewer and up, so a monitoring service principal needs no admin rights. A person without a Role in the instance Scope sees the problems of their own Scopes ([ADR 0012](../adr/0012-access-follows-coverage.md)). On-premises the Compose health check calls the health port inside the container ([Grilling: Operations: restore, exit, upgrades and exposure][t29]).
 
-Microsoft documents probes on more than one port in one container (the example uses 8080 and 8081), custom probe headers, and that port 36985 is reserved. It does not say whether probes pass through ingress, IP restrictions or built-in authentication ([health probes](https://learn.microsoft.com/en-us/azure/container-apps/health-probes), page date 2026-03-25; [ingress](https://learn.microsoft.com/en-us/azure/container-apps/ingress-overview), 2026-10-22; both retrieved 2026-11-10). A nightly integration test checks the health port under internal ingress and under public ingress with an IP filter. The fallback is the same two probes, status only, on the app port.
+Microsoft documents probes on more than one port in one container (the example uses 8080 and 8081), custom probe headers, and that port 36985 is reserved. It does not say whether probes pass through ingress, IP restrictions or built-in authentication ([health probes](https://learn.microsoft.com/en-us/azure/container-apps/health-probes), page date 2026-03-25; [ingress](https://learn.microsoft.com/en-us/azure/container-apps/ingress-overview), 2026-10-22; both retrieved 2026-11-10). A nightly integration test checks the health port in an internal environment and under public ingress with an IP filter. The fallback is the same two probes, status only, on the app port.
 
 ## Operations
 
@@ -477,11 +624,12 @@ Microsoft documents probes on more than one port in one container (the example u
 - These subnets join the subnets the tool shows read-only and never onboards, next to SQL Managed Instance, Databricks, forwarding subnets and service-maintained NSGs. They can be used as subnet Address objects. Their NSGs stay with the operator, for example in the `instance` module.
 - No new engine behaviour. Rejected: a fixed exception, where the tool's subnets can be Zones and the engine puts fixed NSG rules for the tool's own paths above every Rule. Nothing else in the design puts unchangeable rules into a Zone.
 - A Commit can still close a Tool path: a flow from the tool's source prefixes to one of its dependencies. That flow can run through other Zones, for example to a custom DNS server's subnet or a shared private-endpoint subnet. The tool evaluates every Tool path before and after the Change set with the Rule base evaluation function. If one closes, the Preview flags it, and Submit and Commit, an Emergency Commit included, need the committer's explicit confirmation with a reason, which goes into the audit log. It is no validation error, because an admin may move the tool on purpose.
+- A Commit of the tool, such as a Rule expiry or an automatic Adopt, never closes a Tool path, because it has no committer who could confirm. The tool holds that one Rule or member change back, alerts the admins and the Rule owner with high severity, and Health lists it. A person then commits it with the usual confirmation and reason ([Review: Grill review of the complete design package][t23]).
 - The tool learns its own subnets and Tool paths from two sources. The `instance` module passes what it knows as configuration: the Container Apps environment's subnet and prefix, the private-endpoint subnets and IPs of PostgreSQL and Key Vault, and the DNS servers of the tool's VNet. The UI shows these read-only, marked as coming from the deployment. Instance admins add further dependencies with address, protocol and port, such as a proxy, an on-premises egress or another DNS server. These edits are audited and need no Change set, because they change no NSG. On-premises the operator fills the configuration by hand ([Grilling: Operations: restore, exit, upgrades and exposure][t29]).
 
 ### Engine upgrades
 
-Every Version stores its engine version, and one image holds one engine version. When an upgrade changes the engine's output for an unchanged Rule base, the tool prepares a Re-translation: a Change set without edits, whose Affected Zones are the Zones whose resources it changes. Admins and the approvers of those Zones get an alert. While it is open ([Grilling: Operations: restore, exit, upgrades and exposure][t29]):
+Every Version stores its engine version, and one image holds one engine version. When an upgrade changes the engine's output for an unchanged Rule base, the tool prepares a Re-translation: a Change set without edits, whose Affected Zones are the Zones whose resources it changes. Admins and the approvers of those Zones get an alert. The tool commits it once its Approval is complete; at the Approval level none it waits in the inbox until a person who holds the editor Role in every Affected Zone commits it. While it is open ([Grilling: Operations: restore, exit, upgrades and exposure][t29]):
 
 - Other Change sets can be edited, submitted and approved. Their Commit waits until the Re-translation commits, but only when they change something in an Environment where the Re-translation changes something. The committer can still commit: the Commit waits in line and runs right after the Re-translation commits, with a Rebase, validation and the pre-checks like a scheduled Commit, and if one of them fails, the Change set stays Approved ([Prototype: Change set review, conflicts and Version history][t36]).
 - Their Preview compares with the base Version as the new engine translates it, so it shows only their own changes and stays the same at the Rebase after the Re-translation commits.
@@ -495,10 +643,13 @@ Rejected: the next Commit carrying the Re-translation with its Approvals, becaus
 
 PostgreSQL holds all state: the Rule base, Versions, Change sets, the Deployed state, Deployments, the audit log, settings, Role assignments and sessions. Key Vault holds secrets the operator stored. The Terraform state of the tool's own infrastructure is the operator's. The Instance ID in the `nsgfw-managed-by` marker tag ties the tool's Managed NSGs and Managed ASGs to this Instance ([Grilling: Zone onboarding and NSG lifecycle][t11], point 20). It lives in the database and travels with every backup ([ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md)).
 
-- **Azure:** the backups of Azure Database for PostgreSQL flexible server. The `instance` module sets 35 days of retention, the maximum, and geo-redundant backup storage. Retention ranges from 7 to 35 days and can change later. Geo-redundancy can be chosen only when the server is created, so it is on by default and a variable turns it off. A point-in-time restore always creates a new server with a new name and copies neither private endpoints, firewall rules nor server parameters; geo-restore goes to the paired region. Recovery is therefore a runbook through the module: the restore source and time as variables, then a new server with its private endpoint, Entra admin and parameters, then the migrate job. Microsoft does not document whether the Entra admin carries over, so the module sets it again. There is no long-term retention through Azure Backup; the audit export is the long-term store. Sources, retrieved 2026-11-10: [backup and restore concepts](https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore) (page date 2026-07-16); `azurerm_postgresql_flexible_server` with `backup_retention_days`, `geo_redundant_backup_enabled` (a change forces a new server) and `create_mode = "PointInTimeRestore"` ([provider docs](https://github.com/hashicorp/terraform-provider-azurerm/blob/main/website/docs/r/postgresql_flexible_server.html.markdown)).
+- **Azure:** the backups of Azure Database for PostgreSQL flexible server. The `instance` module sets 35 days of retention, the maximum, and geo-redundant backup storage. Retention ranges from 7 to 35 days and can change later. Geo-redundancy can be chosen only when the server is created, so it is on by default and a variable turns it off. Azure supports it in paired regions only, so it is the default there and off elsewhere. A point-in-time restore always creates a new server with a new name and copies neither private endpoints, firewall rules nor server parameters. A geo-restore goes to the paired region and returns the last backup that was replicated there, which can be up to one hour behind; a point-in-time restore of a geo-redundant backup is not available ([backup and restore concepts](https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore), retrieved 2026-11-12). Recovery is therefore a runbook through the module: the restore source and time as variables, then a new server with its private endpoint, Entra admin and parameters, then the migrate job. Microsoft does not document whether the Entra admin carries over, so the module sets it again. There is no long-term retention through Azure Backup; the audit export is the long-term store. Sources, retrieved 2026-11-10: [backup and restore concepts](https://learn.microsoft.com/en-us/azure/postgresql/backup-restore/concepts-backup-restore) (page date 2026-07-16); `azurerm_postgresql_flexible_server` with `backup_retention_days`, `geo_redundant_backup_enabled` (a change forces a new server) and `create_mode = "PointInTimeRestore"` ([provider docs](https://github.com/hashicorp/terraform-provider-azurerm/blob/main/website/docs/r/postgresql_flexible_server.html.markdown)).
 - **On-premises:** the operator's PostgreSQL backups.
 - **After a recovery** the database is older than Azure. Versions and audit entries after the restore point are gone from the database; the SIEM export still holds the audit tail. Every Managed NSG and Managed ASG carries `nsgfw-version`, the Version whose Deployment last changed its content. At startup and in the daily reconcile the tool compares the highest value under its Instance ID with its newest Version. Above it, the Instance enters Recovery mode. So does an Instance whose Tool identity or app registration differs from the one its database recorded; an admin then chooses Move or Copy.
-- **In Recovery mode** every session ends and only holders of `InstanceAdmin` sign in. Nothing reaches Azure except single Overwrites by an admin. The tool sorts the differences into Drift, Managed resources of this Instance that the database does not know, and known resources missing in Azure. The admin resolves them through Overwrite, Adopt and a new onboarding, and ends the mode with a reason at any time. ID sequences jump past the highest values in Azure plus 10,000, and the audit chain continues with a recovery entry, which the export shows as a fork ([ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md)).
+- **The restore marker** is the second trigger ([Review: Grill review of the complete design package][t23]). The `nsgfw-version` tag shows only lost Versions that changed tagged NSG or ASG content. Folder edits, membership-only changes, failed Deployments, Role revocations and Approvals leave no tag. The `instance` module therefore passes a restore marker with the restore source and time, and it forces Recovery mode at the first start after a restore, whatever the `nsgfw-version` tags show.
+- **The worker gate.** The worker starts no job before the Recovery check has passed. A failed or incomplete check keeps writes off.
+- **In Recovery mode** every session ends and only holders of `InstanceAdmin` sign in. Nothing reaches Azure except single Overwrites by an admin and the tag rewrite of a Copy. The tool sorts the differences into Drift, Managed resources of this Instance that the database does not know, and known resources missing in Azure. The admin resolves them through Overwrite, Adopt and a new onboarding, and ends the mode with a reason at any time. ID sequences jump past the highest values in Azure plus 10,000, and the audit chain continues with a recovery entry, which the export shows as a fork ([ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md)).
+- **What stops in Recovery mode** ([Review: Grill review of the complete design package][t23]). Schedules and Commits queued behind a Re-translation are cleared, with a notice to their Authors. An allow Rule that expires in the mode stays as it is, and its expiry Commit runs when the mode ends. A Deployment that runs when an admin starts the mode stops after the writes in flight. The API refuses bearer tokens except for holders of `InstanceAdmin`. A Terraform Environment gets no pull request, and auto-merge requests are withdrawn, until every difference in its root module is adopted or confirmed. After a Copy, the Handover is one confirmation per Environment by an `InstanceAdmin` in the Recovery mode view. The table of every case is in [ADR 0019](../adr/0019-instance-identity-in-the-database-and-recovery-mode.md).
 
 ### Exit
 
@@ -541,6 +692,7 @@ Questions this draft found. Two were settled in [Prototype: Architecture proposa
 15. **Azure inventory store.** Decided: every Version records its Azure inventory, and the observed one lives in PostgreSQL tables per Environment ([Azure inventory](#azure-inventory), [ADR 0020](../adr/0020-versions-record-the-azure-inventory.md)).
 
 [t3]: https://github.com/mfgAkilae/nsgfw/issues/3
+[t9]: https://github.com/mfgAkilae/nsgfw/issues/9
 [t10]: https://github.com/mfgAkilae/nsgfw/issues/10
 [t11]: https://github.com/mfgAkilae/nsgfw/issues/11
 [t15]: https://github.com/mfgAkilae/nsgfw/issues/15
@@ -551,6 +703,7 @@ Questions this draft found. Two were settled in [Prototype: Architecture proposa
 [t20]: https://github.com/mfgAkilae/nsgfw/issues/20
 [t21]: https://github.com/mfgAkilae/nsgfw/issues/21
 [t22]: https://github.com/mfgAkilae/nsgfw/issues/22
+[t23]: https://github.com/mfgAkilae/nsgfw/issues/23
 [t24]: https://github.com/mfgAkilae/nsgfw/issues/24
 [t26]: https://github.com/mfgAkilae/nsgfw/issues/26
 [t27]: https://github.com/mfgAkilae/nsgfw/issues/27

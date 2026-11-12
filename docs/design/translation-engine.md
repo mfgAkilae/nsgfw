@@ -1,6 +1,6 @@
 # Translation engine
 
-Status: draft from [Task: Translation engine design doc with worked examples][t31], 2026-11-10. It describes, step by step, what the ADRs and the closed tickets decided for the Translation engine. It decides nothing itself. Four gaps found while writing were decided by the map owner on 2026-11-10 and are recorded in ADR 0005, ADR 0010, ADR 0016 and ADR 0018. What is still open is listed under [Open points](#open-points). The worked examples come from the prototype of [Prototype: Translation engine worked examples][t22]; its `engine.js` is a reference, not code to merge. The design-package review covers this document. Terms follow [GLOSSARY.md](../../GLOSSARY.md).
+Status: draft from [Task: Translation engine design doc with worked examples][t31], 2026-11-10. It describes, step by step, what the ADRs and the closed tickets decided for the Translation engine. It decides nothing itself. Four gaps found while writing were decided by the map owner on 2026-11-10 and are recorded in ADR 0005, ADR 0010, ADR 0016 and ADR 0018 (superseded; that rule now stands in ADR 0023). Revised on 2026-11-12 with the decisions and corrections of [Review: Grill review of the complete design package][t23]. What is still open is listed under [Open points](#open-points). Examples 1 to 15 come from the prototype of [Prototype: Translation engine worked examples][t22]; its `engine.js` is a reference, not code to merge. Examples 16 to 19 were added with the review and are computed from the steps of this document. Terms follow [GLOSSARY.md](../../GLOSSARY.md).
 
 ## What the engine is
 
@@ -21,24 +21,28 @@ The Data contract and the order check at Rebase use the same functions and are d
 | Input | Content | Why |
 |---|---|---|
 | Rule base of one Version, or of a Change set on its base Version | Rules in order (Rule ID, source, destination, service, action, enabled flag); Objects with their VNet bindings; the ASG members of every ASG object; Zones with Egress posture, Extra prefixes and Inherited defaults; the Internal address space | the only source of NSG content |
-| Azure inventory of the Version | VNets with address spaces and peerings; subnets with prefixes; network interfaces and private endpoints with their IPs; the ASG members of every External ASG object; the Environment of each subscription with its Deployment mode and naming patterns; the existing NSGs at Import | Coverage, the IP fallback and the tag facts depend on Azure ([ADR 0004](../adr/0004-place-rules-by-coverage.md)); every Version records the Azure inventory it was translated against, so the Commit writes what the Preview showed ([ADR 0020](../adr/0020-versions-record-the-azure-inventory.md)) |
+| Azure inventory of the Version | VNets with address spaces and peerings; subnets with prefixes and `privateEndpointNetworkPolicies`; network interfaces and private endpoints with their IPs; the ASG members of every External ASG object; the Environment of each subscription with its Deployment mode and naming patterns | Coverage, the IP fallback and the tag facts depend on Azure ([ADR 0004](../adr/0004-place-rules-by-coverage.md)); every Version records the Azure inventory it was translated against, so the Commit writes what the Preview showed ([ADR 0020](../adr/0020-versions-record-the-azure-inventory.md)) |
+| Pinned Azure facts of a Change set | the facts of every Azure resource that the Change set references and that the Azure inventory of its base Version does not hold (a new subnet, network interface, VNet, peering or External ASG), taken from the observed Azure inventory | a Change set translates against the Azure inventory of its base Version plus these facts. The Preview shows them, and at the Commit they become part of the new Version's Azure inventory ([ADR 0020](../adr/0020-versions-record-the-azure-inventory.md), [Review: Grill review of the complete design package][t23]) |
+| Import snapshot of an onboarding Change set | the NSG rules of the existing NSG as Import read them | [Import](#import). The existing NSGs are not part of the Azure inventory ([Review: Grill review of the complete design package][t23]) |
 | Peerings of the observed Azure inventory | the peerings the Drift poll last saw | the write plan takes a peering as a documented tag fact only when the Version's Azure inventory holds it too ([ADR 0020](../adr/0020-versions-record-the-azure-inventory.md)) |
 | NSG rules stored with the last committed Version | names and priorities per Managed NSG and direction | priorities stay stable ([ADR 0005](../adr/0005-stable-nsg-rule-identity.md)); live Azure state never feeds into them |
-| Deployed state of every resource a Deployment touches | the content the tool last wrote | the write order ([ADR 0018](../adr/0018-write-order-from-dominance-gaps.md)) |
-| Limits data file | each limit with documentation URL and date | limit checks |
+| Deployed state of every resource a Deployment touches | the content the tool last wrote, or the content at adoption for a resource adopted in place and not yet written; for a Zone with a new association or a swap, what its subnet carries so far ([Plan](#plan-the-write-order)) | the write order ([ADR 0023](../adr/0023-writes-are-ordered-only-by-crossing-flows-with-a-settle-time.md)) |
+| Limits data file | each limit with documentation URL and date; the chunk size for ASG references | limit checks ([Step 9](#step-9-limits)) |
+| Regions without NSG support for private endpoints | the regions where Microsoft lists NSG support for private endpoints as unavailable, kept as data with URL and date | the "entirely inside Zones" test of [Step 5](#step-5-nsg-rules-without-effect-on-a-destination-enforced-zone) |
+| Instance settings for Rule warnings | the management ports and the threshold for "very many Managed NSGs" | [Rule warnings](#rule-warnings) |
 
 | Output | Content |
 |---|---|
 | Target content | every Managed NSG and Retired NSG with its NSG rules (name, priority, direction, access, protocol, ports, source, destination, description); every NSG rule from a Rule carries that Rule's ID |
 | ASGs | the Managed ASGs per VNet and the membership of every network interface |
-| Findings | errors and warnings as codes with parameters, limit counts per NSG, Rules without effect, the cost of every Rule |
+| Findings | errors and warnings as codes with parameters, limit counts per NSG, Rules without effect, the cost of every Rule, the [Rule warnings](#rule-warnings) |
 | Preview and Affected Zones | the diff against the last Version, and the Zones whose Approval the Change set needs |
 | Write plan | writes, dependency edges, Crossing-flow edges, member steps, or "not orderable" with the flows that cause it |
 | Engine version | stored with every Version ([Engine version](#engine-version)) |
 
 ## The example estate
 
-All worked examples use one small estate.
+All worked examples draw on one small estate. Each example onboards only the Zones its header names. The other rows of the Zone table are then not part of that example's Azure inventory: they count neither as Zones nor as subnets that are not Zones. A change to the estate, such as another prefix or one more subnet, is named in the header too.
 
 | VNet | Address space | Connected to |
 |---|---|---|
@@ -58,13 +62,13 @@ All worked examples use one small estate.
 | dual, dual2 | spoke3 | 10.3.1.0/24 + fd00:3:0:1::/64, 10.3.2.0/24 + fd00:3:0:2::/64 | dual-stack |
 | labapp | lab | 10.1.2.0/24 (the prefix of app again) | |
 
-Subnets that are not Zones: hub/mgmt (10.0.9.0/24) and lab/clients (10.1.4.0/24). Objects: `onprem-clients` 192.168.10.0/24, `net-10` 10.0.0.0/8, `spoke1-range` 10.1.0.0/16, `web01` 10.1.1.5. The Internal address space is the default: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 and fc00::/7. Every Zone is destination-enforced unless an example says otherwise. Managed NSGs are named `nsg-<vnet>-<zone>` and Managed ASGs `asg-<object>-<vnet>`.
+Subnets that are not Zones, present in every example: hub/mgmt (10.0.9.0/24) and lab/clients (10.1.4.0/24). Objects: `onprem-clients` 192.168.10.0/24, `net-10` 10.0.0.0/8, `spoke1-range` 10.1.0.0/16, `web01` 10.1.1.5. The Internal address space is the default: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 and fc00::/7. Every Zone is destination-enforced unless an example says otherwise. Managed NSGs are named `nsg-<vnet>-<zone>` and Managed ASGs `asg-<object>-<vnet>`.
 
-The tables list the NSG rules that come from Rules. The posture NSG rules of every Managed NSG are shown once, in [Example 6](#example-6-every-block-of-one-managed-nsg), and left out of the other tables unless they matter. Each example names its key in the prototype, so `node run.mjs <key>` and `worked-examples.html` on the branch [`prototype/translation-engine-worked-examples`][proto] show the full output.
+The tables list the NSG rules that come from Rules. The fixed NSG rules of every Managed NSG are shown once, in [Example 6](#example-6-every-block-of-one-managed-nsg), and left out of the other tables unless they matter. Examples 1 to 15 name their key in the prototype, so `node run.mjs <key>` and `worked-examples.html` on the branch [`prototype/translation-engine-worked-examples`][proto] show the full output. Examples 16 to 19 have no prototype key: they show rules that the prototype does not implement ([Where the prototype differs](#where-the-prototype-differs)). They are numbered in the order they were added, not in the order of the document. The hashes in the NSG rule names of all examples are illustrative ([Step 7](#step-7-nsg-rule-names)).
 
 ## Translate: from the Rule base to NSG rules
 
-Translation runs per Managed NSG. For every enabled Rule, in Rule base order, the engine decides whether the Rule lands on the NSG, builds both sides, splits the Rule into NSG rules and leaves out what has no effect. Then it adds the posture NSG rules, assigns priorities and counts limits.
+Translation runs per Managed NSG. For every enabled Rule, in Rule base order, the engine decides whether the Rule lands on the NSG, builds both sides, splits the Rule into NSG rules and leaves out what has no effect. Then it adds the fixed NSG rules, assigns priorities and counts limits.
 
 ### Step 1: Coverage
 
@@ -86,7 +90,7 @@ The Coverage of a Rule's source is the union over its source Objects, and the sa
 
 A Rule lands as outbound NSG rules on every Zone in the Coverage of its source and as inbound NSG rules on every Zone in the Coverage of its destination. Allow and deny Rules land the same way ([ADR 0016](../adr/0016-destination-enforced-egress-and-deny-rules-on-both-sides.md)). A Rule can land in both directions on one Zone: "web → any" lands inbound on web too, because any covers web.
 
-A disabled Rule lands nowhere. A Rule that produces no NSG rule anywhere, because it covers no Zone or a side resolves to nothing, stays valid. The Preview marks it "no effect", and it never blocks a Commit ([Grilling: Rule placement and default posture][t12], point 7).
+A disabled Rule lands nowhere. A Rule that produces no NSG rule anywhere, because it covers no Zone, a side resolves to nothing or [Step 5](#step-5-nsg-rules-without-effect-on-a-destination-enforced-zone) leaves out all its NSG rules, stays valid. The Preview marks it "no effect", it gets the Rule warning "writes nothing" ([Rule warnings](#rule-warnings)), and it never blocks a Commit ([Grilling: Rule placement and default posture][t12], point 7).
 
 ### Step 3: The two sides of an NSG rule
 
@@ -96,16 +100,18 @@ On the NSG of Zone Z, the **own side** is the side that placed the Rule there: t
 2. **Own-side pruning.** The own side keeps only the members whose Coverage includes Z. The far side stays complete ([Grilling: Priority assignment and rule packing][t13], point 9). Pruning keeps or drops whole members. It never cuts a prefix: `spoke1-range` on the NSG of web stays 10.1.0.0/16.
 3. **Resolve each member:**
 
-| Member | Becomes |
-|---|---|
-| any | `*` |
-| Zone | its prefixes and Extra prefixes |
-| single IP, CIDR range | its own value, also when it has a VNet binding |
-| subnet that is not a Zone, VNet | the subnet's prefixes, the VNet's address space |
-| service tag | the tag |
-| ASG object, External ASG object | a reference to its ASG in Z's VNet, if it has network interface members there; on the far side also the private IPs of its ASG members in other VNets, of its private endpoint members everywhere, and the IPv6 addresses of its network interface members in Z's VNet (the **IP fallback**, [ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md)) |
+| Member | On the far side | On the own side |
+|---|---|---|
+| any | `*` | `*` |
+| Zone | its prefixes and Extra prefixes | the same |
+| single IP, CIDR range | its own value, also when it has a VNet binding | the same |
+| VNet | the VNet's address space | the same |
+| subnet that is not a Zone | the subnet's prefixes | never there: it covers no Zone |
+| service tag | the tag | never there: it covers no Zone |
+| ASG object, External ASG object | a reference to its ASG in Z's VNet, if it has network interface members there. As its **IP fallback** ([ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md)) also the private IPs of its ASG members in other VNets, of its private endpoint members everywhere, and the IPv6 addresses of its network interface members in Z's VNet | a reference to its ASG in Z's VNet. As its IP fallback also the IPv6 addresses of its network interface members in Z |
+| ASG object, External ASG object, on a Zone that takes no ASG references (see below) | the IPs of all its ASG members | the IPs of its ASG members in Z |
 
-Three more cases use the IP fallback. On a Zone whose service takes no ASGs in NSG rules (PostgreSQL flexible server), every ASG member is written as its IPs. The same holds on every Zone that holds at least one private endpoint, whatever its network policies, because Microsoft documents connection failures above 50 IP configurations in an ASG that the NSG of a private endpoint subnet references ([Grilling: ASG membership of private endpoints and multi-IP network interfaces](https://github.com/mfgAkilae/nsgfw/issues/39)). A network interface member contributes the IPs of all its IP configurations. Finally, the IPv6 addresses of every network interface member go through the IP fallback on every NSG, also inside the ASG's VNet, in both modes: the tool writes ASG membership on IPv4 IP configurations only, as the Terraform association resource does ([Grilling: Terraform mode workflow][t17], point 13), so an ASG reference stands for IPv4 only ([Grilling: ASG membership on IPv6 IP configurations][t42]). For an External ASG object, a network interface is a member when its IPv4 IP configuration is in the Unmanaged ASG, whatever its IPv6 IP configuration holds; one that is in the ASG only through its IPv6 IP configuration is no member and gets a warning, because the reference still matches its IPv6 address.
+Three more cases use the IP fallback. On a Zone whose service takes no ASGs in NSG rules (PostgreSQL flexible server), every ASG member is written as its IPs: all members on the far side, the members in the Zone on the own side. The same holds on every Zone that holds at least one private endpoint, whatever its network policies, because Microsoft documents connection failures above 50 IP configurations in an ASG that the NSG of a private endpoint subnet references ([Grilling: ASG membership of private endpoints and multi-IP network interfaces](https://github.com/mfgAkilae/nsgfw/issues/39)). Whether the NSG of such a Zone filters its private endpoints at all is a separate fact, the subnet's `privateEndpointNetworkPolicies`, which [Step 5](#step-5-nsg-rules-without-effect-on-a-destination-enforced-zone) reads. A network interface member contributes the IPs of all its IP configurations. Finally, the IPv6 addresses of every network interface member go through the IP fallback on every NSG, also inside the ASG's VNet and on the own side, in both modes: the tool writes ASG membership on IPv4 IP configurations only, as the Terraform association resource does ([Grilling: Terraform mode workflow][t17], point 13), so an ASG reference stands for IPv4 only ([Grilling: ASG membership on IPv6 IP configurations][t42]). Without the IPv6 addresses on the own side, a dual-stack member could not be reached over IPv6 on its own Zone ([Example 16](#example-16-an-asg-object-on-a-dual-stack-zone)). For an External ASG object, a network interface is a member when its IPv4 IP configuration is in the Unmanaged ASG, whatever its IPv6 IP configuration holds; one that is in the ASG only through its IPv6 IP configuration is no member and gets a warning, because the reference still matches its IPv6 address.
 
 4. **Partition.** Each side is cut into partitions, because Azure does not mix these kinds in one field ([Grilling: Priority assignment and rule packing][t13], point 8):
    - one prefix list, split into an IPv4 list and an IPv6 list;
@@ -118,13 +124,13 @@ A side without any partition gives no NSG rule. This is the case for an ASG obje
 
 ### Step 4: The split
 
-Per direction, a Rule becomes one NSG rule for each combination of **protocol group × source partition × destination partition**. A combination of an IPv4 list with an IPv6 list is skipped. The engine never merges NSG rules of several Rules, so every NSG rule belongs to exactly one Rule.
+Per direction, a Rule becomes one NSG rule for each combination of **protocol group × source partition × destination partition**. A combination of an IPv4 list with an IPv6 list is skipped. A combination of ASG references with an IPv6 list is skipped too: an ASG reference stands for IPv4 only ([Step 3](#step-3-the-two-sides-of-an-nsg-rule)), and the members' IPv6 addresses have their own IP-fallback list. The engine never merges NSG rules of several Rules, so every NSG rule that comes from a Rule belongs to exactly one Rule; fixed NSG rules belong to a posture element ([Step 6](#step-6-the-posture-of-every-managed-nsg)).
 
 A protocol group is one protocol (`Tcp`, `Udp`, `Icmp`, `Esp`, `Ah`) with all its ports in one list. Overlapping and adjacent port ranges are merged. The Service object any, alone or in a list, makes one group with protocol `*` and ports `*`.
 
 #### Example 1: Coverage of a host, a CIDR range and any
 
-Prototype key `coverage`. Shows [ADR 0004](../adr/0004-place-rules-by-coverage.md) and [ADR 0016](../adr/0016-destination-enforced-egress-and-deny-rules-on-both-sides.md). web and app are strict here, so their outbound side shows.
+Prototype key `coverage`. Shows [ADR 0004](../adr/0004-place-rules-by-coverage.md) and [ADR 0016](../adr/0016-destination-enforced-egress-and-deny-rules-on-both-sides.md). Zones: web, app and db. web and app are strict here, so their outbound side shows.
 
 | # | Rule ID | Source | Destination | Service | Action |
 |---|---|---|---|---|---|
@@ -161,15 +167,15 @@ Prototype key `coverage`. Shows [ADR 0004](../adr/0004-place-rules-by-coverage.m
 | 2760 | `nsgfw-r2-in-bfda4830` | Allow | Tcp | 22 | 10.1.0.0/16 | 10.1.3.0/24 |
 
 - Rule 1 lands outbound on web only, with the host as source. The host covers web, not app.
-- Rule 2 covers web, app and db with its source. It lands outbound on web and app. On db, which is destination-enforced, the engine leaves it out ([Step 5](#step-5-nsg-rules-without-effect-on-a-destination-enforced-zone)).
+- Rule 2 covers web, app and db with its source, the three Zones of this example. It lands outbound on web and app. On db, which is destination-enforced, the engine leaves it out ([Step 5](#step-5-nsg-rules-without-effect-on-a-destination-enforced-zone)).
 - Rule 3 has any as source, so it lands outbound on every strict Zone, web itself included.
 - The same Rule has different priorities in different NSGs.
 
-The same placement explains why any is not the Internet (prototype key `internet`). "Zone web → Internet https" has a service tag as destination, covers no Zone there and lands only outbound on web: 1 NSG, 1 NSG rule. "Zone web → any https" covers every Zone with its destination. It lands inbound on web, app and db too (3 NSGs, 4 NSG rules) and opens web → app and web → db on 443.
+The same placement explains why any is not the Internet (prototype key `internet`; Zones: web, app and db, all destination-enforced). "Zone web → Internet https" has a service tag as destination, covers no Zone there and lands only outbound on web: 1 NSG, 1 NSG rule. "Zone web → any https" covers every Zone with its destination. With these three Zones it lands inbound on web, app and db too (3 NSGs, 4 NSG rules) and opens web → app and web → db on 443. With more Zones onboarded it lands inbound on each of them.
 
 #### Example 2: The split cross product
 
-Prototype key `split`. Shows [ADR 0005](../adr/0005-stable-nsg-rule-identity.md) and [Grilling: Priority assignment and rule packing][t13], point 8.
+Prototype key `split`. Shows [ADR 0005](../adr/0005-stable-nsg-rule-identity.md) and [Grilling: Priority assignment and rule packing][t13], point 8. Zones: web and db. vm-web1 and vm-web2 are network interfaces in web.
 
 | # | Rule ID | Source | Destination | Service | Action |
 |---|---|---|---|---|---|
@@ -190,7 +196,7 @@ The six NSG rules take consecutive priorities. On web, which holds the ASG membe
 
 #### Example 3: Own-side pruning and normalization
 
-Prototype key `pruning`. Shows [Grilling: Priority assignment and rule packing][t13], points 9 and 10. Address group AppServers = Zone app, Zone api and host 10.1.2.5, which lies inside app. app and api are strict.
+Prototype key `pruning`. Shows [Grilling: Priority assignment and rule packing][t13], points 9 and 10. Zones: app, api and db. Address group AppServers = Zone app, Zone api and the single IP 10.1.2.5, which lies inside app. app and api are strict.
 
 | # | Rule ID | Source | Destination | Service | Action |
 |---|---|---|---|---|---|
@@ -202,13 +208,13 @@ Prototype key `pruning`. Shows [Grilling: Priority assignment and rule packing][
 | `nsg-spoke2-api` | outbound | 2100 | `nsgfw-r1-out-bfda4830` | 80-91 | 10.2.1.0/24 | 10.1.3.0/24 |
 | `nsg-spoke1-db` | inbound | 2100 | `nsgfw-r1-in-bfda4830` | 80-91 | 10.1.2.0/24, 10.2.1.0/24 | 10.1.3.0/24 |
 
-On app the source is only app's prefix: api is pruned, and the host drops out because app's prefix contains it. On db the far side stays complete. The three services merge to one port range.
+On app the source is only app's prefix: api is pruned, and the single IP drops out because app's prefix contains it. On db the far side stays complete. The three services merge to one port range.
 
 #### Example 4: Extra prefixes and a VNet binding
 
 Prototype keys `aks` and `binding`. Shows [ADR 0017](../adr/0017-extra-prefixes-and-vnet-bindings.md).
 
-Zone aks holds the nodes of an AKS cluster with Azure CNI Overlay. Its NSG sees pod addresses from 10.244.0.0/16, which belong to no subnet. db is strict. `aks-pods` is the CIDR object 10.244.0.0/16.
+First part, Zones: aks and db. Zone aks holds the nodes of an AKS cluster with Azure CNI Overlay. Its NSG sees pod addresses from 10.244.0.0/16, which belong to no subnet. db is strict. `aks-pods` is the CIDR object 10.244.0.0/16.
 
 | # | Rule ID | Source | Destination | Service | Action |
 |---|---|---|---|---|---|
@@ -222,7 +228,7 @@ Zone aks holds the nodes of an AKS cluster with Azure CNI Overlay. Its NSG sees 
 | Rule 1 inbound on aks | deny 10.244.0.0/16 → 10.2.8.0/22 | deny 10.244.0.0/16 → 10.2.8.0/22, 10.244.0.0/16 |
 | Rule 2 inbound on db | allow 10.2.8.0/22 → 10.1.3.0/24 | allow 10.2.8.0/22, 10.244.0.0/16 → 10.1.3.0/24 |
 
-VNet lab reuses the range of spoke1, and its Zone labapp has the prefix of app. `app-servers` is the CIDR object 10.1.2.0/24, and the Rule is "Zone web → app-servers ssh allow".
+Second part, Zones: web, app and labapp. Change to the estate: lab/clients has the prefix 10.1.1.0/24 here, the prefix of web, instead of 10.1.4.0/24. VNet lab reuses the range of spoke1, and its Zone labapp has the prefix of app. `app-servers` is the CIDR object 10.1.2.0/24, and the Rule is "Zone web → app-servers ssh allow".
 
 | | `app-servers` without VNet binding | bound to spoke1 |
 |---|---|---|
@@ -232,11 +238,39 @@ VNet lab reuses the range of spoke1, and its Zone labapp has the prefix of app. 
 
 The binding limits where the Rule lands. It does not change the prefix in the NSG rules: on every NSG where the Rule lands, the far side still carries 10.1.2.0/24.
 
+#### Example 16: An ASG object on a dual-stack Zone
+
+No prototype key. Shows [ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md) and [Grilling: ASG membership on IPv6 IP configurations][t42]. Zones: dual and dual2, both destination-enforced. ASG object dual-servers has one member, vm-dual1 in Zone dual, with the addresses 10.3.1.4 and fd00:3:0:1::4. Its Managed ASG `asg-dual-servers-spoke3` holds the network interface through its IPv4 IP configuration only.
+
+| # | Rule ID | Source | Destination | Service | Action |
+|---|---|---|---|---|---|
+| 1 | 1 | any | dual-servers | https | allow |
+| 2 | 2 | dual-servers | Zone dual2 | ssh | allow |
+
+`nsg-spoke3-dual`, inbound. The ASG object is on the own side:
+
+| Priority | NSG rule | Access | Protocol | Ports | Source | Destination |
+|---|---|---|---|---|---|---|
+| 2099 | `nsgfw-r1-in-14b8d9a4` | Allow | Tcp | 443 | * | fd00:3:0:1::4 (IP fallback: the member's IPv6 address) |
+| 2100 | `nsgfw-r1-in-ce99fd40` | Allow | Tcp | 443 | * | ASG asg-dual-servers-spoke3 |
+
+`nsg-spoke3-dual2`, inbound. The ASG object is on the far side:
+
+| Priority | NSG rule | Access | Protocol | Ports | Source | Destination |
+|---|---|---|---|---|---|---|
+| 2099 | `nsgfw-r2-in-25f91a26` | Allow | Tcp | 22 | fd00:3:0:1::4 (IP fallback) | fd00:3:0:2::/64 |
+| 2100 | `nsgfw-r2-in-b13b57e4` | Allow | Tcp | 22 | ASG asg-dual-servers-spoke3 | 10.3.2.0/24 |
+
+- On both NSGs the object gives two partitions: the ASG reference, which stands for 10.3.1.4, and the IP-fallback list with the IPv6 address.
+- On dual, `*` pairs with both partitions, because `*` has no address family. Without the IP-fallback list on the own side, nothing would let IPv6 traffic in to vm-dual1.
+- On dual2 the destination has an IPv4 list and an IPv6 list. Two of the four combinations are skipped: the ASG reference with fd00:3:0:2::/64, and the IPv6 fallback list with 10.3.2.0/24.
+- Both Rules also land outbound: Rule 1 on dual and dual2, because its source is any, and Rule 2 on dual. [Step 5](#step-5-nsg-rules-without-effect-on-a-destination-enforced-zone) leaves all of them out: the Zones are destination-enforced, and every destination lies inside the Internal address space, which holds fc00::/7. If dual were strict, Rule 2 would land outbound there with the same two combinations as on dual2, now with the ASG reference and fd00:3:0:1::4 on the own side.
+
 ### Step 5: NSG rules without effect on a destination-enforced Zone
 
 The Egress posture of a Zone decides its outbound side ([ADR 0016](../adr/0016-destination-enforced-egress-and-deny-rules-on-both-sides.md)). A strict Zone gets every outbound NSG rule. A destination-enforced Zone has an egress allow to the Internal address space below its Rules, and the engine leaves out the outbound NSG rules that change nothing. It walks the outbound NSG rules of the Zone from the bottom up:
 
-1. A **deny** NSG rule is left out when its destination lies entirely inside Zones: the addresses of Zones cover it, and no subnet that is not a Zone overlaps it, in any VNet of the inventory. The same deny then lands inbound wherever the destination is.
+1. A **deny** NSG rule is left out when its destination lies entirely inside Zones: the addresses of Zones cover it, and no subnet that is not a Zone overlaps it, in any VNet of the inventory. The IPs of private endpoints in a subnet that does not apply NSGs to them count like a subnet that is not a Zone (see below). The same deny then lands inbound wherever the destination is.
 2. An **allow** NSG rule is left out when its destination lies inside the Internal address space and no deny NSG rule that stays below it overlaps it. The egress allow lets that traffic out anyway.
 3. Every other NSG rule stays.
 
@@ -244,20 +278,31 @@ The destination counts as known when it is a prefix list or ASG references, whos
 
 The second condition of case 1 matters where address spaces overlap. In the example estate, 10.1.4.0/24 is Zone billing in spoke1 and the clients subnet in lab, which is not a Zone. A deny to 10.1.4.0/24 lands inbound on billing only. If it were left out on the destination-enforced Zone labapp, labapp could reach the lab clients although the Rule base denies it, so the deny stays outbound ([Example 15](#example-15-the-constraint-merge) shows one). The price: where an unmanaged subnet reuses the prefix of a Zone, a deny to that prefix lands outbound on every Zone in its source Coverage.
 
+**Private endpoints that no NSG filters.** Case 1 rests on the destination Zone enforcing the deny inbound. For private endpoints that holds only where the subnet applies NSGs to them: Azure applies the subnet NSG to traffic toward private endpoints only while the subnet's `privateEndpointNetworkPolicies` is `Enabled` or `NetworkSecurityGroupEnabled`, and Microsoft documents the setting as disabled by default ([Research: Special subnets and mandatory platform rules](../research/special-subnets.md)). The Azure inventory records the setting of every subnet. Where it is `Disabled` or `RouteTableEnabled`, or where the subnet lies in a region in which Microsoft lists NSG support for private endpoints as unavailable ([private endpoint overview](https://learn.microsoft.com/en-us/azure/private-link/private-endpoint-overview), retrieved 2026-11-12; the regions are kept as data with URL and date), the engine treats the IPs of those private endpoints like a subnet that is not a Zone in the test of case 1 ([Review: Grill review of the complete design package][t23]):
+
+- A destination that overlaps one of these IPs does not lie entirely inside Zones. A deny NSG rule toward it stays outbound on every destination-enforced Zone in the Coverage of its source, as it does on a strict Zone anyway. The deny is enforced on the source side only, and only for sources in Zones.
+- An allow toward them is governed as for any destination outside Zones. The egress allow of a destination-enforced Zone lets traffic to the Internal address space out with or without a Rule, and no inbound NSG rule decides it at the private endpoint.
+- The Zones in the Coverage of the source are Affected Zones ([Preview and Affected Zones](#preview-and-affected-zones)).
+- The Zone carries a permanent warning, and so does the Preview of every Rule toward it: "NSGs do not filter the private endpoints of this subnet; denies are enforced on the source side only, and only for Zones". The warning itself was decided in [Grilling: Zone onboarding and NSG lifecycle][t11], point 10, for the setting `Disabled`.
+
+The inbound NSG rules of such a Zone are written as for any Zone. They decide the traffic of everything else in the subnet. [Example 17](#example-17-a-deny-toward-private-endpoints-that-no-nsg-filters) shows the case.
+
+**A deny Rule from any to any.** A deny Rule whose source and destination are both any stays outbound on every Zone: `*` reaches outside Zones, so case 1 never applies. It then overlaps every allow NSG rule above it whose service overlaps its own, and with the service any that is every allow. Case 2 leaves none of those allows out. Every allow Rule above it lands outbound on every Zone in the Coverage of its source again, and "any → Zone B" lands outbound on every Zone. That is the cost the destination-enforced Egress posture removed ([ADR 0016](../adr/0016-destination-enforced-egress-and-deny-rules-on-both-sides.md)). The Deny-all rules already deny what no Rule allows, so the Rule editor warns on such a Rule: "the Deny-all rules already do this; this Rule keeps every allow Rule on the outbound side of every Zone". Creating it stays allowed ([Review: Grill review of the complete design package][t23]).
+
 The check runs per NSG rule, not per Rule. A Rule with the destinations "Zone db" and "Internet" keeps its NSG rule to the tag and loses the one to db.
 
 #### Example 5: An allow that must stay, denies inside and outside Zones
 
 Prototype keys `zone-zone` and `kept-allow`. Shows [ADR 0016](../adr/0016-destination-enforced-egress-and-deny-rules-on-both-sides.md).
 
-First the plain case: "Zone web → Zone db mssql allow".
+First the plain case (Zones: web and db): "Zone web → Zone db mssql allow".
 
 | Egress posture of web | `nsg-spoke1-db` inbound | `nsg-spoke1-web` outbound | Cost of the Rule |
 |---|---|---|---|
 | destination-enforced | 2100 `nsgfw-r1-in-bfda4830` allow 10.1.1.0/24 → 10.1.3.0/24 tcp/1433 | left out; the egress allow at 4094 lets it out | 1 NSG, 1 NSG rule |
 | strict | the same | 2100 `nsgfw-r1-out-bfda4830` allow 10.1.1.0/24 → 10.1.3.0/24 tcp/1433; no egress allow | 2 NSGs, 2 NSG rules |
 
-Now three Rules, with web destination-enforced:
+Now three Rules (Zones: web, app and db), with web destination-enforced:
 
 | # | Rule ID | Source | Destination | Service | Action |
 |---|---|---|---|---|---|
@@ -276,7 +321,7 @@ Now three Rules, with web destination-enforced:
 - Rule 1 stays: the deny of Rule 3 below it overlaps it. Without Rule 1, web → db on 445 would hit that deny and never reach the egress allow.
 - Rule 2 is left out: app lies inside Zones, and `nsg-spoke1-app` holds the deny inbound.
 
-Inbound, the denies land on every Zone their destination covers:
+Inbound, the denies land on every Zone their destination covers, here the three Zones of the example:
 
 | NSG | Priority | NSG rule | Access | Source | Destination |
 |---|---|---|---|---|---|
@@ -288,9 +333,24 @@ Inbound, the denies land on every Zone their destination covers:
 
 Rule 3 also lands inbound on web itself and closes smb inside web, above the Intra-zone default. The Rule base says so: 10.0.0.0/8 covers web.
 
+#### Example 17: A deny toward private endpoints that no NSG filters
+
+No prototype key. Shows [ADR 0016](../adr/0016-destination-enforced-egress-and-deny-rules-on-both-sides.md) with the private endpoint rule of [Review: Grill review of the complete design package][t23]. Zones: web and pe, both destination-enforced. Change to the estate: Zone pe is one more subnet of spoke1, 10.1.6.0/24, and holds the private endpoint pe-sql with the IP 10.1.6.4. The Rule is "Zone web → Zone pe mssql deny", Rule ID 1.
+
+| `privateEndpointNetworkPolicies` of the subnet of pe | `nsg-spoke1-pe` inbound | `nsg-spoke1-web` outbound | Affected Zones |
+|---|---|---|---|
+| `Enabled` | 2100 `nsgfw-r1-in-bfda4830` deny 10.1.1.0/24 → 10.1.6.0/24 tcp/1433 | left out: the destination lies entirely inside Zones | pe |
+| `Disabled` | the same NSG rule, which Azure does not apply to pe-sql | 2100 `nsgfw-r1-out-bfda4830` deny 10.1.1.0/24 → 10.1.6.0/24 tcp/1433 | pe and web |
+
+- With `Disabled`, 10.1.6.4 counts like a subnet that is not a Zone. 10.1.6.0/24 overlaps it, so the destination does not lie entirely inside Zones and the deny stays outbound on web. If it were left out, web's egress allow at 4094 would let the flow out, no NSG would stop it, and the evaluation function would still answer "deny".
+- web is an Affected Zone, because the destination reaches outside Zones.
+- The deny holds for sources in Zones only. A source outside every Zone, such as hub/mgmt, passes no Managed NSG that filters this traffic.
+- Without Rule 1, web reaches pe-sql through its egress allow. An allow Rule "Zone web → Zone pe" would change nothing on web; only a strict source Zone needs it.
+- Zone pe and the Preview of Rule 1 carry the warning that NSGs do not filter the private endpoints of this subnet.
+
 ### Step 6: The posture of every Managed NSG
 
-Around the NSG rules from Rules, every Managed NSG gets fixed posture NSG rules. They belong to no Rule. The bands are the same in every Managed NSG and per direction ([Grilling: Priority assignment and rule packing][t13], point 2, as changed by [Grilling: Import and drift handling][t18] and [Prototype: Translation engine worked examples][t22]).
+Around the NSG rules from Rules, every Managed NSG gets fixed fixed NSG rules. They belong to no Rule: each belongs to a posture element, which is the Platform exceptions, the Intra-zone default, one of the Inherited defaults, the egress allow of the Egress posture or the Deny-all rules. The bands are the same in every Managed NSG and per direction ([Grilling: Priority assignment and rule packing][t13], point 2, as changed by [Grilling: Import and drift handling][t18] and [Prototype: Translation engine worked examples][t22]).
 
 | Priorities | Block | NSG rules |
 |---|---|---|
@@ -305,14 +365,14 @@ Priorities are unique per direction, so inbound and outbound use the same number
 
 Special cases:
 
-- **Dual-stack Zone.** IPv4 and IPv6 never share an NSG rule, so a Rule with both families gives two NSG rules per protocol group. Microsoft documents that one NSG rule cannot combine IPv4 and IPv6 prefixes ([Task: Empirical check of ASGs on dual-stack network interfaces][t41], T10, "Documented in passing"). An ASG object in a Rule on a dual-stack Zone inside its VNet gives an ASG reference for IPv4 and an IP-fallback list for the members' IPv6 addresses.
-- **Application Gateway v2 Zone.** It has no outbound Deny-all rule and no egress allow, because Azure forbids NSG rules there that deny outbound connectivity. Below its Rules the Azure default rules decide outbound traffic. Rules land outbound as usual and nothing is left out, so the NSG is right if the setting is ever removed. The outbound deny to `VirtualNetwork` from [Grilling: Rule placement and default posture][t12], point 14, waits for a deferred check.
+- **Dual-stack Zone.** IPv4 and IPv6 never share an NSG rule, so a Rule with both families gives two NSG rules per protocol group. Microsoft documents that one NSG rule cannot combine IPv4 and IPv6 prefixes ([Task: Empirical check of ASGs on dual-stack network interfaces][t41], T10, "Documented in passing"). An ASG object in a Rule on a dual-stack Zone inside its VNet gives an ASG reference for IPv4 and an IP-fallback list for the members' IPv6 addresses ([Example 16](#example-16-an-asg-object-on-a-dual-stack-zone)). ICMP over IPv6 is unsettled: Microsoft's pages disagree on whether an NSG rule with the protocol `Icmp` matches ICMPv6. The page on managing NSGs says that ICMP covers ICMPv4 and ICMPv6 ([NSG and ASG rule semantics and limits](../research/nsg-asg-semantics-and-limits.md)), and the IPv6 overview says "ICMPv6 isn't currently supported in Network Security Groups" ([IPv6 for Azure Virtual Network](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/ipv6-overview#limitations), retrieved 2026-11-12). The engine writes the `Icmp` NSG rules for the IPv6 lists as for any protocol group and warns on every Rule with an ICMP Service object that lands on a dual-stack Zone. A deferred check settles it ([Open points](#open-points)).
+- **Application Gateway v2 Zone.** It has no outbound Deny-all rule and no egress allow, and the engine leaves out every outbound deny NSG rule there, because Microsoft forbids them on this subnet: "Outbound NSG rules that deny any outbound connectivity must not be created." ([Application Gateway infrastructure configuration](https://learn.microsoft.com/en-us/azure/application-gateway/configuration-infrastructure), retrieved 2026-11-12). Below its Rules the Azure default rules decide outbound traffic. Allow Rules land outbound as usual, and [Step 5](#step-5-nsg-rules-without-effect-on-a-destination-enforced-zone) leaves none of them out there. The Preview and the Zone show "outbound open, required by Azure". A left-out deny whose destination lies entirely inside Zones is still enforced inbound at the destination. Where the destination does not lie entirely inside Zones, nothing enforces the deny for this Zone, and the Rule gets the Rule warning "not enforced for Zone X (Application Gateway v2)". A validation error instead was rejected, because one such Zone would then block every broad deny Rule ([Review: Grill review of the complete design package][t23]).
 - **Retired NSG.** Platform exceptions and Deny-all rules only. It has no Rules, no Intra-zone default, no Inherited defaults and no egress allow. On an Application Gateway v2 subnet it keeps outbound open.
 - **PostgreSQL flexible server Zone.** Only the IP fallback of Step 3 differs.
 
 #### Example 6: Every block of one Managed NSG
 
-Prototype key `bands`. Shows the bands, [ADR 0011](../adr/0011-import-preserves-behaviour.md) and [ADR 0016](../adr/0016-destination-enforced-egress-and-deny-rules-on-both-sides.md). db is destination-enforced and has all three Inherited defaults, as after an Import.
+Prototype key `bands`. Shows the bands, [ADR 0011](../adr/0011-import-preserves-behaviour.md) and [ADR 0016](../adr/0016-destination-enforced-egress-and-deny-rules-on-both-sides.md). Zones: db only. db is destination-enforced and has all three Inherited defaults, as after an Import.
 
 | # | Rule ID | Source | Destination | Service | Action |
 |---|---|---|---|---|---|
@@ -347,11 +407,19 @@ Rule 2 lands only outbound on db, because a service tag covers no Zone. Rule 1 a
 
 An NSG rule from a Rule is named `nsgfw-r<Rule ID>-<in|out>-<hash>` ([ADR 0005](../adr/0005-stable-nsg-rule-identity.md)). The hash has 8 hex characters and covers only the split key: the protocol, and the kind and identity of the partition on each side (IPv4 or IPv6 prefix list, the IP-fallback list of one ASG object, service tag name, ASG chunk). It does not cover prefixes, ports or the Rule's name. The description is `Rule <Rule ID>: <Rule name>`, cut to 140 characters. Posture NSG rules have the fixed names of Step 6.
 
+The examples rely on three rules for the identity of a partition:
+
+- `*` is a partition kind of its own, without an address family. A side that is `*` and a side that is an IPv4 list give different names.
+- An ASG chunk is identified by its index among the chunks of its side, not by the ASGs in it.
+- An IP-fallback list is identified by the ID of its ASG object or External ASG object, and by its address family.
+
+The hash values in the tables of this document are illustrative. They come from the prototype, and neither the hash function nor the encoding of the split key is decided ([Open points](#open-points)), so they are no reference for tests of the engine.
+
 The hash function is part of the engine. Changing it renames every NSG rule, so it is fixed with the first engine version. If two split keys of one Rule get the same hash, two NSG rules in one NSG would share a name, which Azure rejects. The engine reports that as a validation error that names the Rule.
 
 #### Example 7: What keeps a name and what adds one
 
-Prototype key `names`. Shows [ADR 0005](../adr/0005-stable-nsg-rule-identity.md). Rule 1042 is "Zone web → Zone db https allow". `nsg-spoke1-db`, inbound, over three Commits and a fourth Change set:
+Prototype key `names`. Shows [ADR 0005](../adr/0005-stable-nsg-rule-identity.md). Zones: web and db. Rule 1042 is "Zone web → Zone db https allow". `nsg-spoke1-db`, inbound, over three Commits and a fourth Change set:
 
 | Edit | NSG rules of Rule 1042 |
 |---|---|
@@ -366,18 +434,18 @@ A new protocol or a new partition adds NSG rules with new names. They take the f
 
 Priorities are assigned per Managed NSG and per direction, against the NSG rules stored with the last committed Version ([ADR 0005](../adr/0005-stable-nsg-rule-identity.md), [Grilling: Priority assignment and rule packing][t13], points 1 to 6).
 
-1. **Order.** The NSG rules of the direction are listed in Rule base order. The NSG rules of one Rule stay together, in a fixed order. They share the action, so their order changes no verdict.
-2. **Keep.** An NSG rule keeps its stored priority while its order relative to its neighbours holds. The prototype keeps the largest set of NSG rules whose stored priorities are still ascending in the new order, so moving one Rule renumbers only that Rule's NSG rules.
+1. **Order.** The NSG rules of the direction are listed in Rule base order. The NSG rules of one Rule stay together, in a fixed order. They share the action, so their order changes no verdict. The examples use the prototype's order: by protocol group, then by source partition, then by destination partition, and on one side prefix lists first (IPv4 before IPv6), then IP-fallback lists, service tags and ASG chunks. Which order the engine fixes is open ([Open points](#open-points)).
+2. **Keep.** An NSG rule keeps its stored priority while its order relative to its neighbours holds. The prototype keeps the largest set of NSG rules whose stored priorities are still ascending in the new order, so moving one Rule renumbers only that Rule's NSG rules. Which set it keeps when several are equally large is open.
 3. **Fill gaps.** A run of new or moved NSG rules goes into the gap between its kept neighbours, or between a neighbour and the edge of the band:
    - NSG rules of a Rule that already has NSG rules next to the gap take the free numbers right next to them.
    - The others are spread evenly: with `n` Rules in a gap between the priorities `lo` and `hi`, Rule `j` sits at `lo + j × (hi − lo) / (n + 1)`, rounded, with its block of NSG rules centred there. The edges of the band count as 119 and 4080, so one Rule in an empty band lands at 2100. On the first Commit this spreads the whole direction.
 4. **Window rebalance.** When the gap has too few free numbers, the engine grows a priority range around the spot, doubling its radius, until the NSG rules inside fill at most half of it. It spreads only these NSG rules evenly over the range. The fill threshold is an engine parameter. This rule was settled in the prototype without a decision of its own ([Prototype: Translation engine worked examples][t22], resolution).
 
-The Rules band cannot run full before the NSG rule limit of Step 9 is reached: it has 3,960 values per direction, against 1,994 NSG rules per NSG.
+The Rules band cannot run full before the NSG rule limit of Step 9 is reached: it has 3,960 values per direction, against 1,994 NSG rules per NSG. It can be more than half full, though: above 1,980 NSG rules in one direction, a range can grow to the whole band and still miss the stop condition of the window rebalance. What the engine does then is open ([Open points](#open-points)).
 
 #### Example 8: Insert, move, disable and a window rebalance
 
-Prototype keys `stable` and `window`. Shows [ADR 0005](../adr/0005-stable-nsg-rule-identity.md). Four Rules land inbound on db. Then Rule 5 is inserted between Rule 1 and Rule 2, Rule 4 is moved to the top, and Rule 2 is disabled, each in its own Commit.
+Prototype keys `stable` and `window`. Shows [ADR 0005](../adr/0005-stable-nsg-rule-identity.md). Zones: web, app and db in both parts. Four Rules land inbound on db. Then Rule 5 is inserted between Rule 1 and Rule 2, Rule 4 is moved to the top, and Rule 2 is disabled, each in its own Commit.
 
 | NSG rule in `nsg-spoke1-db`, inbound | Version 1 | Rule 5 inserted | Rule 4 moved to the top | Rule 2 disabled |
 |---|---|---|---|---|
@@ -403,7 +471,7 @@ The range grows from 1000–1003 over 999–1004 to 997–1006, where five NSG r
 
 ### Step 9: Limits
 
-The engine counts per Managed NSG, posture NSG rules included, and compares with the limits data file ([Grilling: Priority assignment and rule packing][t13], points 12 to 14; [Grilling: ASG model and NIC membership][t14], point 13). Ambiguous limits count conservatively until a nightly test settles them.
+The engine counts per Managed NSG, fixed NSG rules included, and compares with the limits data file ([Grilling: Priority assignment and rule packing][t13], points 12 to 14; [Grilling: ASG model and NIC membership][t14], point 13). Ambiguous limits count conservatively until a nightly test settles them.
 
 | Limit | Value | Counted as |
 |---|---|---|
@@ -414,20 +482,25 @@ The engine counts per Managed NSG, posture NSG rules included, and compares with
 | ASGs per IP configuration | 20 | memberships in Unmanaged ASGs included |
 | IP configurations per ASG | 4,000 | |
 | NSGs per subscription and region | from the limits data file | checked at Zone onboarding |
+| Sources × destinations × port ranges per NSG rule, on a Zone that holds a private endpoint | 250,000 | per NSG rule: the number of source prefixes times the number of destination prefixes times the number of port ranges. Microsoft documents this product limit for NSG rules on a subnet with private endpoints ([private endpoint overview](https://learn.microsoft.com/en-us/azure/private-link/private-endpoint-overview), retrieved 2026-11-12; [Research: Special subnets and mandatory platform rules](../research/special-subnets.md)). The IP fallback of Step 3 makes long prefix lists on exactly these Zones |
 
-A breach is a validation error that blocks the whole Change set. The message names the NSG, the limit, the count and the Rules with the most NSG rules there. From 90 % of a limit the Change set and the Zone overview show a warning. More than 10 ASGs on one side is no breach: Step 3 chunks them.
+A breach is a validation error that blocks the whole Change set. The message names the NSG, the limit, the count and the Rules with the most NSG rules there. From 90 % of a limit the Change set and the Zone overview show a warning.
 
-Prototype key `limits`: 1,800 Rules with one host each into db give 1,807 NSG rules of 1,994 (91 %) and a warning. 200 more Rules give 2,007 and block: "nsg-spoke1-db: 2007 NSG rules, limit 1994". One Rule with an Address group of 6,100 hosts gives 6,106 source prefixes against 6,000 and blocks too.
+More than 10 ASGs on one side is no breach: Step 3 chunks them. The chunk size is 10, the number of ASGs per NSG rule on Microsoft's limits page. Microsoft's pages disagree here: the NSG overview says that one NSG rule cannot specify multiple application security groups ([NSG and ASG rule semantics and limits](../research/nsg-asg-semantics-and-limits.md), U8). The chunk size is therefore a value in the limits data file, and the fallback, if the nightly test shows that Azure takes only one ASG per side, is a chunk size of 1.
 
-The engine also reports the cost of every Rule: "lands on N NSGs, M NSG rules".
+Ports are not counted on their own. Microsoft publishes no limit for ports or port ranges per NSG rule, so the engine has nothing to count against. Port ranges count only as a factor of the product above.
+
+Prototype key `limits` (Zones: db only): 1,800 Rules with one single IP each into db give 1,807 NSG rules of 1,994 (91 %) and a warning. 200 more Rules give 2,007 and block: "nsg-spoke1-db: 2007 NSG rules, limit 1994". One Rule with an Address group of 6,100 single IPs gives 6,106 source prefixes against 6,000 and blocks too.
+
+The engine also reports the cost of every Rule: "lands on N NSGs, M NSG rules". The Rule warning "lands on very many Managed NSGs" reads it ([Rule warnings](#rule-warnings)).
 
 ### Step 10: Managed ASGs and membership
 
-For every ASG object the engine derives one Managed ASG per VNet that holds ASG members of the object ([ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md)). A new Managed ASG gets its name from the Environment's ASG naming pattern and keeps it; an ASG adopted in place keeps its own name. For every network interface the engine derives the Managed ASGs it belongs to, the same set on each of its IPv4 IP configurations. Its IPv6 IP configurations keep whatever ASGs they hold; a Managed ASG found on one is Drift, resolved by Overwrite only ([Grilling: ASG membership on IPv6 IP configurations][t42]). Private endpoint members never join a Managed ASG; they reach NSGs through the IP fallback. A Managed ASG without ASG members is deleted once no NSG rule references it. The engine never writes the Unmanaged ASG of an External ASG object.
+For every ASG object the engine derives one Managed ASG per VNet that holds network interface members of the object ([ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md)). A new Managed ASG gets its name from the Environment's ASG naming pattern and keeps it; an ASG adopted in place keeps its own name. For every network interface the engine derives the Managed ASGs it belongs to, the same set on each of its IPv4 IP configurations. Its IPv6 IP configurations keep whatever ASGs they hold; a Managed ASG found on one is Drift, resolved by Overwrite only ([Grilling: ASG membership on IPv6 IP configurations][t42]). Private endpoint members never join a Managed ASG; they reach NSGs through the IP fallback. A Managed ASG without ASG members is deleted once no NSG rule references it. The engine never writes the Unmanaged ASG of an External ASG object.
 
 #### Example 9: An ASG object across two spokes
 
-Prototype keys `asg-spokes` and `asg-pg`. Shows [ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md). ASG object web-servers has the members vm-web1 (Zone web, spoke1, 10.1.1.4) and vm-api1 (Zone api, spoke2, 10.2.1.4). api is strict. The Rule is "web-servers → Zone db mssql allow".
+Prototype keys `asg-spokes` and `asg-pg`. Shows [ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md). Zones: web, api and db for the table, and web, api and pg for the last sentence. ASG object web-servers has the members vm-web1 (Zone web, spoke1, 10.1.1.4) and vm-api1 (Zone api, spoke2, 10.2.1.4). api is strict. The Rule is "web-servers → Zone db mssql allow".
 
 | NSG | Direction | Priority | NSG rule | Source | Destination |
 |---|---|---|---|---|---|
@@ -441,20 +514,22 @@ Two Managed ASGs exist, one per VNet with members. On db, ASGs and member IPs ne
 
 The map asks for an evaluation function of the Rule base that the later packet tracer can reuse. The engine needs the same function now: for Import notes, Crossing flows and member steps.
 
-**Input.** A flow: source address, destination address, protocol and destination port, plus for each end the Zone it lies in, or "outside every Zone". The Zone is part of the input, because the same address can lie in two Zones (overlapping address spaces, the same Extra prefix on two Zones).
+**Input.** A flow: source address, destination address, protocol and destination port, plus for each end the Zone it lies in, the subnet with a Retired NSG it lies in, or "outside every Zone". The Zone is part of the input, because the same address can lie in two Zones (overlapping address spaces, the same Extra prefix on two Zones). A subnet with a Retired NSG is part of it, because it is no Zone and its NSG still denies.
 
-**Verdict.** A flow passes up to two Managed NSGs: outbound on the source Zone and inbound on the destination Zone. The Rule base allows the flow when every side that exists allows it. A flow inside one Zone passes the same NSG twice, outbound and inbound. A flow between two addresses outside every Zone passes no Managed NSG, and the function has no verdict for it.
+**Verdict.** A flow passes up to two Managed NSGs: outbound on the source Zone and inbound on the destination Zone. A Retired NSG is such a side too, for the subnet of a removed Zone. The Rule base allows the flow when every side that exists allows it. A flow inside one Zone passes the same NSG twice, outbound and inbound. A flow between two addresses outside every Zone and outside every subnet with a Retired NSG passes no Managed NSG, and the function has no verdict for it.
 
 Each side is evaluated top-down, first match wins:
 
 | Order | Inbound on the destination Zone | Outbound on the source Zone |
 |---|---|---|
 | 1 | Platform exceptions | |
-| 2 | the Rules that land inbound on the Zone, in Rule base order | the Rules that land outbound on the Zone, in Rule base order, without what [Step 5](#step-5-nsg-rules-without-effect-on-a-destination-enforced-zone) leaves out |
+| 2 | the Rules that land inbound on the Zone, in Rule base order | the Rules that land outbound on the Zone, in Rule base order, without what [Step 5](#step-5-nsg-rules-without-effect-on-a-destination-enforced-zone) leaves out and, on an Application Gateway v2 Zone, without the deny Rules ([Step 6](#step-6-the-posture-of-every-managed-nsg)) |
 | 3 | Intra-zone default | Intra-zone default |
 | 4 | Inherited default: inbound from `VirtualNetwork` | Inherited defaults: outbound to `VirtualNetwork`, outbound to `Internet` |
 | 5 | | Egress posture: destination-enforced allows the Internal address space |
 | 6 | deny | deny; on an Application Gateway v2 Zone the Azure default rules |
+
+A Retired NSG has only the rows 1 and 6: the Platform exceptions, then the deny, or outbound on an Application Gateway v2 subnet the Azure default rules.
 
 This is the evaluation of the NSG rules that Translate generates, mapped back to Rules through the Rule ID in the name. It returns the verdict per side and the Rule or posture element that decides.
 
@@ -466,9 +541,9 @@ It is not one first-match pass over the Rule base, for three reasons:
 
 Where no service tag and no overlapping address space is involved, the destination side is decided by the first Rule in the Rule base that matches the flow, as on one firewall ([ADR 0004](../adr/0004-place-rules-by-coverage.md)). A strict source Zone is decided by the same Rule.
 
-**Service tags make the verdict three-valued.** The engine cannot read what a tag contains for an NSG. Where a tag decides, the function evaluates both cases, address inside the tag and outside, and returns "allow", "deny" or "depends on the tag", with the cases. It assumes only the documented facts of [ADR 0018](../adr/0018-write-order-from-dominance-gaps.md): the address spaces of the NSG's own VNet and of directly peered VNets are inside `VirtualNetwork` and outside `Internet`, and `AzureLoadBalancer` is the host's virtual IP 168.63.129.16, so no address of a Zone is inside it. Every other tag is evaluated both ways.
+**Service tags make the verdict three-valued.** The engine cannot read what a tag contains for an NSG. Where a tag decides, the function evaluates both cases, address inside the tag and outside, and returns "allow", "deny" or "depends on the tag", with the cases. It assumes only the tag facts of [ADR 0023](../adr/0023-writes-are-ordered-only-by-crossing-flows-with-a-settle-time.md): the address spaces of the NSG's own VNet and of directly peered VNets are inside `VirtualNetwork` and outside `Internet`, and `AzureLoadBalancer` is the host's virtual IP 168.63.129.16, so no address of a Zone is inside it. A peering counts only when it is Connected, allows virtual network access and covers the whole VNet. For a peered VNet, "outside `Internet`" is an assumption, not a documented fact. Every other tag is evaluated both ways.
 
-**Not evaluated:** Security layers (AVNM admin rules, NIC-level NSGs), routing, Azure Firewall, and whether the two ends can reach each other at all. The function answers what the Managed NSGs do.
+**Not evaluated:** Security layers (AVNM admin rules, NIC-level NSGs), routing, Azure Firewall, whether Azure applies a subnet's NSG to its private endpoints ([Step 5](#step-5-nsg-rules-without-effect-on-a-destination-enforced-zone)), and whether the two ends can reach each other at all. The function answers what the Managed NSGs do.
 
 ## Preview and Affected Zones
 
@@ -481,19 +556,19 @@ Where no service tag and no overlapping address space is involved, the destinati
 | changed | same name, other content |
 | renumbered | same content, other priority; the Preview groups these ("12 NSG rules renumbered") |
 
-The Preview also lists new, retired and deleted NSGs, subnet associations, Managed ASGs and membership changes, Rules without effect, the cost of every Rule, limit use, the write plan with its edges and steps, and the number of writes ([Grilling: Priority assignment and rule packing][t13], points 7 and 15).
+The Preview also lists new, retired and deleted NSGs, subnet associations, Managed ASGs and membership changes, Rules without effect, the cost of every Rule, limit use, the write plan with its edges and steps, and the number of writes ([Grilling: Priority assignment and rule packing][t13], points 7 and 15). It shows the pinned Azure facts of the Change set, "outbound open, required by Azure" where an outbound deny NSG rule is left out on an Application Gateway v2 Zone ([Step 6](#step-6-the-posture-of-every-managed-nsg)), and the warning on Rules toward private endpoints that no NSG filters ([Step 5](#step-5-nsg-rules-without-effect-on-a-destination-enforced-zone)).
 
 **Affected Zones** come from the Rule base before and after the Change set, not from the Preview ([ADR 0008](../adr/0008-approval-by-affected-zones.md) as amended by [ADR 0016](../adr/0016-destination-enforced-egress-and-deny-rules-on-both-sides.md)):
 
-1. A Rule counts as changed when it was added, removed, edited or moved, or when an Object or Zone it uses changed what it covers. A Zone's Egress posture and Inherited defaults do not change what it covers.
-2. For every changed Rule, before and after: every Zone in the Coverage of its destination, and from the Coverage of its source the Zones with a strict Egress posture, or all of them when the destination reaches outside Zones.
-3. The Zones of added or removed ASG members.
+1. A Rule counts as changed when it was added, removed, edited or moved, or when an Object it uses changed (value, members, VNet binding, the switch for automatic adoption, Service object or Service group), or a Zone it uses changed its prefixes or Extra prefixes, or an Object or Zone it uses changed what it covers without an edit (a Zone onboarded or removed under a CIDR range, an adopted Azure fact). A changed Object counts also when its Coverage stays the same ([Example 18](#example-18-a-changed-service-object)). A Zone's Egress posture and Inherited defaults do not change the Rules that use the Zone.
+2. For every changed Rule, before and after: every Zone in the Coverage of its destination, and from the Coverage of its source the Zones with a strict Egress posture, or all of them when the destination reaches outside Zones. The test is the one of [Step 5](#step-5-nsg-rules-without-effect-on-a-destination-enforced-zone): a destination reaches outside Zones when it does not lie entirely inside Zones. A destination that holds private endpoints whose subnet does not apply NSGs to them therefore reaches outside Zones, and every Zone in the Coverage of the source is an Affected Zone.
+3. The Zones of added or removed ASG members, and the Zones that hold the members of an ASG object or External ASG object whose switch for automatic adoption changes ([ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md)).
 4. The Zones the Change set onboards, removes or changes.
 5. Every destination-enforced Zone, when the Internal address space changes.
 
 #### Example 10: Affected Zones
 
-Prototype key `affected`. Shows [ADR 0008](../adr/0008-approval-by-affected-zones.md) and [ADR 0016](../adr/0016-destination-enforced-egress-and-deny-rules-on-both-sides.md). web, app and db are destination-enforced, api is strict. The Change set adds three Rules.
+Prototype key `affected`. Shows [ADR 0008](../adr/0008-approval-by-affected-zones.md) and [ADR 0016](../adr/0016-destination-enforced-egress-and-deny-rules-on-both-sides.md). Zones: web, app, db and api. web, app and db are destination-enforced, api is strict. The Change set adds three Rules.
 
 | Rule | Affected Zones | Why |
 |---|---|---|
@@ -503,9 +578,56 @@ Prototype key `affected`. Shows [ADR 0008](../adr/0008-approval-by-affected-zone
 
 A later Change set that sets app to strict affects only app, although two outbound NSG rules appear on its NSG and Rule 3 uses app.
 
+#### Example 18: A changed Service object
+
+No prototype key. Shows rule 1 above. Zones: web, app and db, all destination-enforced. `app-port` is the Service object tcp/8080. The Rule base of the last Version:
+
+| # | Rule ID | Source | Destination | Service | Action |
+|---|---|---|---|---|---|
+| 1 | 1 | Zone web | Zone app | app-port | allow |
+| 2 | 2 | Zone app | Zone db | mssql | allow |
+
+The Change set edits one Object and no Rule: `app-port` becomes tcp/8080-8090.
+
+| | Result |
+|---|---|
+| Changed Rules | Rule 1, because it uses `app-port`. Rule 2 does not use it. |
+| Preview, `nsg-spoke1-app` inbound | one NSG rule changed: 2100 `nsgfw-r1-in-bfda4830`, ports 8080 → 8080-8090. Name and priority stay, because the hash does not cover ports. |
+| Affected Zones | app, the destination of Rule 1. web is a destination-enforced source and the destination lies inside Zones, so web does not count. |
+
+No Coverage changed here. Under a rule that asked whether the Object "changed what it covers", no Rule would count as changed, and ten more ports into app would need no Approval of app. The same holds for an Address object whose value moves inside one Zone: when `web01` changes from 10.1.1.5 to 10.1.1.6 it still covers web, a Rule "web01 → Zone db mssql allow" counts as changed, and db is an Affected Zone.
+
+## Rule warnings
+
+A Rule warning is a warning attached to a Rule. It is no validation error, so it blocks neither Submit nor Commit. The engine computes five of them in the MVP, decided in [Review: Grill review of the complete design package][t23]. Four sit on a Rule and the fifth on an Object:
+
+| Rule warning | Applies when |
+|---|---|
+| writes nothing | an enabled Rule produces no NSG rule on any Managed NSG: it covers no Zone, a side resolves to nothing, or [Step 5](#step-5-nsg-rules-without-effect-on-a-destination-enforced-zone) leaves out every NSG rule it would have ([Step 2](#step-2-placement)) |
+| allows everything | an allow Rule has the source any, the destination any and the service any |
+| opens a management port from the Internet | an allow Rule has a source that is any, 0.0.0.0/0, ::/0 or the service tag `Internet`, and a service that includes a management port. A port range and the service any include it when a management port lies inside, and a source list or Address group counts when it contains any |
+| lands on very many Managed NSGs | the Rule lands on more Managed NSGs than the threshold, counted as in the cost of the Rule ([Step 9](#step-9-limits)) |
+| unused Object | no Rule uses the Object |
+
+Two instance settings feed them:
+
+| Instance setting | Default |
+|---|---|
+| Management ports | TCP 22, 3389, 5985 and 5986 |
+| Threshold for "very many Managed NSGs" | 100 Managed NSGs |
+
+An admin of the instance Scope can change the list of management ports. The rest of rule analysis, shadowed and redundant Rules, stays Later.
+
+Other Rule warnings are defined where they arise, and this section does not define them again:
+
+- "not enforced for Zone X (Application Gateway v2)", on a deny Rule that the engine leaves out outbound on an Application Gateway v2 Zone and whose destination does not lie entirely inside Zones: [Step 6](#step-6-the-posture-of-every-managed-nsg).
+- "bypassed by AVNM", "blocked by AVNM" and "blocked on N of M interfaces", from Security layers: [Security layers in the console](console.md#security-layers).
+
+Further warnings on a Rule are worded where they arise: the Rule editor's warning on a deny Rule from any to any and the warning on Rules toward private endpoints that no NSG filters ([Step 5](#step-5-nsg-rules-without-effect-on-a-destination-enforced-zone)), and the warning on a Rule with an ICMP Service object that lands on a dual-stack Zone ([Step 6](#step-6-the-posture-of-every-managed-nsg)).
+
 ## Plan: the write order
 
-A Deployment plans from the Deployed state to the target ([ADR 0018](../adr/0018-write-order-from-dominance-gaps.md)). The plan is a set of writes and a set of edges "this write before that write". The target is the latest Version, and the plan looks at every Environment: an edge can end at a write of another Environment's Deployment ([Grilling: Crossing flows between Environments](https://github.com/mfgAkilae/nsgfw/issues/40)).
+A Deployment plans from the Deployed state to the target ([ADR 0022](../adr/0022-a-version-exists-from-its-commit-and-deployments-plan-from-the-deployed-state.md), [ADR 0023](../adr/0023-writes-are-ordered-only-by-crossing-flows-with-a-settle-time.md)). The plan is a set of writes and a set of edges "this write before that write". The target is the latest Version, and the plan looks at every Environment: an edge can end at a write of another Environment's Deployment ([ADR 0025](../adr/0025-the-write-order-spans-environments.md), [Grilling: Crossing flows between Environments](https://github.com/mfgAkilae/nsgfw/issues/40)).
 
 **Writes.** One whole-NSG write for every Managed NSG or Retired NSG whose content differs, one write per new or deleted Managed ASG, one subnet write per new association or swap, and one or two writes per network interface whose membership changes, one per member step. A deleted network interface needs no write.
 
@@ -520,20 +642,34 @@ A Deployment plans from the Deployed state to the target ([ADR 0018](../adr/0018
    | deny | allow | allow | deny | destination NSG first |
    | any other combination | | | | none |
 
-   Each side is evaluated with the function above. Where a tag decides, the engine evaluates both cases per NSG and takes the edges of all cases together.
-3. **Member steps.** The engine plans membership as atoms: one network interface joining or leaving one Managed ASG, written on all its IPv4 IP configurations at once; IPv6 IP configurations are never part of an atom. Azure may apply the atoms of a step in any combination, inside one write and across parallel writes ([Task: Empirical checks of undocumented Azure behaviour][t24], T5). An atom that, applied alone to the Deployed members, only closes traffic under the Deployed NSG contents goes before the NSG writes that the member steps hold back. Every other atom goes after them. A member step holds back an NSG write when the NSG lies in the VNet of one of the step's network interfaces, because NSG rules there reference the Managed ASG itself, or when the write changes the decision of a flow to or from an IP of one of those network interfaces. An NSG in another VNet, and so every NSG in another Environment, sees a network interface only by its IPs, so there the IP test is exact. Every other NSG write runs in any order relative to the member steps. A step is valid only if every combination of its atoms passes: before the held NSG writes no combination allows a flow that the Deployed state denies, and after them no combination allows a flow that the target denies. For a flow, only the atoms of its two endpoints count. The atoms of one network interface in one step go into one write. A flow touches one IP of a network interface, so per flow an atom is applied or not, even if Azure applies the IP configurations one by one. The Crossing flows of point 2 are computed against the members as they are after the first step.
+   Each side is evaluated with the [evaluation function](#evaluate-the-rule-base-evaluation-function). Where a tag decides, the engine evaluates both cases per NSG and takes the edges of all cases together.
+
+   A pair of Zones here also takes in a subnet that is a Zone in only one of the two states. A removed Zone counts with its Retired NSG, which denies in the target. A Zone that is being onboarded counts with what its subnet carries in the Deployed state (see "A new association or a swap" below).
+3. **Member steps** ([ADR 0024](../adr/0024-asg-membership-is-written-as-atoms-in-member-steps.md)). The engine plans membership as atoms: one network interface joining or leaving one Managed ASG, written on all its IPv4 IP configurations at once; IPv6 IP configurations are never part of an atom. Azure may apply the atoms of a step in any combination, inside one write and across parallel writes ([Task: Empirical checks of undocumented Azure behaviour][t24], T5). An atom that, applied alone to the Deployed members, only closes traffic under the Deployed NSG contents goes before the NSG writes that the member steps hold back. Every other atom goes after them. A member step holds back an NSG write when the NSG lies in the VNet of one of the step's network interfaces, because NSG rules there reference the Managed ASG itself, or when the write changes the decision of a flow to or from an IP of one of those network interfaces. An NSG in another VNet, and so every NSG in another Environment, sees a network interface only by its IPs, so there the IP test is exact. Every other NSG write runs in any order relative to the member steps. A step is valid only if every combination of its atoms passes: before the held NSG writes no combination allows a flow that the Deployed state denies, and after them no combination allows a flow that the target denies. For a flow, only the atoms of its two endpoints count. The atoms of one network interface in one step go into one write. A flow touches one IP of a network interface, so per flow an atom is applied or not, even if Azure applies the IP configurations one by one. The Crossing flows of point 2 are computed against the members as they are after the first step.
+
+**A new association or a swap.** The NSG of a Zone takes effect through a subnet write in two cases: its subnet had no NSG, or its existing NSG is shared with other subnets or network interfaces, so that a new Managed NSG is swapped in ([ADR 0003](../adr/0003-adopt-existing-nsgs-in-place.md)). The NSG write before it only creates an NSG that no subnet uses yet, and it changes no traffic. For such a Zone the subnet write therefore carries the Crossing-flow edges and the member-step edges, and it starts the Settle time. The NSG write keeps only its dependency edges. If the edges ended at the NSG write, a write that waits for the Zone to close could run while the subnet still carries its old NSG.
+
+For the order, the Deployed content of such a Zone is what its subnet carries so far: the content of the NSG associated so far, or "allows everything" for a subnet without an NSG. The evaluation function evaluates that content in place of a Managed NSG, as it does for a legacy NSG before its first write ([Example 14](#example-14-the-first-commit-of-an-nsg-adopted-in-place-and-a-failed-write)). [Example 19](#example-19-a-crossing-flow-at-a-swap) shows a swap.
 
 **Not orderable.** A cycle among the Crossing-flow edges, inside one Environment or across several, or a member step that fails in some combination of its atoms, fails validation. The Preview names the flows, and the fix is to split the Change set into two Commits.
 
-**Order.** Writes without an edge between them run in any order, in parallel where the write budget allows. A write behind a Crossing-flow edge or behind a member-step boundary waits until the write before it has reported `Succeeded` and the Settle time (instance setting, 10 s by default) has passed. `Succeeded` alone is not enough: traffic that a write closed still passed up to 0.22 s after an NSG PUT and 0.75 s after a network interface write reported it (T4). Dependency edges wait for `Succeeded` only. A failed write is retried on its own. Only the writes with an edge from it wait, in later Deployments too, because every Deployment plans its edges from the Deployed state. An edge into another Environment points at that NSG, not at a Deployment: the write waits until the NSG's Deployed state no longer lets the flow cross, whichever Deployment writes it, and every Commit plans these edges again.
+A plan can also become not orderable after the Commit, while a Deployment is unfinished. Every Deployment plans its edges again from the Deployed state and the tag facts. When, for example, a peering disappears, the engine evaluates more tag cases, and the new edges can close a cycle. Validation is over by then. The Deployment stops in the state "not orderable" and names the flows. The ways out are a Change set that fixes the cause, or a Revert of the Commit, which an admin can make as an Emergency Commit ([Review: Grill review of the complete design package][t23]).
 
-The plan assumes that one whole-NSG PUT takes effect as a whole (T2) and that a rejected PUT applies nothing (T3), as measured, and that one subnet write that swaps the NSG takes effect as a whole, which [Task: Empirical check of subnet NSG swaps and private endpoint ASG writes][t33] measures.
+**Order.** Writes without an edge between them run in any order, in parallel where the write budget allows. A write behind a Crossing-flow edge or behind a member-step boundary waits until the write before it has reported `Succeeded` and the Settle time (instance setting, 10 s by default) has passed. `Succeeded` alone is not enough: traffic that a write closed still passed up to 0.22 s after an NSG PUT and 0.75 s after a network interface write reported it (T4). A subnet write that swapped the NSG took effect 0.07 to 0.74 s after `Succeeded` (T7). Dependency edges wait for `Succeeded` only. A failed write is retried on its own. Only the writes with an edge from it wait, in later Deployments too, because every Deployment plans its edges from the Deployed state. An edge into another Environment points at that NSG, not at a Deployment: the write waits until the NSG's Deployed state no longer lets the flow cross, whichever Deployment writes it, and every Commit plans these edges again. A write that waits for a skipped write, because that Zone lost its subnet or its subscription left its Environment, keeps waiting and shows "skipped" as the state of the other side until a person resolves the flag ([ADR 0025](../adr/0025-the-write-order-spans-environments.md)).
+
+A write of a Zone that holds a private endpoint, its NSG write or the subnet write that associates its NSG, is followed by 30 s instead of the Settle time when another write waits for it. This is a second instance setting, "Settle time for private endpoint Zones", 30 s by default. The lags behind the 10 s were measured against VMs. The only measurement with a private endpoint (T8) saw the change take effect 9.9 to 11.8 s after the response of the write, and no check measured an NSG PUT against private endpoint traffic. All checks ran in one region. The nightly test gets a private endpoint target with network policies enabled and a second region ([Review: Grill review of the complete design package][t23]; [Empirical checks of undocumented Azure behaviour](../research/empirical-checks.md)).
+
+What an NSG holds after a PUT that Azure accepted and that ends `Failed` is neither documented nor measured. Such an NSG counts as Drift until a GET shows the old or the new content.
+
+The plan rests on three behaviours that are measured and not documented: one whole-NSG PUT takes effect as a whole (T2), a rejected PUT applies nothing (T3), and one subnet write that swaps the NSG takes effect as a whole (T7, 60 swaps on the source and the destination side, [Task: Empirical check of subnet NSG swaps and private endpoint ASG writes][t33]). They are a named, accepted exception to "documentation before tests" ([Grilling: Review round on placement, egress posture and MVP shape][t27], point 19): each has a nightly test and no fallback. When the nightly test fails on one of them, the project publishes a release note, Health shows a warning from the next release on, and a Change set whose write plan has a Crossing-flow edge fails validation and must be split into two Commits until a fix ships.
+
+The tool writes ASGs on the IPv4 IP configurations only of a dual-stack network interface, which Azure accepted in T10 (cases 1 and 4). Both cases are part of the nightly test. Their fallback: dual-stack members go fully through the IP fallback ([Review: Grill review of the complete design package][t23]).
 
 How the engine finds Crossing flows and runs the combination test at the design target is in [At the design target](#at-the-design-target).
 
 #### Example 11: A Crossing flow, and a cycle
 
-Prototype keys `crossing` and `cycle`. Shows [ADR 0018](../adr/0018-write-order-from-dominance-gaps.md). web and api are strict and sit in spokes that are not peered. Imported Rules with the `VirtualNetwork` tag land on one side only.
+Prototype keys `crossing` and `cycle`. Shows [ADR 0023](../adr/0023-writes-are-ordered-only-by-crossing-flows-with-a-settle-time.md). Zones: web and api. web and api are strict and sit in spokes that are not peered. Imported Rules with the `VirtualNetwork` tag land on one side only.
 
 | | Rule | Lands on |
 |---|---|---|
@@ -555,7 +691,7 @@ The cycle: the Change set also swaps "Zone api → VirtualNetwork rdp" for "Virt
 
 #### Example 12: A service tag evaluated both ways
 
-Prototype key `tag-both`. Shows [ADR 0018](../adr/0018-write-order-from-dominance-gaps.md). api has the Inherited default "inbound from `VirtualNetwork`".
+Prototype key `tag-both`. Shows [ADR 0023](../adr/0023-writes-are-ordered-only-by-crossing-flows-with-a-settle-time.md). Zones: web and api. api has the Inherited default "inbound from `VirtualNetwork`".
 
 | | Deployed state | Target |
 |---|---|---|
@@ -565,9 +701,9 @@ Prototype key `tag-both`. Shows [ADR 0018](../adr/0018-write-order-from-dominanc
 
 Whether api lets web in after the change depends on whether api's `VirtualNetwork` tag contains spoke1. The engine evaluates both cases. In the case "contains", api opens and web closes, so the edge is: NSG of web before NSG of api. An engine that assumed "does not contain" would find no edge, and writing api first would open web → api.
 
-#### Example 13: The three ASG member steps
+#### Example 13: The two member steps and the NSG writes between them
 
-Prototype key `members`. Shows [ADR 0018](../adr/0018-write-order-from-dominance-gaps.md) and [ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md). ASG objects admins (vm-web1) and batch (vm-web2) are allowed into db: Rule 1 "admins → Zone db rdp", Rule 2 "batch → Zone db mssql". The Change set removes vm-web1 from admins, adds vm-app1 to batch and adds Rule 3 "Zone web → Zone db https".
+Prototype key `members`. Shows [ADR 0024](../adr/0024-asg-membership-is-written-as-atoms-in-member-steps.md) and [ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md). Zones: web, app and db. vm-web1 and vm-web2 are network interfaces in web, vm-app1 is one in app. ASG objects admins (vm-web1) and batch (vm-web2) are allowed into db: Rule 1 "admins → Zone db rdp", Rule 2 "batch → Zone db mssql". The Change set removes vm-web1 from admins, adds vm-app1 to batch and adds Rule 3 "Zone web → Zone db https".
 
 | Step | Write | Why there |
 |---|---|---|
@@ -584,7 +720,7 @@ If admins and batch were both denied into db above "Zone web → Zone db any all
 
 #### Example 14: The first Commit of an NSG adopted in place, and a failed write
 
-Prototype keys `legacy` and `failed`. Shows [ADR 0011](../adr/0011-import-preserves-behaviour.md) and [ADR 0018](../adr/0018-write-order-from-dominance-gaps.md). db's existing NSG holds only the Azure default rules, so AllowVnetInBound lets the VNet in. The onboarding Change set adopts it in place, and the same Change set switches web from strict to destination-enforced. The legacy NSG is the Deployed state of db.
+Prototype keys `legacy` and `failed`. Shows [ADR 0011](../adr/0011-import-preserves-behaviour.md) and [ADR 0023](../adr/0023-writes-are-ordered-only-by-crossing-flows-with-a-settle-time.md). Zones: web and db for the first Commit, and web, api, app and db for the failed write. db's existing NSG holds only the Azure default rules, so AllowVnetInBound lets the VNet in. The onboarding Change set adopts it in place, and the same Change set switches web from strict to destination-enforced. The legacy NSG is the Deployed state of db.
 
 | db in the Change set | web → db in the Deployed state | in the target | Edge |
 |---|---|---|---|
@@ -595,17 +731,52 @@ There is no interim content: the legacy NSG rules are replaced in one write.
 
 A failed write: a Deployment writes the NSGs of web, api, app and db, with the edge "web before api" from Example 11. If the write of web fails, api waits, and app and db are written. If the write of db fails instead, nothing waits. If a newer Version is committed while web still has its old content, the new Deployment plans from the Deployed state and api still waits for web.
 
+#### Example 19: A Crossing flow at a swap
+
+No prototype key. Shows [ADR 0003](../adr/0003-adopt-existing-nsgs-in-place.md) and [ADR 0023](../adr/0023-writes-are-ordered-only-by-crossing-flows-with-a-settle-time.md). Zones: web, which is a Zone already and strict, and db, which this Change set onboards. Change to the estate: db's existing NSG `nsg-spoke1-shared` holds only the Azure default rules and is also associated with one more subnet of spoke1, spoke1/reports (10.1.7.0/24), which is not a Zone. A shared NSG is not adopted in place, so db gets the new Managed NSG `nsg-spoke1-db`, swapped in with one subnet write. As in the first row of Example 14, db opts out of Inherited defaults, and the same Change set switches web from strict to destination-enforced.
+
+The flow web → db:
+
+| State | web outbound | db inbound | Flow |
+|---|---|---|---|
+| Deployed state | deny (web's Deny-all rule) | allow (AllowVnetInBound of `nsg-spoke1-shared`) | closed |
+| Target | allow (web's egress allow) | deny (Deny-all rule of `nsg-spoke1-db`) | closed |
+| web written before the swap | allow | allow (the subnet still carries `nsg-spoke1-shared`) | **open** |
+
+One edge, destination first: db before web. The plan:
+
+| Write | Waits for | Effect on web → db |
+|---|---|---|
+| 1. NSG write: create `nsg-spoke1-db` with its target content | nothing | none, because no subnet uses the NSG yet |
+| 2. Subnet write: the subnet of db swaps `nsg-spoke1-shared` for `nsg-spoke1-db` | write 1, `Succeeded` only (dependency edge) | db's side closes |
+| 3. NSG write: `nsg-spoke1-web` | write 2, `Succeeded` and the Settle time (Crossing-flow edge) | web's side opens |
+
+- The Crossing-flow edge ends at the subnet write. If it ended at write 1, write 3 could run as soon as the new NSG exists, and web → db would be open until the swap, although the Deployed state and the target both deny it.
+- For the order, db's Deployed content is the content of `nsg-spoke1-shared`, the NSG its subnet carries so far. web and db lie in the same VNet, so db's `VirtualNetwork` tag contains web as a documented fact, and no tag case is needed.
+- `nsg-spoke1-shared` is not written. It stays on spoke1/reports.
+- If the subnet of db had no NSG at all, the plan would be the same with a new association in place of the swap. Its Deployed content would be "allows everything".
+- Affected Zones: db, which is onboarded, and web, whose Egress posture changes.
+
 ## At the design target
 
 The design target per instance is 10,000 Rules, 20,000 Zones and 10,000 Objects, with 20 administrators editing at once. These rules were decided in [Grilling: Server internals at the design target][t30].
 
-**Incremental translation.** Priorities are kept per Managed NSG and direction, so every NSG translates on its own. The engine translates again only the Managed NSGs whose inputs change: the Zones in the Coverage of the source and destination of every changed Rule, before and after the change, and the Zones the Change set onboards, removes or changes. A change of the Internal address space adds every destination-enforced Zone. Every other NSG keeps the NSG rules stored with the base Version.
+**Incremental translation.** Priorities are kept per Managed NSG and direction, so every NSG translates on its own. The engine translates again only the Managed NSGs whose inputs change. Every other NSG keeps the NSG rules stored with the base Version. The rule is that the incremental translation must equal the full translation of the same inputs: the same NSG rules with the same names and priorities on every Managed NSG. A test of the engine compares the two ([Review: Grill review of the complete design package][t23]). The dependency set, the Managed NSGs to translate again, follows from that rule:
 
-**Crossing flows from delta sets.** For every Managed NSG whose content differs between the Deployed state and the latest Version, in any Environment, and for each of its two directions, the engine computes the flows whose decision differs between the Deployed state and the target. It writes them as boxes of source range × destination range × protocol × port range, split into the boxes that open and the boxes that close. A service tag that decides a box is an unknown of its own and is evaluated both ways, as [ADR 0018](../adr/0018-write-order-from-dominance-gaps.md) requires. A Crossing flow exists where the closing boxes of a source Zone's outbound side meet the opening boxes of a destination Zone's inbound side (source NSG first), or the opening outbound boxes meet the closing inbound boxes (destination NSG first), within the addresses of the two Zones. An interval index over the Zone prefixes finds the Zones a box reaches. The cost therefore grows with the size of the change, not with the number of Zones, and the result is exact.
+- the Zones in the Coverage of the source and destination of every changed Rule, before and after the change. "Changed" has the meaning of rule 1 in [Preview and Affected Zones](#preview-and-affected-zones): a Rule also counts when an Object it uses changed its value, members, VNet binding, Service object or Service group, or when a Zone it uses changed its prefixes or Extra prefixes;
+- the Zones the Change set onboards, removes or changes;
+- every destination-enforced Zone, when the Internal address space changes;
+- for a subnet that appears or vanishes under the destination of a deny Rule, in any VNet of the inventory: every destination-enforced Zone in the Coverage of that Rule's source, because the "entirely inside Zones" test of [Step 5](#step-5-nsg-rules-without-effect-on-a-destination-enforced-zone) can turn. This covers a subnet that is not a Zone, a subnet that becomes a Zone or stops being one, a changed prefix, a private endpoint that appears or vanishes in a subnet that does not apply NSGs to it, and a change of `privateEndpointNetworkPolicies`;
+- for a changed IP of an ASG member: every Managed NSG on which a Rule that uses the member's ASG object or External ASG object lands, because the IP fallback and the tests of Step 5 read member IPs;
+- for the first or the last private endpoint in the subnet of a Zone: that Zone, because its NSG switches between ASG references and member IPs ([Step 3](#step-3-the-two-sides-of-an-nsg-rule)).
+
+The last three kinds touch NSGs whose own Rules did not change. Azure facts reach a translation through an Adopt or through the pinned Azure facts of a Change set.
+
+**Crossing flows from delta sets.** For every Managed NSG whose content differs between the Deployed state and the latest Version, in any Environment, and for each of its two directions, the engine computes the flows whose decision differs between the Deployed state and the target. A Retired NSG counts like a Managed NSG here, and a Zone with a new association or a swap counts with what its subnet carries so far ([Plan](#plan-the-write-order)). It writes them as boxes of source range × destination range × protocol × port range, split into the boxes that open and the boxes that close. A service tag that decides a box is an unknown of its own and is evaluated both ways, as [ADR 0023](../adr/0023-writes-are-ordered-only-by-crossing-flows-with-a-settle-time.md) requires. A Crossing flow exists where the closing boxes of a source Zone's outbound side meet the opening boxes of a destination Zone's inbound side (source NSG first), or the opening outbound boxes meet the closing inbound boxes (destination NSG first), within the addresses of the two Zones. An interval index over the Zone prefixes finds the Zones a box reaches. The cost therefore grows with the size of the change, not with the number of Zones, and the result is exact.
 
 **The combination test of the member steps.** For a flow, only the atoms of its two endpoints count. When no deny NSG rule references the ASGs of those atoms, the states before and after the step suffice. Otherwise the engine enumerates the combinations of those atoms, at most 2^12 = 4,096 per pair of endpoints. Above that, the step fails validation, and the Preview asks to split the Change set. A network interface usually changes one to three ASG objects, which is at most 64 combinations.
 
-**Where it runs.** The Preview runs in a worker-thread pool of `api` after every edit, the Commit and the Deployment plan in `worker`. The targets are a p95 within 2 s for a Change set of up to 50 changed Rules, and up to 60 s with progress for a change of the Internal address space, a re-translation or an Import ([architecture](architecture.md#from-edit-to-version)). A load test with a synthetic estate of this size checks them in the increment plan.
+**Where it runs.** The Preview runs in a worker-thread pool of `api` after every edit, the Commit and the Deployment plan in `worker`. The Preview target counts the Managed NSGs a Change set touches, not its changed Rules, because one Rule with any can touch every Managed NSG: a p95 within 2 s up to 200 Managed NSGs, and within 60 s with a progress display above that ([Review: Grill review of the complete design package][t23]; [architecture](architecture.md#from-edit-to-version)). A load test with a synthetic estate of this size checks them in the increment plan.
 
 ## Data contract
 
@@ -617,7 +788,7 @@ In a Terraform Environment the same target content goes into one JSON file per T
 - the Managed ASGs with their marker tags, and the membership of every network interface;
 - import entries for resources that already exist in Azure.
 
-One NSG rule in the prototype's Data contract (prototype key `contract`):
+One NSG rule in the prototype's Data contract (prototype key `contract`; Zones: dual and dual2, with spoke3 in a Terraform Environment):
 
 ```json
 {
@@ -636,9 +807,9 @@ One NSG rule in the prototype's Data contract (prototype key `contract`):
 }
 ```
 
-**Steps.** A Deployment without Crossing-flow edges and member steps is one pull request. Otherwise each step of the write order is its own pull request, and the tool opens the next one after Azure shows the previous target. Every pull request carries the whole Data contract of the root module: the resources of later steps still have their Deployed content (prototype key `pr-steps`: first the NSG of dual, which closes, then the NSG of dual2, which opens). Deleting Managed ASGs rides in the last pull request.
+**Steps.** A Deployment without Crossing-flow edges and member steps is one pull request. Otherwise each step of the write order is its own pull request, and the tool opens the next one once Azure shows the previous target and the Settle time has passed. Every pull request carries the whole Data contract of the root module: the resources of later steps still have their Deployed content (prototype key `pr-steps`, Zones: dual and dual2, both strict: first the NSG of dual, which closes, then the NSG of dual2, which opens). Deleting Managed ASGs rides in the last pull request.
 
-Inside one pull request, Terraform's own graph orders the writes. The Data contract names an ASG by its resource ID, so Terraform sees no dependency from an NSG to a Managed ASG on its own. The default HCL therefore lets the NSG resource depend on the Managed ASG resources, and every replacement HCL must keep that: a Managed ASG is created before an NSG rule references it and destroyed only after ([ADR 0010](../adr/0010-terraform-mode-data-contract-and-azure-observation.md)).
+Inside one pull request, Terraform's own graph orders the writes. The Data contract names an ASG by its resource ID, so Terraform sees no dependency from an NSG to a Managed ASG on its own. The default HCL therefore lets the NSG resource depend on the Managed ASG resources and sets `create_before_destroy` on the Managed ASG, and every replacement HCL must keep both: a Managed ASG is created before an NSG rule references it and destroyed only after the NSGs that referenced it are updated. With `depends_on` alone Terraform would destroy the Managed ASG first ([ADR 0010](../adr/0010-terraform-mode-data-contract-and-azure-observation.md)).
 
 The field names of the file are not fixed yet. The prototype and the HCL sketch in the [architecture draft](architecture.md#deployment) use different ones.
 
@@ -656,7 +827,7 @@ Import runs in the onboarding Change set and turns each NSG rule of the existing
 | far side | `*` | any |
 | far side | a service tag | the tag; `VirtualNetwork` gets a warning Import note |
 | far side | a prefix | by exact match, in this order: a Zone in the same or a peered VNet, an existing Address object with this value, a subnet Address object, a VNet object, a new CIDR or single IP object |
-| far side | an ASG | an External ASG object, or an ASG object if the admin adopts the ASG in place |
+| far side | an ASG | an External ASG object, or an ASG object if the onboarding Change set adopts the ASG in place |
 
 A new single IP or CIDR object whose prefix also matches Zones in VNets that X is not connected to gets a VNet binding to X's VNet and its peered VNets, with an info Import note. Protocol and ports become Service objects; protocol `*` with ports is approximated as tcp and udp, with a warning. A custom deny-all and an `AzureLoadBalancer` allow are dropped as redundant with the posture (info). A deny from `AzureLoadBalancer` has no effect below the Platform exceptions (warning). The prototype also maps `VirtualNetwork` on the own side to Zone X; the ticket decided only prefixes there.
 
@@ -664,10 +835,10 @@ A new single IP or CIDR object whose prefix also matches Zones in VNets that X i
 
 **Constraint merge.** The imported Rules are placed in the Rule base by constraints:
 
-1. Each imported NSG and direction is a policy and keeps its order.
-2. The existing Rule base is one more policy and keeps its order.
-3. Where two Rules of different policies overlap and have different actions, the deny comes first. A service tag counts as overlapping.
-4. If the constraints form a cycle, the engine moves a deny above an allow of its own imported policy. That only closes flows, and a warning Import note lists them.
+1. Each imported NSG and direction is an order list and keeps its order.
+2. The existing Rule base is one more order list and keeps its order.
+3. Where two Rules of different order lists overlap and have different actions, the deny comes first. A service tag counts as overlapping.
+4. If the constraints form a cycle, the engine moves a deny above an allow of its own imported order list. That only closes flows, and a warning Import note lists them.
 5. Among the orders that fit, existing Rules stay as early as possible and imported Rules go as low as their constraints allow, at the lowest position outside every Folder. An imported Rule stands inside a Folder only where the constraints force it there, with an info Import note. Import creates no Folders ([ADR 0021](../adr/0021-folders-are-layout-outside-approval-and-rule-conflicts.md)). Any fitting order gives the same verdicts.
 
 The tool recomputes this placement on every Rebase until someone moves an imported Rule by hand or puts it into a Folder.
@@ -678,7 +849,7 @@ The tool recomputes this placement on every Rebase until someone moves an import
 
 #### Example 15: The constraint merge
 
-Prototype key `merge`. Shows [ADR 0011](../adr/0011-import-preserves-behaviour.md). Zone billing is onboarded in place. The Rule base has three Rules:
+Prototype key `merge`. Shows [ADR 0011](../adr/0011-import-preserves-behaviour.md). Zones: web and db, and billing, which this Change set onboards in place. The Rule base has three Rules:
 
 | # | Rule ID | Name | Source | Destination | Service | Action |
 |---|---|---|---|---|---|---|
@@ -709,7 +880,7 @@ Constraints: 100 before 101 before 102 (inbound order), 103 before 104 (outbound
 | 7 | 3 | spoke1 sql to db | spoke1-range | Zone db | mssql | allow | |
 | 8 | 102 | allow-onprem-rdp | onprem-clients | Zone billing | rdp | allow | inbound 300 |
 
-`nsg-billing` after the first Commit, without the posture NSG rules at 100, 4080, 4094 to 4096:
+`nsg-billing` after the first Commit, without the fixed NSG rules at 100, 4080, 4094 to 4096:
 
 | Direction | Priority | NSG rule | Access | Ports | Source | Destination |
 |---|---|---|---|---|---|---|
@@ -732,7 +903,7 @@ Constraints: 100 before 101 before 102 (inbound order), 103 before 104 (outbound
 - billing starts destination-enforced, so outbound traffic to Internal addresses outside its old `VirtualNetwork` tag opens (warning Import note, accepted in ADR 0011).
 - The Deployment writes the NSGs of billing, db (Rule 103 lands inbound there) and web, with no edge. Affected Zones: billing, db and web.
 
-A cycle (prototype key `cycle-break`): the Rule base has "spoke1-range → any tcp/8080 allow" above "any → any tcp/8000-8100 deny". The legacy NSG of billing has "allow 10.1.2.0/24 on 8080" above "deny 10.1.0.0/16 on 8000-8100". Four constraints form a cycle: the imported allow before the imported deny (NSG order), the imported deny before the existing allow (deny first), the existing allow before the existing deny (Rule base order), and the existing deny before the imported allow (deny first). The engine moves the imported deny above the imported allow. app → billing on 8080, which the legacy NSG allowed, now closes, and a warning Import note says so.
+A cycle (prototype key `cycle-break`; Zones: app, and billing, which is onboarded): the Rule base has "spoke1-range → any tcp/8080 allow" above "any → any tcp/8000-8100 deny". The legacy NSG of billing has "allow 10.1.2.0/24 on 8080" above "deny 10.1.0.0/16 on 8000-8100". Four constraints form a cycle: the imported allow before the imported deny (NSG order), the imported deny before the existing allow (deny first), the existing allow before the existing deny (Rule base order), and the existing deny before the imported allow (deny first). The engine moves the imported deny above the imported allow. app → billing on 8080, which the legacy NSG allowed, now closes, and a warning Import note says so.
 
 ## Order conflicts at Rebase
 
@@ -740,11 +911,11 @@ A Rebase conflicts when both sides changed the same Rule, Object or Zone, or ren
 
 **Where a placed Rule lands.** Before the check, the engine puts each inserted or moved Rule into the latest Version. It lands after the nearest Rule that stood above it in the base Version and still exists. If the Rule has a Folder that still exists, only that Folder's Rules count, and with none left it goes to the top of the Folder. A Rule without a Folder never lands inside a Folder; it goes after that Folder's end. The Folder of a Rule is not part of its content: a Rule that only joined or left a Folder at the same position is not checked, and it does not conflict with an edit of the Rule's fields ([ADR 0021](../adr/0021-folders-are-layout-outside-approval-and-rule-conflicts.md)).
 
-Prototype key `rebase`: a Change set on Version 5 inserts Rule 9 "app10 → Zone db ssh allow" between Rule 2 and Rule 3. If Version 6 moved the deny Rule 1 "Zone app → Zone db ssh" from above Rule 9's place to below it, the Rebase conflicts and an Author confirms the position. If Version 6 moved the allow Rule 4 "onprem-clients → Zone db ssh" to the top, the Rebase is clean and the Approvals stay.
+Prototype key `rebase` (Zones: web, app and db): a Change set on Version 5 inserts Rule 9 "app10 → Zone db ssh allow" between Rule 2 and Rule 3. If Version 6 moved the deny Rule 1 "Zone app → Zone db ssh" from above Rule 9's place to below it, the Rebase conflicts and an Author confirms the position. If Version 6 moved the allow Rule 4 "onprem-clients → Zone db ssh" to the top, the Rebase is clean and the Approvals stay.
 
 ## Engine version
 
-Every output carries the engine version, and every Version stores the one that produced its NSG rules ([Grilling: Review round on placement, egress posture and MVP shape][t27], point 20). When a new engine version translates an unchanged Rule base differently, the tool prepares a Change set "re-translation" with the usual Preview, instead of changing NSGs with the next Commit. For example, if the deferred check shows that Azure accepts a service tag inside a prefix list, an engine version that puts a Rule's tag and prefixes on one side into one NSG rule changes the NSGs of every Zone where such a Rule lands, and nothing in the Rule base. Prototype key `engine-version` shows the same mechanics with an engine that writes IPv4 and IPv6 in one NSG rule; Microsoft documents that this is not possible, so the key shows only how a Re-translation behaves. While it is open, other Commits wait in the Environments where it changes something, and an Emergency Commit, a disabled expired Rule and an automatic Adopt take it along ([Grilling: Operations: restore, exit, upgrades and exposure][t29]; [architecture](architecture.md#engine-upgrades)).
+Every output carries the engine version, and every Version stores the one that produced its NSG rules ([Grilling: Review round on placement, egress posture and MVP shape][t27], point 20). When a new engine version translates an unchanged Rule base differently, the tool prepares a Change set "re-translation" with the usual Preview, instead of changing NSGs with the next Commit. For example, if the deferred check shows that Azure accepts a service tag inside a prefix list, an engine version that puts a Rule's tag and prefixes on one side into one NSG rule changes the NSGs of every Zone where such a Rule lands, and nothing in the Rule base. Prototype key `engine-version` (Zones: dual and dual2) shows the same mechanics with an engine that writes IPv4 and IPv6 in one NSG rule; Microsoft documents that this is not possible, so the key shows only how a Re-translation behaves. While it is open, other Commits wait in the Environments where it changes something, and an Emergency Commit, a disabled expired Rule and an automatic Adopt take it along ([Grilling: Operations: restore, exit, upgrades and exposure][t29]; [architecture](architecture.md#engine-upgrades)).
 
 The hash function of Step 7, the fill threshold of Step 8 and the address-family split of Step 3 change output, so a change to any of them is a new engine version.
 
@@ -755,28 +926,35 @@ The prototype is a reference for behaviour, with these known shortcuts:
 - It finds Crossing flows by testing sample addresses and ports. That does not scale to the design target; the engine uses delta sets instead ([At the design target](#at-the-design-target)).
 - It puts the deletion of a Managed ASG into the first pull request step. The decided rule is the last pull request ([ADR 0010](../adr/0010-terraform-mode-data-contract-and-azure-observation.md)).
 - It models network interfaces only, no private endpoints. Since private endpoints reach NSGs only through the IP fallback, this no longer differs from the decided rule for member steps.
+- It knows no Zone that holds a private endpoint, so it writes ASG references there. The decided rule is the IP fallback on every such Zone ([Step 3](#step-3-the-two-sides-of-an-nsg-rule)). It also has no `privateEndpointNetworkPolicies`, so it lacks the private endpoint part of the "entirely inside Zones" test ([Step 5](#step-5-nsg-rules-without-effect-on-a-destination-enforced-zone)).
+- It writes the IPv6 addresses of network interface members through the IP fallback only in a Terraform Environment and only for ASG objects. The decided rule covers every NSG in both Deployment modes and External ASG objects too ([Step 3](#step-3-the-two-sides-of-an-nsg-rule)). It also writes the combination of ASG references with an IPv6 list, which the engine skips ([Step 4](#step-4-the-split)).
 - Its Data contract field names, NSG names and resource groups are placeholders.
-- It checks the member steps with one ASG object per network interface, classifies each network interface's change as a whole with the other network interfaces at their Deployed or target members, and splits a change only as leave first, join last. The decided rule plans single atoms by their own effect and tests every combination of a step's atoms ([ADR 0018](../adr/0018-write-order-from-dominance-gaps.md)). The difference matters only with deny Rules on ASG objects or with several ASG objects per network interface.
+- It checks the member steps with one ASG object per network interface, classifies each network interface's change as a whole with the other network interfaces at their Deployed or target members, and splits a change only as leave first, join last. The decided rule plans single atoms by their own effect and tests every combination of a step's atoms ([ADR 0024](../adr/0024-asg-membership-is-written-as-atoms-in-member-steps.md)). The difference matters only with deny Rules on ASG objects or with several ASG objects per network interface.
+- It puts every NSG write between the first and the last member step. The decided rule holds back only the NSG writes in the VNet of a step's network interfaces and those that change the decision of a flow to or from one of their IPs ([Plan](#plan-the-write-order)).
+- It evaluates a subnet without an NSG with the Azure default rules. The decided Deployed content of such a subnet is "allows everything". It also ends a Crossing-flow edge at the NSG write of a new NSG, not at the subnet write, and it knows no swap ([Plan](#plan-the-write-order)).
+- It keeps the outbound deny NSG rules on an Application Gateway v2 Zone, which the engine leaves out ([Step 6](#step-6-the-posture-of-every-managed-nsg)), and it does not count a Rule as changed when only a Service object it uses changed ([Preview and Affected Zones](#preview-and-affected-zones)).
 - Its `engine.js` carries three of the four decisions from the status line, since the commit that came with this document: the name hash of 8 characters, the stricter test for a deny that is left out, and `AzureLoadBalancer` as the documented address. The fourth, the HCL rule, has no counterpart in the prototype.
 
 ## Open points
 
-- Whether one subnet write that swaps the NSG takes effect as a whole, and the lag and ASG swaps of private endpoint writes: [Task: Empirical check of subnet NSG swaps and private endpoint ASG writes][t33]. The write order and the member steps themselves were decided in [Grilling: Write order under data-plane lag and split ASG membership writes][t32].
-- Deferred checks that can change engine output, each with a nightly integration test and the conservative default described here ([Task: Empirical checks of undocumented Azure behaviour][t24]): a service tag inside a prefix list, an ASG on one side with prefixes on the other, the count of prefixes per NSG rule or per NSG, whether the Azure default rules count against 2,000, and an outbound deny on an Application Gateway v2 subnet. Whether an IPv6 leave takes effect on the data plane is a nightly integration test too; it matters only for the Overwrite of a Managed ASG found on an IPv6 IP configuration, because the tool writes no other IPv6 membership ([Grilling: ASG membership on IPv6 IP configurations][t42]).
+- Deferred checks that can change engine output, each with a nightly integration test and the conservative default described here ([Task: Empirical checks of undocumented Azure behaviour][t24]): a service tag inside a prefix list, an ASG on one side with prefixes on the other, several ASGs on one side (default: chunks of 10, fallback: a chunk size of 1, [Step 9](#step-9-limits)), the count of prefixes per NSG rule or per NSG, whether the Azure default rules count against 2,000, and whether an NSG rule with the protocol `Icmp` matches ICMPv6 (default: the engine writes it and warns, [Step 6](#step-6-the-posture-of-every-managed-nsg)). Whether an IPv6 leave takes effect on the data plane is a nightly integration test too; it matters only for the Overwrite of a Managed ASG found on an IPv6 IP configuration, because the tool writes no other IPv6 membership ([Grilling: ASG membership on IPv6 IP configurations][t42]).
+- The nightly test also covers what the write plan rests on ([Plan](#plan-the-write-order)): T2, T3 and T7 without a fallback, T10 cases 1 and 4 with the IP fallback for dual-stack members as fallback, and from now on a private endpoint target with network policies enabled and a second region, which can change the default of the Settle time for private endpoint Zones.
+- To be fixed with the first engine version, because a later change renames or renumbers NSG rules: the hash function and the encoding of the split key ([Step 7](#step-7-nsg-rule-names)); which ASG goes into which chunk and the order of the chunks ([Step 3](#step-3-the-two-sides-of-an-nsg-rule)); the order of one Rule's NSG rules and the tie-break of the keep set ([Step 8](#step-8-priorities)); and what the window rebalance does when a range has grown to the whole Rules band and is still more than half full. The prototype's `engine.js` then spreads all NSG rules of the direction over the whole band; no ticket decided that.
 - The field names of the Data contract and the data contract version 1: with the Terraform stage of the increment plan.
 
+[t11]: https://github.com/mfgAkilae/nsgfw/issues/11
 [t12]: https://github.com/mfgAkilae/nsgfw/issues/12
 [t13]: https://github.com/mfgAkilae/nsgfw/issues/13
 [t14]: https://github.com/mfgAkilae/nsgfw/issues/14
 [t17]: https://github.com/mfgAkilae/nsgfw/issues/17
 [t18]: https://github.com/mfgAkilae/nsgfw/issues/18
 [t22]: https://github.com/mfgAkilae/nsgfw/issues/22
+[t23]: https://github.com/mfgAkilae/nsgfw/issues/23
 [t24]: https://github.com/mfgAkilae/nsgfw/issues/24
 [t27]: https://github.com/mfgAkilae/nsgfw/issues/27
 [t29]: https://github.com/mfgAkilae/nsgfw/issues/29
 [t30]: https://github.com/mfgAkilae/nsgfw/issues/30
 [t31]: https://github.com/mfgAkilae/nsgfw/issues/31
-[t32]: https://github.com/mfgAkilae/nsgfw/issues/32
 [t33]: https://github.com/mfgAkilae/nsgfw/issues/33
 [t41]: https://github.com/mfgAkilae/nsgfw/issues/41
 [t42]: https://github.com/mfgAkilae/nsgfw/issues/42
