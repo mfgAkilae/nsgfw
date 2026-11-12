@@ -5,7 +5,7 @@ Status: accepted (2026-11-09, [Grilling: Review round on placement, egress postu
 [ADR 0004](0004-place-rules-by-coverage.md) put every allow Rule on the Coverage of its source and of its destination, and every deny Rule on one side that it chose by object type. The brief gives every Zone Deny-all rules in both directions. A review of the design package showed three effects.
 
 - **Broad sources do not scale.** "any → Zone B" puts one outbound NSG rule into every Managed NSG, and the engine never merges the NSG rules of several Rules. An NSG holds 2,000 NSG rules, so one instance can hold at most about 2,000 Rules with a broad source, however many Zones it has. The design target is 10,000 Rules. Import creates such Rules in bulk, because `*` is the default source in the portal: 300 subnets with three such inbound rules each put 900 outbound NSG rules into every Managed NSG.
-- **Broad sources need everyone's Approval.** Their Affected Zones are all Zones, at the strictest level of all Environments ([ADR 0008](0008-approval-by-affected-zones.md)).
+- **Broad sources need everyone's Approval.** Their Affected Zones are all Zones, and each needs the Approval of its own level ([ADR 0008](0008-approval-by-affected-zones.md)).
 - **One-sided deny Rules move.** Editing a deny Rule can move it from the destination side to the source side. This is the only reason why [ADR 0009](0009-tighten-then-loosen-deployments.md) needs a Tighten phase, a Loosen phase, interim contents and holds.
 
 Most NSG estates avoid the first two effects: they leave outbound traffic inside the network open and filter inbound at the destination.

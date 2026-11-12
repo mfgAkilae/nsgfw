@@ -14,7 +14,7 @@ Which Azure behaviours that Microsoft documentation leaves open does the design 
 
 The ticket collects about 60 open points from eight research tickets and seven grilling tickets. Almost all of them already have a conservative default in the design. A positive result could only enable behaviour that also runs as a nightly integration test and has a fallback (map Notes, "Documentation before tests"). Checking them now would not change the design package.
 
-Only [ADR 0018](../adr/0018-write-order-from-dominance-gaps.md) has no fallback. Its guarantee assumes four things. These are the design-deciding checks, run now:
+Only the write order (then ADR 0018, now [ADR 0023](../adr/0023-writes-are-ordered-only-by-crossing-flows-with-a-settle-time.md)) has no fallback. Its guarantee assumes four things. These are the design-deciding checks, run now:
 
 | Check | Question | Source |
 |---|---|---|
@@ -24,10 +24,10 @@ Only [ADR 0018](../adr/0018-write-order-from-dominance-gaps.md) has no fallback.
 | T4 | Is a change in effect on the data plane once the long-running operation reports `Succeeded`? (measured inside T2 and T5) | NSG/ASG research U15 |
 | T5 | Does one network interface PUT that changes ASG membership take effect as a whole, on the source and the destination side? | [Grilling: Review round on placement, egress posture and MVP shape](https://github.com/mfgAkilae/nsgfw/issues/27) |
 | T6 | Does MSAL Node redeem an authorization code with a user-assigned managed identity token as client assertion in Container Apps? | [ADR 0013](../adr/0013-backend-sign-in-and-separate-directory-and-azure-principals.md) ("verify before the increment plan") |
-| T7 | Does one subnet PUT that swaps the subnet's NSG for another take effect as a whole, on the source and the destination side, or is the subnet briefly without an NSG? How long after `Succeeded`? | [ADR 0003](../adr/0003-adopt-existing-nsgs-in-place.md) (a shared NSG is swapped), [ADR 0018](../adr/0018-write-order-from-dominance-gaps.md) |
-| T8 | How does one private endpoint PUT that swaps its ASG behave: interim states, and the lag after `Succeeded` against the Settle time? | [ADR 0018](../adr/0018-write-order-from-dominance-gaps.md) (private endpoints are atoms like network interfaces) |
+| T7 | Does one subnet PUT that swaps the subnet's NSG for another take effect as a whole, on the source and the destination side, or is the subnet briefly without an NSG? How long after `Succeeded`? | [ADR 0003](../adr/0003-adopt-existing-nsgs-in-place.md) (a shared NSG is swapped), [ADR 0023](../adr/0023-writes-are-ordered-only-by-crossing-flows-with-a-settle-time.md) |
+| T8 | How does one private endpoint PUT that swaps its ASG behave: interim states, and the lag after `Succeeded` against the Settle time? | [ADR 0024](../adr/0024-asg-membership-is-written-as-atoms-in-member-steps.md) (when the check ran, private endpoints were atoms like network interfaces; they no longer are) |
 | T9 | Which rights does a private endpoint PUT need that changes only its ASGs? Added when T8's first write failed. | [ADR 0014](../adr/0014-operator-grants-azure-roles-tool-verifies.md) (`nsgfw ASG Writer`) |
-| T10 | Does Azure accept ASGs on the IPv6 IP configuration of a dual-stack network interface, and must they match the IPv4 ones? What does the azurerm association write there? | [ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md), [ADR 0018](../adr/0018-write-order-from-dominance-gaps.md), [Grilling: Terraform mode workflow](https://github.com/mfgAkilae/nsgfw/issues/17) point 13 |
+| T10 | Does Azure accept ASGs on the IPv6 IP configuration of a dual-stack network interface, and must they match the IPv4 ones? What does the azurerm association write there? | [ADR 0006](../adr/0006-asg-objects-one-managed-asg-per-vnet.md), [ADR 0024](../adr/0024-asg-membership-is-written-as-atoms-in-member-steps.md), [Grilling: Terraform mode workflow](https://github.com/mfgAkilae/nsgfw/issues/17) point 13 |
 
 Every other point moves to the backlog as a nightly integration test. The design keeps its current default until then (see [Deferred checks](#deferred-checks-nightly-integration-tests)).
 
@@ -305,7 +305,7 @@ These points stay open. The design keeps the default in the right column until a
 | Resource Graph actions in a custom role; `permissions/read` for the self-check; Reader polling LRO status of a narrower Writer | ARM U5, U16 | Roles include the actions |
 | Graph `User.ReadBasic.All` and the groups filter permission | Hosting grilling | Sign-in works; the principal picker falls back to object IDs |
 | PostgreSQL Entra token lifetime, connections after expiry, Container Apps Job as schema owner | Hosting U4, U5 | Token refresh per new connection; the migrate step uses its own identity |
-| AVNM security user rules order; outbound order of admin rules relative to NIC NSGs | Security layers 5; Policy grilling | Shown as documented, with a note |
+| Outbound order of admin rules relative to NIC NSGs (the band for AVNM security user rules is Later) | Security layers 5; Policy grilling | Shown as documented, with a note |
 | Terraform: destroy order of an ASG, `azapi_update_resource` on a foreign-managed subnet, plan of `securityRules` | Terraform grilling | One pull request per write step; foreign-IaC evidence before adopt |
 | Flow-log and Traffic Analytics formats: `AclRule`, truncation, `AclGroup`, subnet IDs, field values, double counting, access modes, token, workspace ID, latency, billing, Resource Graph | Flow logs 1–3; Traffic Analytics 1–13 | Tolerant parser; the Flow view shows "—" where data is missing |
 | Lag of an NSG PUT against traffic to a private endpoint (network policies enabled): how long after the response does the data plane follow? | [Design-package review](../review/design-package-review.md) Q8; T8 | An NSG write of a Zone that holds a private endpoint waits 30 s before the write after it (instance setting "Settle time for private endpoint Zones") |

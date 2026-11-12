@@ -23,7 +23,7 @@ The identifier a Rule gets when it is created. It never changes and is never reu
 The current position of a Rule in the Rule base, counted over all Rules. It changes when Rules above it are added, removed or moved.
 
 **Rule warning**:
-A warning attached to a Rule, as opposed to a validation error. It says that the Rule's effect differs from what the Rule states or deserves a second look, for example that the Rule writes nothing, allows everything, is not enforced on one Zone, or is blocked or bypassed by a Security layer.
+A warning attached to a Rule, or to an Object for the mark "unused Object", as opposed to a validation error. It says that the Rule's effect differs from what the Rule states or deserves a second look, for example that the Rule writes nothing, allows everything, is not enforced on one Zone, or is blocked or bypassed by a Security layer.
 
 **Folder**:
 A named, contiguous run of Rules, one level deep, that keeps the Rule base in order. It has no effect on evaluation or translation; the Folder of a Rule is part of the Rule's position, not of its content.
@@ -49,7 +49,7 @@ The Zones that a Zone, Address object or Address group stands for. A Zone covers
 _Avoid_: scope (reserved for access), footprint
 
 **Object**:
-An Address object or a Service object. A Zone is not an Object.
+An Address object, a Service object or a Service group. A Zone is not an Object.
 
 **Address object**:
 A named single IP, CIDR range, Azure service tag, subnet that is not a Zone, VNet, ASG object, External ASG object, or Address group. The built-in Address object any stands for every IPv4 and IPv6 address.
@@ -108,6 +108,10 @@ Any ASG that is not a Managed ASG. The tool never changes it.
 Making an existing Unmanaged NSG or Unmanaged ASG a Managed one without replacing it. It keeps its name, resource group and references and gets the marker tags.
 _Avoid_: adopt (on its own: resolving Drift), take over
 
+**Marker tags**:
+The tags that the tool sets on a Managed NSG or Managed ASG to mark it as its own: `nsgfw-managed-by`, `nsgfw-version` and, on a Managed NSG, `nsgfw-zone`. They are the only tags on these resources that belong to the tool.
+_Avoid_: ownership tags, labels
+
 **Retired NSG**:
 A Managed NSG whose Zone was removed. It stays associated with its subnet and holds only the Platform exceptions and the Deny-all rules, so the subnet stays protected.
 _Avoid_: orphaned NSG, released NSG
@@ -123,7 +127,7 @@ An NSG rule's reference to an ASG as its source or destination, in place of IP a
 Writing the IP addresses of ASG members into an NSG rule where an ASG reference cannot stand for them, such as on an NSG in another VNet.
 
 **Deny-all rules**:
-The explicit deny-all NSG rules, inbound and outbound, at the lowest custom priority of every Managed NSG. They turn Azure's permissive defaults into the implicit deny that firewall administrators expect.
+The explicit deny-all NSG rules, inbound and outbound, at the lowest custom priority of a Managed NSG; an Application Gateway v2 Zone has no outbound one, because Azure forbids it. They turn Azure's permissive defaults into the implicit deny that firewall administrators expect.
 _Avoid_: implicit deny, cleanup rule
 
 **Egress posture**:
@@ -173,7 +177,7 @@ The part of the tool that converts the Rule base into Managed NSGs, NSG rules, A
 ### Change workflow
 
 **Change set**:
-A named set of pending edits to the Rule base, based on one Version and isolated from every other Change set until its Commit.
+A named set of pending edits to the Rule base, based on one Version and isolated from every other Change set until its Commit. It is Open, Submitted, Approved, Committed or Discarded.
 _Avoid_: draft, candidate configuration, transaction, session
 
 **Author**:
@@ -255,11 +259,11 @@ A stored, committed state of the Rule base that can be rolled back to, together 
 _Avoid_: revision, snapshot
 
 **Restore**:
-A Change set that returns the Rule base to an earlier Version. It does not return the Azure facts adopted since.
+A Change set that returns the Rule base to an earlier Version; it removes or re-creates a Zone only as a separate step that its Author ticks. It does not return the Azure facts adopted since.
 _Avoid_: rollback (the umbrella for Restore and Revert)
 
 **Revert**:
-A Change set that undoes the edits of one earlier Commit on top of the latest Version, Folder edits included.
+A Change set that undoes the edits of one earlier Commit on top of the latest Version, Folder edits included; it undoes the onboarding or removal of a Zone only as a separate step that its Author ticks.
 _Avoid_: rollback, undo
 
 **Re-translation**:
@@ -288,7 +292,7 @@ The NSG rules of an existing NSG as Import read them into an onboarding Change s
 _Avoid_: legacy copy
 
 **Import note**:
-A flag that Import sets where an NSG rule did not map cleanly, naming the source NSG, NSG rule, priority and direction. It is blocking (no Submit until resolved), warning (behaviour changes or is approximated) or info (redundant or dropped).
+A flag that Import sets where an NSG rule did not map cleanly, naming the source NSG, NSG rule, priority and direction. It is blocking (no Submit and no Commit until resolved), warning (behaviour changes or is approximated) or info (redundant or dropped).
 
 **Drift**:
 A difference between Azure and the Deployed state, caused outside the tool, for example in the portal, the CLI or other IaC. A resource that a Deployment has not reached yet is pending, not drifted, and a tag that others set on a Managed NSG or Managed ASG is not Drift.
